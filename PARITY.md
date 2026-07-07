@@ -2,7 +2,7 @@
 
 Behavioral comparison of `fettle` (Arch backend) against the frozen
 `linux_hacks/update.sh` it replaces. Verdicts: ✅ parity · ⚠️ intentional
-difference (per [PLAN.md](PLAN.md)) · ❌ was an accidental gap, now fixed.
+difference (per the design plan) · ❌ was an accidental gap, now fixed.
 
 Test suite green (90 passing); `fettle --all --dry-run` reproduces update.sh's
 default run on Manjaro (7 steps: clean, orphans, update, rebuilds, python-rebuild,

@@ -17,15 +17,62 @@ tampered (packages, repos, publishers, integrity) across AUR/APT/Flatpak/Snap; a
 [`linux_hacks`](https://github.com/pasadoorian/linux_hacks)), rebuilt around a
 pluggable per-distro backend so new distributions are a single new class.
 
-**Status:** design / planning. See [PLAN.md](PLAN.md) for the full conversion
-plan, architecture, and milestones.
+**Status:** the Arch/Manjaro backend is feature-complete and at parity with
+`update.sh` (update, clean, orphans, rebuilds, python-rebuild, config drift,
+firmware, kernels, and the AUR package supply-chain audit), including the
+install-time yay hook. The Debian backend and the `sys-audit` security scanner
+are in progress.
 
-## Supported distros (planned)
+## Supported distros
 
-| Distro family | Backend | Package tooling |
-|---|---|---|
-| Arch / Manjaro | `arch` | pacman + yay/pamac + AUR |
-| Debian / Ubuntu | `debian` | apt + flatpak + snap |
+| Distro family | Backend | Package tooling | State |
+|---|---|---|---|
+| Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | ready |
+| Debian / Ubuntu | `debian` | apt + flatpak + snap | in progress |
+
+## Installation
+
+`fettle` is pure standard library, so there is **nothing to pip-install** — the
+launcher runs the checked-out repo in place. You need Python 3.11+ and whatever
+tooling the actions you use require (on Arch: `pacman`, optionally `yay`/`pamac`,
+`rebuild-detector`, `pacman-contrib`, `fwupd`; on Manjaro also `mhwd-kernel`).
+
+```sh
+git clone https://github.com/pasadoorian/fettle.git ~/src/fettle
+ln -s ~/src/fettle/bin/fettle ~/.local/bin/fettle   # ensure ~/.local/bin is on PATH
+fettle --help
+```
+
+`bin/fettle` puts the repo on `PYTHONPATH` and runs `python3 -m fettle`, so a
+`git pull` is all it takes to update. To drop it in for the old updater:
+
+```sh
+ln -sf ~/src/fettle/bin/fettle ~/update.sh
+```
+
+### yay install-time supply-chain hook (Arch/Manjaro, optional)
+
+An advisory, warn-only AUR precheck that fires at install time (orphaned /
+out-of-date / compromised name / malicious maintainer), on top of yay's build-file
+review:
+
+```sh
+cp ~/src/fettle/contrib/yay-init.lua ~/.config/yay/init.lua
+```
+
+## Usage
+
+```sh
+fettle                   # run the default maintenance set
+fettle -c -u             # clean + update (short flags)
+fettle update            # same as -u (subcommand form)
+fettle -A                # package supply-chain audit (AUR RPC + IOC feeds)
+fettle --all --dry-run   # show everything that would run; change nothing
+fettle --print-config    # show the effective configuration
+```
+
+Config lives at `~/.config/fettle/config.toml` (see `fettle.toml.example`);
+precedence is built-in defaults < config file < CLI flags.
 
 ## Design at a glance
 

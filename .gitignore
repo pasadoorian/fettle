@@ -15,6 +15,9 @@ venv-*/
 .coverage
 htmlcov/
 
+# Local-only design doc (kept out of the public repo)
+PLAN.md
+
 # Editor / OS
 .idea/
 .vscode/
