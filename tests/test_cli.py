@@ -1,6 +1,28 @@
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
+from fettle import cli
 from fettle.cli import main
+
+
+def test_reexec_carries_pythonpath_across_sudo():
+    """The sudo re-exec must pass PYTHONPATH via `env` so root finds the package
+    when running from a checkout (regression: 'fettle is a package and cannot be
+    directly executed' when sudo stripped PYTHONPATH)."""
+    captured = {}
+    with patch("os.execvp", side_effect=lambda f, a: captured.update(file=f, argv=a)):
+        with patch.object(sys, "argv", ["fettle", "-c"]):
+            cli._reexec_with_sudo()
+    argv = captured["argv"]
+    assert argv[:3] == ["sudo", "env", argv[2]]
+    assert argv[2].startswith("PYTHONPATH=")
+    # the package's parent dir (repo root) must be on the carried PYTHONPATH
+    repo_root = str(Path(cli.__file__).resolve().parent.parent)
+    assert repo_root in argv[2]
+    assert argv[3:] == [sys.executable, "-m", "fettle", "-c"]
 
 
 def test_print_config_exits_zero(capsys):

@@ -116,7 +116,15 @@ def _in_test() -> bool:
 
 
 def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
-    os.execvp("sudo", ["sudo", sys.executable, "-m", "fettle", *sys.argv[1:]])
+    # sudo's env_reset drops PYTHONPATH, so root's `python -m fettle` would fail to
+    # find the package when fettle runs from a checkout (via bin/fettle) rather than
+    # an installed location. Carry the package's parent dir across with `env` so the
+    # real package resolves — a regular package wins over any namespace-dir shadow.
+    pkg_parent = str(Path(__file__).resolve().parent.parent)
+    existing = os.environ.get("PYTHONPATH")
+    pythonpath = pkg_parent + (os.pathsep + existing if existing else "")
+    os.execvp("sudo", ["sudo", "env", f"PYTHONPATH={pythonpath}",
+                       sys.executable, "-m", "fettle", *sys.argv[1:]])
 
 
 def main(argv: list[str] | None = None) -> int:
