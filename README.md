@@ -35,4 +35,4 @@ plan, architecture, and milestones.
 
 ## License
 
-TBD (public repo — see PLAN.md open items).
+[MIT](LICENSE).
