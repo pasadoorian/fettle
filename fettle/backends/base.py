@@ -4,6 +4,7 @@ A backend advertises the subset of actions it implements via ``supported``; the
 CLI hides the rest (no faking an action a distro doesn't have). Action methods
 have a default that raises :class:`NotImplementedError`, so a backend only writes
 the methods it actually supports — capabilities are added incrementally.
+``firmware_updates`` is concrete here because fwupd works the same on every distro.
 """
 
 from __future__ import annotations
@@ -33,10 +34,12 @@ class Context:
     config: "Config"
     dry_run: bool = False
     assume_yes: bool = False
+    auto_rebuild: bool = False
     root: Path = Path("/")  # injected so filesystem reads are testable
     sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
     user_home: Path = Path.home()
 
+    # -- command execution (the dry-run gate lives here) ---------------------
     def execute(self, cmd, *, as_user: str | None = None, quiet: bool = False, msg: str = ""):
         """Run a command, honoring dry-run in one place.
 
@@ -55,6 +58,52 @@ class Context:
             return self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
         return command.run(argv, as_user=as_user)
 
+    # -- interaction (all honor dry-run / assume_yes) ------------------------
+    def confirm(self, question: str, *, default: bool = False) -> bool:
+        if self.dry_run:
+            return False
+        if self.assume_yes:
+            return True
+        try:
+            ans = input(f"  {question} [y/N] ").strip().lower()
+        except EOFError:
+            return default
+        return ans in ("y", "yes")
+
+    def ask(self, prompt: str) -> str:
+        if self.dry_run:
+            return ""
+        try:
+            return input(f"  {prompt}").strip()
+        except EOFError:
+            return ""
+
+    def select(self, items, *, prompt: str) -> list[str]:
+        """Per-item y/n/a(=all)/q(=quit) chooser. dry-run -> none; assume_yes -> all."""
+        items = list(items)
+        if self.dry_run or not items:
+            return []
+        if self.assume_yes:
+            return items
+        chosen: list[str] = []
+        take_all = False
+        for it in items:
+            if take_all:
+                chosen.append(it)
+                continue
+            try:
+                ans = input(f"  {prompt} '{it}'? [y/n/a=all/q=quit] ").strip().lower()
+            except EOFError:
+                break
+            if ans in ("y", "yes"):
+                chosen.append(it)
+            elif ans == "a":
+                take_all = True
+                chosen.append(it)
+            elif ans == "q":
+                break
+        return chosen
+
 
 @dataclass
 class Result:
@@ -63,7 +112,7 @@ class Result:
 
 
 class PackageBackend(abc.ABC):
-    """A distro's package/maintenance operations."""
+    """A distro's package/maintenance operations (one method per action)."""
 
     name: str = "base"
     supported: set[str] = set()
@@ -71,17 +120,8 @@ class PackageBackend(abc.ABC):
     def supports(self, action: str) -> bool:
         return action in self.supported
 
-    # -- action methods (overridden per backend in later milestones) ---------
+    # -- actions (overridden per backend; NotImplementedError = not yet built) --
     def clean_caches(self, ctx: Context) -> Result:
-        raise NotImplementedError
-
-    def list_foreign(self, ctx: Context) -> list[str]:
-        raise NotImplementedError
-
-    def list_orphans(self, ctx: Context) -> list[str]:
-        raise NotImplementedError
-
-    def remove_orphans(self, pkgs: list[str], ctx: Context) -> Result:
         raise NotImplementedError
 
     def update_system(self, ctx: Context) -> Result:
@@ -90,16 +130,16 @@ class PackageBackend(abc.ABC):
     def update_extras(self, ctx: Context) -> Result:
         raise NotImplementedError
 
-    def check_rebuilds(self, ctx: Context) -> list[str]:
+    def check_foreign_orphans(self, ctx: Context) -> Result:
         raise NotImplementedError
 
-    def rebuild(self, pkgs: list[str], ctx: Context) -> Result:
+    def check_rebuilds(self, ctx: Context) -> Result:
         raise NotImplementedError
 
-    def config_drift(self, ctx: Context) -> list[Path]:
+    def check_python_rebuilds(self, ctx: Context) -> Result:
         raise NotImplementedError
 
-    def firmware_updates(self, ctx: Context) -> Result:
+    def check_config_drift(self, ctx: Context) -> Result:
         raise NotImplementedError
 
     def manage_kernels(self, ctx: Context) -> Result:
@@ -107,3 +147,26 @@ class PackageBackend(abc.ABC):
 
     def verify_integrity(self, ctx: Context) -> Result:
         raise NotImplementedError
+
+    # -- firmware is distro-neutral: fwupd works everywhere ------------------
+    def firmware_updates(self, ctx: Context) -> Result:
+        from .. import command
+
+        out = ctx.output
+        if not command.which("fwupdmgr"):
+            out.note("fwupdmgr not installed; skipping firmware check.")
+            return Result()
+        ctx.execute(["fwupdmgr", "refresh"], quiet=True, msg="firmware metadata refreshed")
+        if ctx.dry_run:
+            out.note("would run: fwupdmgr get-updates")
+            return Result()
+        proc = command.run(["fwupdmgr", "get-updates"], capture=True)
+        text = (proc.stdout or "").strip()
+        if text and "no updates" not in text.lower() and "No updatable" not in text:
+            out.note("firmware updates available:")
+            print(text)
+            out.summary_add("firmware updates available")
+            out.next_step("apply firmware updates: fwupdmgr update")
+        else:
+            out.ok("no firmware updates available.")
+        return Result()

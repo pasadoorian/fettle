@@ -17,13 +17,14 @@ def test_implemented_action_shows_title_and_would_run(capsys):
 
 
 def test_unimplemented_action_notes_gracefully(capsys):
-    actions.run(["orphans"], ArchBackend(), _ctx())
+    # 'integrity' has no handler yet (lands in a later milestone).
+    actions.run(["integrity"], ArchBackend(), _ctx())
     out = capsys.readouterr().out
-    assert "Foreign & orphaned packages" in out
+    assert "Package integrity" in out
     assert "not yet implemented" in out
 
 
 def test_step_counter_reflects_action_count(capsys):
-    actions.run(["clean", "orphans"], ArchBackend(), _ctx())
+    actions.run(["clean", "integrity"], ArchBackend(), _ctx())
     out = capsys.readouterr().out
     assert "[1/2]" in out and "[2/2]" in out

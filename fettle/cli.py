@@ -47,6 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument(short, long, dest=f"do_{action}", action="store_true",
                        help=f"run the '{action}' action")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
+    p.add_argument("-R", "--auto-rebuild", action="store_true",
+                   help="offer to rebuild (with -r / -y) instead of only listing")
+    p.add_argument("--yes", action="store_true", help="assume yes to prompts (non-interactive)")
     p.add_argument("actions", nargs="*", help="action names (same as the flags above)")
     p.add_argument("--distro", metavar="NAME", help="override distro detection")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -158,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     ctx = Context(output=out, config=cfg, dry_run=args.dry_run,
+                  assume_yes=args.yes, auto_rebuild=args.auto_rebuild or cfg.auto_rebuild,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
     return 0

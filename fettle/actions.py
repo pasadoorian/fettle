@@ -38,6 +38,12 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
 HANDLERS = {
     "clean": lambda b, c: b.clean_caches(c),
     "update": _update,
+    "orphans": lambda b, c: b.check_foreign_orphans(c),
+    "rebuilds": lambda b, c: b.check_rebuilds(c),
+    "python_rebuild": lambda b, c: b.check_python_rebuilds(c),
+    "config_drift": lambda b, c: b.check_config_drift(c),
+    "firmware": lambda b, c: b.firmware_updates(c),
+    "kernels": lambda b, c: b.manage_kernels(c),
 }
 
 

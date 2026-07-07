@@ -1,7 +1,8 @@
 """Arch / Manjaro backend (pacman + yay/pamac + AUR).
 
-M2 implements the update path (``clean`` + ``update``) at parity with the bash
-``update.sh``; the remaining actions land in later milestones.
+M2 implemented the update path; M3 adds the maintenance checks (orphans, rebuilds,
+python-rebuild, config drift, kernels). ``firmware`` is inherited from the base
+class (fwupd is distro-neutral).
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import command
+from ..util import chown_to_user, matches_any
 from .base import Context, PackageBackend, Result
 
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
@@ -23,7 +25,7 @@ class ArchBackend(PackageBackend):
         "integrity",
     }
 
-    # -- configuration -------------------------------------------------------
+    # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str]:
         conf = {}
         if isinstance(ctx.config.updaters, dict):
@@ -38,14 +40,30 @@ class ArchBackend(PackageBackend):
             aur = "yay"
         return system, aur
 
-    # -- actions -------------------------------------------------------------
+    @staticmethod
+    def _query(cmd) -> str:
+        """Run a read-only query and return stdout (runs even under dry-run)."""
+        return command.run(cmd, capture=True).stdout
+
+    def _rebuild(self, pkgs: list[str], ctx: Context) -> None:
+        """Rebuild via the configured AUR backend, so hooks/review still fire."""
+        _, aur = self._updaters(ctx)
+        if aur == "yay":
+            ctx.execute(["yay", "-S", "--rebuild", "--answerdiff", "None", "--answeredit",
+                         "None", "--diffmenu=true", "--editmenu=true", "--", *pkgs],
+                        as_user=ctx.sudo_user)
+        elif aur == "pamac":
+            ctx.execute(["pamac", "build", *pkgs], as_user=ctx.sudo_user)
+        else:
+            ctx.output.err("cannot rebuild: aur_updater is 'none'. Set it to yay or pamac.")
+
+    # -- update path (M2) ----------------------------------------------------
     def clean_caches(self, ctx: Context) -> Result:
         out = ctx.output
         ctx.execute(["rm", "-f", "/var/lib/pacman/db.lck"],
                     quiet=True, msg="removed stale pacman db lock")
         ctx.execute(["pacman", "-Scc", "--noconfirm"],
                     quiet=True, msg="pacman cache cleared")
-        # pamac's AUR DB is per-user; run it as the user to avoid a spurious warning.
         if ctx.sudo_user and command.which("pamac"):
             ctx.execute(["pamac", "clean", "--no-confirm"], as_user=ctx.sudo_user,
                         quiet=True, msg="pamac cache cleared")
@@ -65,8 +83,6 @@ class ArchBackend(PackageBackend):
         out = ctx.output
         system, aur = self._updaters(ctx)
         ctx.execute(["pacman-mirrors", "-f"], quiet=True, msg="mirrors refreshed")
-
-        # pamac is all-in-one: as the AUR updater it drives the repos too.
         if aur == "pamac":
             if system != "pamac":
                 out.note("AUR updater is pamac, which manages repos too — using pamac for both.")
@@ -75,7 +91,6 @@ class ArchBackend(PackageBackend):
                         as_user=ctx.sudo_user)
             out.summary_add("packages updated (pamac: repos + AUR)")
             return Result()
-
         if system == "pacman":
             out.note("updating official repos (pacman)...")
             ctx.execute(["pacman", "-Syuu", "--noconfirm"])
@@ -94,7 +109,6 @@ class ArchBackend(PackageBackend):
             out.note("skipping AUR (aur_updater: none).")
             out.summary_add(f"packages updated (repos only, via {system})")
             return Result()
-        # aur == "yay"
         if not command.which("yay"):
             out.err("yay not found (aur_updater=yay). Install it, or set aur_updater to pamac/none.")
             return Result(ok=False)
@@ -106,4 +120,140 @@ class ArchBackend(PackageBackend):
         )
         out.summary_add(f"packages updated (repos: {system}, AUR: yay)")
         out.next_step("check AUR packages before the next build: fettle -A -S")
+        return Result()
+
+    # -- maintenance checks (M3) ---------------------------------------------
+    def check_foreign_orphans(self, ctx: Context) -> Result:
+        out, cfg = ctx.output, ctx.config
+        foreign = self._query(["pacman", "-Qmq"]).split()
+        kept = [f for f in foreign if not matches_any(f, cfg.exclude_foreign)]
+        alien = ctx.user_home / "alien-pkgs.txt"
+        if not ctx.dry_run:
+            try:
+                alien.write_text("".join(f"{f}\n" for f in kept))
+                chown_to_user(alien, ctx.sudo_user)
+            except OSError as exc:
+                out.warn(f"could not write {alien}: {exc}")
+        out.note(f"foreign (AUR/manual) packages saved to {alien} for review (vet with -A/-S)")
+        suppressed = len(foreign) - len(kept)
+        if suppressed:
+            out.note(f"{suppressed} foreign package(s) suppressed by exclude_foreign")
+
+        orphans = self._query(["pacman", "-Qtdq"]).split()
+        if not orphans:
+            out.ok("no orphaned packages found.")
+            return Result()
+        protected = [o for o in orphans if matches_any(o, cfg.keep_orphans)]
+        removable = [o for o in orphans if o not in protected]
+        if protected:
+            out.note(f"protected orphans (keep_orphans): {' '.join(protected)}")
+        if not removable:
+            out.ok("no removable orphans after keep_orphans.")
+            return Result()
+        out.note("orphaned packages eligible for removal:")
+        for o in removable:
+            print(f"    {o}")
+        to_remove = ctx.select(removable, prompt="remove orphan")
+        if to_remove:
+            out.note(f"removing: {' '.join(to_remove)}")
+            ctx.execute(["pacman", "-Rsn", "--noconfirm", *to_remove])
+            out.summary_add(f"{len(to_remove)} orphan(s) removed")
+        else:
+            out.ok("no orphans removed.")
+        return Result()
+
+    def check_rebuilds(self, ctx: Context) -> Result:
+        out = ctx.output
+        if not command.which("checkrebuild"):
+            out.note("checkrebuild not found (install rebuild-detector); skipping.")
+            return Result()
+        lines = [ln for ln in self._query(["checkrebuild"]).splitlines() if ln.strip()]
+        if not lines:
+            out.ok("no packages need rebuilding.")
+            return Result()
+        out.note("packages that may require a rebuild:")
+        for ln in lines:
+            print(f"    {ln}")
+        pkgs = [parts[1] for ln in lines if len(parts := ln.split()) >= 2]
+        if ctx.auto_rebuild and pkgs:
+            if ctx.confirm(f"rebuild {len(pkgs)} package(s)?"):
+                self._rebuild(pkgs, ctx)
+                out.summary_add("rebuilt packages with outdated deps")
+        else:
+            out.summary_add(f"{len(lines)} package(s) may need rebuilding")
+            out.next_step("rebuild them: fettle -r -R")
+        return Result()
+
+    def check_python_rebuilds(self, ctx: Context) -> Result:
+        out = ctx.output
+        current = self._query(
+            ["python3", "-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"]
+        ).strip() or "unknown"
+        out.note(f"current Python version: {current}")
+        libdir = ctx.root / "usr/lib"
+        old_dirs = sorted(
+            p for p in libdir.glob("python3.*")
+            if p.is_dir() and p.name != f"python{current}"
+        )
+        if not old_dirs:
+            out.ok("no old Python directories found; nothing to rebuild.")
+            return Result()
+        out.note("found old Python directories:")
+        for d in old_dirs:
+            print(f"    {d}")
+        pkgs: set[str] = set()
+        for d in old_dirs:
+            pkgs.update(x for x in self._query(["pacman", "-Qoq", str(d)]).split() if x)
+        ordered = sorted(pkgs)
+        if not ordered:
+            out.ok("no packages need rebuilding for the new Python version.")
+            return Result()
+        out.note("packages owning files under an old Python dir:")
+        for pk in ordered:
+            print(f"    {pk}")
+        if ctx.auto_rebuild:
+            if ctx.confirm(f"rebuild {len(ordered)} package(s) for Python {current}?"):
+                self._rebuild(ordered, ctx)
+                out.summary_add(f"rebuilt packages for Python {current}")
+        else:
+            out.next_step(f"rebuild for Python {current}: fettle -y -R")
+        return Result()
+
+    def check_config_drift(self, ctx: Context) -> Result:
+        out = ctx.output
+        if not command.which("pacdiff"):
+            out.note("pacdiff not found (install pacman-contrib); skipping.")
+            return Result()
+        files = [ln for ln in self._query(["pacdiff", "-o"]).splitlines() if ln.strip()]
+        if not files:
+            out.ok("no .pacnew files to merge.")
+            return Result()
+        out.note("pacnew files needing attention:")
+        for f in files:
+            print(f"    {f}")
+        out.summary_add(f"{len(files)} .pacnew file(s) to merge")
+        out.next_step("merge them: pacdiff")
+        return Result()
+
+    def manage_kernels(self, ctx: Context) -> Result:
+        out = ctx.output
+        if not command.which("mhwd-kernel"):
+            out.note("mhwd-kernel not found (Manjaro-only); skipping kernel management.")
+            return Result()
+        out.note("installed kernels:")
+        print(self._query(["mhwd-kernel", "-li"]).rstrip())
+        if ctx.dry_run:
+            out.note("would prompt to install/remove kernels via mhwd-kernel")
+            return Result()
+        if ctx.confirm("install a new kernel?"):
+            ver = ctx.ask("kernel version (e.g. 612 for linux612): ")
+            if ver:
+                ctx.execute(["mhwd-kernel", "-i", f"linux{ver}"])
+        if ctx.confirm("remove an old kernel?"):
+            ver = ctx.ask("kernel version to remove (e.g. 66 for linux66): ")
+            running = self._query(["uname", "-r"]).strip()
+            if ver and f"linux{ver}" and ver in running.replace(".", ""):
+                out.warn(f"refusing to remove the running kernel (linux{ver}); reboot into another first.")
+            elif ver:
+                ctx.execute(["mhwd-kernel", "-r", f"linux{ver}"])
         return Result()
