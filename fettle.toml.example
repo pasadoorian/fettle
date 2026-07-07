@@ -5,7 +5,7 @@
 # fettle refuses to read this file if it is world-writable or not owned by you/root.
 
 # Actions to run when you invoke `fettle` with no action flags / words.
-#default_actions = ["clean", "orphans", "update", "rebuilds", "config_drift", "firmware"]
+#default_actions = ["clean", "orphans", "update", "rebuilds", "python_rebuild", "config_drift", "firmware"]
 
 # Offer to rebuild packages with outdated deps (instead of only listing them).
 #auto_rebuild = false
@@ -15,6 +15,12 @@
 
 # Orphaned packages that should never be offered for removal.
 #keep_orphans = ["downgrade", "nvchecker"]
+
+# AUR supply-chain settings.
+#aur_max_age_days = 365   # a PKGBUILD older than this is flagged stale (pkg-audit)
+#aur_recent_days = 21     # -A audit flags packages changed within this window RECENTLY-CHANGED
+#aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
+#aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
 
 # Per-distro tool selection (schema finalized as each backend lands). Example:
 #[updaters.arch]

@@ -22,7 +22,7 @@ class ArchBackend(PackageBackend):
     name = "arch"
     supported = {
         "clean", "orphans", "update", "rebuilds", "python_rebuild",
-        "config_drift", "firmware", "kernels", "aur_audit", "aur_scan",
+        "config_drift", "firmware", "kernels", "aur_audit", "aur_ioc_scan",
         "pkg_audit", "integrity",
     }
 

@@ -31,7 +31,7 @@ def _run(tmp_path, *, foreign, results, ioc=None, cfg=None):
     ioc = ioc or FakeIOC()
     with patch("fettle.command.run") as run, \
          patch.object(aur_source.aur_meta, "query_info", return_value=results), \
-         patch.object(aur_source.aur_ioc, "IOC", return_value=ioc):
+         patch("fettle.aur.common.ioc_feed", return_value=ioc):
         run.return_value.stdout = "\n".join(foreign)
         return AURSource().findings(_ctx(tmp_path, cfg))
 

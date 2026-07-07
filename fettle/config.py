@@ -25,8 +25,9 @@ class Config:
     # Per-distro tool selection, e.g. {"arch": {"aur_updater": "yay"}}. Kept as a
     # passthrough for now; the exact per-distro schema is finalized with each backend.
     updaters: dict[str, dict] = field(default_factory=dict)
-    # AUR supply-chain (pkg-audit) settings.
-    aur_max_age_days: int = 365
+    # AUR supply-chain settings.
+    aur_max_age_days: int = 365  # stale threshold (pkg-audit)
+    aur_recent_days: int = 21    # RECENTLY-CHANGED threshold in the -A audit table
     aur_ioc_campaigns: list[str] = field(
         default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
     )

@@ -21,7 +21,7 @@ if TYPE_CHECKING:  # imported only for type hints — keeps runtime import-free
 # Every action name fettle knows about (union across all backends).
 ALL_ACTIONS = (
     "clean", "orphans", "update", "rebuilds", "python_rebuild",
-    "config_drift", "firmware", "kernels", "aur_audit", "aur_scan",
+    "config_drift", "firmware", "kernels", "aur_audit", "aur_ioc_scan",
     "source_audit", "integrity",
 )
 

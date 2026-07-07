@@ -34,12 +34,12 @@ FLAG_ACTIONS = [
     ("-f", "--firmware", "firmware"),
     ("-k", "--kernel", "kernels"),
     ("-A", "--aur-audit", "aur_audit"),
-    ("-S", "--aur-scan", "aur_scan"),
+    ("-S", "--aur-ioc-scan", "aur_ioc_scan"),
 ]
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrity", "source_audit"}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
-READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_scan", "config_drift"}
+READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -66,10 +66,18 @@ cp ~/src/fettle/contrib/yay-init.lua ~/.config/yay/init.lua
 fettle                   # run the default maintenance set
 fettle -c -u             # clean + update (short flags)
 fettle update            # same as -u (subcommand form)
-fettle -A                # package supply-chain audit (AUR RPC + IOC feeds)
+fettle -A                # AUR audit: per-package health table -> ~/aur-audit.txt
+fettle aur-ioc-scan      # -S: scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt
 fettle --all --dry-run   # show everything that would run; change nothing
 fettle --print-config    # show the effective configuration
 ```
+
+The two AUR supply-chain commands are distinct: **`-A` / `aur-audit`** is a
+provenance/health census (age, votes, out-of-date, orphan, recently-changed,
+maintainer-change), while **`-S` / `aur-ioc-scan`** checks installed packages
+against malware indicators (known-bad package names, malicious maintainer
+accounts, malicious JS-dependency traces). `pkg-audit` is the cross-distro
+normalized-findings audit that the Debian/Flatpak/Snap backends will feed into.
 
 Config lives at `~/.config/fettle/config.toml` (see `fettle.toml.example`);
 precedence is built-in defaults < config file < CLI flags.

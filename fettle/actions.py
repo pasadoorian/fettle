@@ -22,8 +22,8 @@ TITLES = {
     "config_drift": "Config file drift",
     "firmware": "Firmware",
     "kernels": "Kernel management",
-    "aur_audit": "Package supply-chain audit",
-    "aur_scan": "Package supply-chain scan",
+    "aur_audit": "AUR audit",
+    "aur_ioc_scan": "AUR IoC scan",
     "pkg_audit": "Package supply-chain audit",
     "integrity": "Package integrity",
     "source_audit": "Package supply-chain audit",
@@ -99,9 +99,21 @@ HANDLERS = {
     "firmware": lambda b, c: b.firmware_updates(c),
     "kernels": lambda b, c: b.manage_kernels(c),
     "pkg_audit": pkg_audit,
-    "aur_audit": pkg_audit,   # -A is an Arch alias into pkg-audit
-    "aur_scan": pkg_audit,    # -S is an Arch alias into pkg-audit
+    # -A and -S are distinct AUR-specific commands (not pkg-audit aliases):
+    # -A is the health/metrics table; -S is the installed-package IoC scan.
+    "aur_audit": lambda b, c: _aur_audit(c),
+    "aur_ioc_scan": lambda b, c: _aur_ioc_scan(c),
 }
+
+
+def _aur_audit(ctx: "Context") -> None:
+    from .aur import audit
+    audit.run(ctx)
+
+
+def _aur_ioc_scan(ctx: "Context") -> None:
+    from .aur import ioc_scan
+    ioc_scan.run(ctx)
 
 
 def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
