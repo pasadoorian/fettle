@@ -5,8 +5,13 @@
 A cross-distribution Linux system-maintenance and supply-chain tool: update,
 clean, prune orphans, check for rebuilds/restarts, review config-file drift,
 apply firmware updates, manage kernels, audit third-party package sources, and
-run a full firmware/boot-chain security scan (`secure-check`) — with the same
+run a full firmware/boot-chain security scan (`sys-audit`) — with the same
 command surface on every supported distro.
+
+Two supply-chain feature families, kept distinct:
+**Package Supply Chain** (`pkg-audit`) — where software came from and whether it's
+tampered (packages, repos, publishers, integrity) across AUR/APT/Flatpak/Snap; and
+**System Supply Chain** (`sys-audit`) — the machine's firmware/boot/hardware posture.
 
 `fettle` is the Python successor to the Arch/Manjaro `update.sh` (from
 [`linux_hacks`](https://github.com/pasadoorian/linux_hacks)), rebuilt around a
