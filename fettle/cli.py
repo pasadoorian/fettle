@@ -120,6 +120,15 @@ def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    # ``aur-precheck`` is a standalone, unprivileged helper (called per-package by
+    # the yay install hook), not one of the maintenance actions — route it before
+    # the flag parser so it bypasses config load, root elevation, and section UI.
+    if argv and argv[0] == "aur-precheck":
+        from .aur import precheck
+        return precheck.main(argv[1:])
+
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
                  quiet=args.quiet, verbose=args.verbose)

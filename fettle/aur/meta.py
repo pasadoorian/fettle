@@ -14,8 +14,13 @@ import urllib.request
 RPC_URL = "https://aur.archlinux.org/rpc/v5/info"
 
 
-def query_info(packages, *, timeout: float = 30.0) -> list[dict]:
-    """Return the AUR RPC ``results`` list for ``packages`` (``[]`` on failure)."""
+def fetch_info(packages, *, timeout: float = 30.0) -> list[dict] | None:
+    """Return the AUR RPC ``results`` list, or ``None`` if the RPC was unreachable.
+
+    ``None`` means a network/transport/parse failure; a genuine "no such package"
+    is a *reachable* empty list. Callers that must tell offline apart from
+    not-found (e.g. the install-time precheck) use this directly.
+    """
     pkgs = [p for p in packages if p]
     if not pkgs:
         return []
@@ -25,6 +30,11 @@ def query_info(packages, *, timeout: float = 30.0) -> list[dict]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (fixed https URL)
             payload = json.load(resp)
     except (OSError, ValueError):
-        return []
+        return None
     results = payload.get("results")
-    return results if isinstance(results, list) else []
+    return results if isinstance(results, list) else None
+
+
+def query_info(packages, *, timeout: float = 30.0) -> list[dict]:
+    """Return the AUR RPC ``results`` list for ``packages`` (``[]`` on failure)."""
+    return fetch_info(packages, timeout=timeout) or []
