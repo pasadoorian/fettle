@@ -120,6 +120,10 @@ class PackageBackend(abc.ABC):
     def supports(self, action: str) -> bool:
         return action in self.supported
 
+    def supply_chain_sources(self):
+        """Package Supply Chain providers for this distro (empty by default)."""
+        return []
+
     # -- actions (overridden per backend; NotImplementedError = not yet built) --
     def clean_caches(self, ctx: Context) -> Result:
         raise NotImplementedError

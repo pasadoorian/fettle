@@ -36,7 +36,10 @@ FLAG_ACTIONS = [
     ("-A", "--aur-audit", "aur_audit"),
     ("-S", "--aur-scan", "aur_scan"),
 ]
-ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"integrity", "source_audit"}
+ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrity", "source_audit"}
+
+# Read-only actions never mutate the system, so they don't need root elevation.
+READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_scan", "config_drift"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -148,8 +151,9 @@ def main(argv: list[str] | None = None) -> int:
         out.warn("nothing to do (no supported actions selected).")
         return 0
 
-    # Elevate only when we will actually change the system.
-    if not args.dry_run and not _is_root() and not _in_test():
+    # Elevate only when a selected action will actually change the system.
+    needs_root = any(a not in READ_ONLY_ACTIONS for a in runnable)
+    if needs_root and not args.dry_run and not _is_root() and not _in_test():
         _reexec_with_sudo()
 
     sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")

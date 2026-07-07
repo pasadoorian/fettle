@@ -22,8 +22,12 @@ class ArchBackend(PackageBackend):
     supported = {
         "clean", "orphans", "update", "rebuilds", "python_rebuild",
         "config_drift", "firmware", "kernels", "aur_audit", "aur_scan",
-        "integrity",
+        "pkg_audit", "integrity",
     }
+
+    def supply_chain_sources(self):
+        from ..supplychain.aur_source import AURSource
+        return [AURSource()]
 
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str]:

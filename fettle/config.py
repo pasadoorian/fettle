@@ -24,6 +24,12 @@ class Config:
     # Per-distro tool selection, e.g. {"arch": {"aur_updater": "yay"}}. Kept as a
     # passthrough for now; the exact per-distro schema is finalized with each backend.
     updaters: dict[str, dict] = field(default_factory=dict)
+    # AUR supply-chain (pkg-audit) settings.
+    aur_max_age_days: int = 365
+    aur_ioc_campaigns: list[str] = field(
+        default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
+    )
+    aur_ioc_cache_ttl: int = 21600
 
 
 def _allowed_uids() -> set[int]:
