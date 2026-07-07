@@ -1,0 +1,94 @@
+"""Terminal output helpers — a Python port of the bash ``lib/output.sh``.
+
+Color turns on only for an interactive TTY when the user has not opted out
+(``NO_COLOR`` set, ``TERM=dumb``, or ``color=False``). Diagnostics (warn / err /
+alert) always go to stderr. Instantiate one :class:`Output` and pass it around
+via the backend ``Context`` — no module-level global state.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from dataclasses import dataclass, field
+
+
+def _want_color(stream, override: bool | None) -> bool:
+    if override is not None:
+        return override
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    return bool(getattr(stream, "isatty", lambda: False)())
+
+
+@dataclass
+class Output:
+    """Sectioned, optionally-colored output with a step counter and end summary."""
+
+    color: bool | None = None
+    quiet: bool = False
+    verbose: bool = False
+    step_total: int = 0
+    _step_cur: int = field(default=0, init=False)
+    _summary: list[str] = field(default_factory=list, init=False)
+    _next_steps: list[str] = field(default_factory=list, init=False)
+
+    def __post_init__(self) -> None:
+        c = _want_color(sys.stdout, self.color)
+        self.B = "\033[1m" if c else ""
+        self.DIM = "\033[2m" if c else ""
+        self.GRN = "\033[32m" if c else ""
+        self.YLW = "\033[33m" if c else ""
+        self.RED = "\033[31m" if c else ""
+        self.CYN = "\033[36m" if c else ""
+        self.NC = "\033[0m" if c else ""
+
+    # -- sections & status ---------------------------------------------------
+    def section(self, title: str) -> None:
+        if self.quiet:
+            return
+        if self.step_total > 0:
+            self._step_cur += 1
+            print(f"\n{self.B}{self.CYN}▸ [{self._step_cur}/{self.step_total}] {title}{self.NC}")
+        else:
+            print(f"\n{self.B}{self.CYN}▸ {title}{self.NC}")
+
+    def ok(self, msg: str) -> None:
+        if not self.quiet:
+            print(f"  {self.GRN}✓{self.NC} {msg}")
+
+    def note(self, msg: str) -> None:
+        if not self.quiet:
+            print(f"  {self.DIM}{msg}{self.NC}")
+
+    def warn(self, msg: str) -> None:
+        print(f"  {self.YLW}!{self.NC} {msg}", file=sys.stderr)
+
+    def err(self, msg: str) -> None:
+        print(f"  {self.RED}✗{self.NC} {msg}", file=sys.stderr)
+
+    def alert(self, msg: str) -> None:
+        print(f"{self.B}{self.RED}  !! {msg}{self.NC}", file=sys.stderr)
+
+    # -- end-of-run summary --------------------------------------------------
+    def summary_add(self, line: str) -> None:
+        self._summary.append(line)
+
+    def next_step(self, line: str) -> None:
+        self._next_steps.append(line)
+
+    def print_summary(self) -> None:
+        if self.quiet:
+            return
+        print(f"\n{self.B}{self.CYN}▸ Summary{self.NC}")
+        if self._summary:
+            for line in self._summary:
+                print(f"  {self.GRN}✓{self.NC} {line}")
+        else:
+            print(f"  {self.DIM}nothing to report{self.NC}")
+        if self._next_steps:
+            print()
+            for line in self._next_steps:
+                print(f"  {self.CYN}→{self.NC} {line}")

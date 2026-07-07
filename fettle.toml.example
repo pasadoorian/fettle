@@ -1,0 +1,26 @@
+# fettle configuration (TOML).  Live location: ~/.config/fettle/config.toml
+#
+# Precedence (low to high):  built-in defaults  <  this file  <  command-line flags
+# Every setting is optional; commented values are the built-in defaults.
+# fettle refuses to read this file if it is world-writable or not owned by you/root.
+
+# Actions to run when you invoke `fettle` with no action flags / words.
+#default_actions = ["clean", "orphans", "update", "rebuilds", "config_drift", "firmware"]
+
+# Offer to rebuild packages with outdated deps (instead of only listing them).
+#auto_rebuild = false
+
+# Foreign / AUR packages to suppress from reports (exact names or shell globs).
+#exclude_foreign = ["brave-bin", "google-chrome"]
+
+# Orphaned packages that should never be offered for removal.
+#keep_orphans = ["downgrade", "nvchecker"]
+
+# Per-distro tool selection (schema finalized as each backend lands). Example:
+#[updaters.arch]
+#system_updater = "pacman"   # pacman | pamac
+#aur_updater = "yay"         # yay | pamac | none
+#[updaters.debian]
+#system_updater = "apt"      # apt | nala | none
+#flatpak_updater = "flatpak" # flatpak | none
+#snap_updater = "snap"       # snap | none

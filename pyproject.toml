@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fettle"
+version = "0.0.1"
+description = "Cross-distribution Linux system-maintenance and supply-chain tool"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Paul Asadoorian", email = "paul@rihackers.com" }]
+dependencies = []  # runtime: pure standard library, on purpose
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+fettle = "fettle.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fettle*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
