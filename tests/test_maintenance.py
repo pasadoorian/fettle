@@ -30,7 +30,7 @@ def _fake(responses, calls):
 def test_orphans_writes_alien_file_and_removes(tmp_path):
     calls = []
     responses = {
-        ("pacman", "-Qmq"): "brave-bin\nmy-aur-pkg\n",
+        ("pacman", "-Qm"): "brave-bin 1.0-1\nmy-aur-pkg 2.3-4\n",
         ("pacman", "-Qtdq"): "orphan-a\norphan-b\n",
     }
     cfg = Config(exclude_foreign=["brave-bin"])
@@ -39,7 +39,8 @@ def test_orphans_writes_alien_file_and_removes(tmp_path):
     with patch("fettle.command.run", side_effect=_fake(responses, calls)):
         ArchBackend().check_foreign_orphans(ctx)
     alien = (tmp_path / "alien-pkgs.txt").read_text()
-    assert "my-aur-pkg" in alien and "brave-bin" not in alien  # excluded
+    assert "my-aur-pkg 2.3-4" in alien  # name AND version preserved (parity with -Qm)
+    assert "brave-bin" not in alien     # excluded by name
     # assume_yes -> both orphans removed in one pacman -Rsn
     assert any(c[:3] == ["pacman", "-Rsn", "--noconfirm"] and "orphan-a" in c
                for c, _ in calls)
@@ -47,7 +48,7 @@ def test_orphans_writes_alien_file_and_removes(tmp_path):
 
 def test_orphans_keep_list_protects(tmp_path):
     calls = []
-    responses = {("pacman", "-Qmq"): "", ("pacman", "-Qtdq"): "downgrade\n"}
+    responses = {("pacman", "-Qm"): "", ("pacman", "-Qtdq"): "downgrade\n"}
     cfg = Config(keep_orphans=["downgrade"])
     ctx = Context(output=Output(color=False), config=cfg, sudo_user="paul",
                   user_home=tmp_path, assume_yes=True)
@@ -129,11 +130,22 @@ def test_firmware_absent_tool_skips(capsys):
 
 # -- kernels -----------------------------------------------------------------
 def test_kernels_dry_run_lists_only(capsys):
-    responses = {("mhwd-kernel", "-li"): "Currently running: linux66\n"}
+    responses = {
+        ("mhwd-kernel", "-li"): "Currently running: linux66\n",
+        ("mhwd-kernel", "-l"): "linux612\nlinux61\n",
+    }
     calls = []
     with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
          patch("fettle.command.which", return_value=True):
         ArchBackend().manage_kernels(_ctx(dry_run=True))
     out = capsys.readouterr().out
     assert "linux66" in out
+    assert "linux612" in out  # available-kernel listing restored (parity with -l)
     assert not any(c[:2] == ["mhwd-kernel", "-i"] for c, _ in calls)
+
+
+def test_running_kernel_digits_exact_match():
+    """The running-kernel guard reduces uname -r to major.minor digits, not a substring."""
+    responses = {("uname", "-r"): "6.12.1-2-MANJARO\n"}
+    with patch("fettle.command.run", side_effect=_fake(responses, [])):
+        assert ArchBackend()._running_kernel_digits() == "612"

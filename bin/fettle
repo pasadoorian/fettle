@@ -1,0 +1,12 @@
+#!/bin/sh
+# fettle launcher — runs the repo in place, no install required.
+#
+# fettle is pure-stdlib, so it needs no pip install: this wrapper just puts the
+# repo root on PYTHONPATH and invokes the package. Symlink it onto your PATH,
+# e.g.  ln -s "$PWD/bin/fettle" ~/.local/bin/fettle
+# or drop it in for the old updater:  ln -sf "$PWD/bin/fettle" ~/update.sh
+#
+# Honors $FETTLE_PYTHON to pick a specific interpreter (default: python3).
+here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+exec "${FETTLE_PYTHON:-python3}" -m fettle "$@"

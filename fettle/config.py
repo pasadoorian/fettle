@@ -12,7 +12,8 @@ import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuilds", "config_drift", "firmware"]
+DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuilds", "python_rebuild",
+                   "config_drift", "firmware"]
 
 
 @dataclass

@@ -17,6 +17,11 @@ DEFAULT_BASE = "https://raw.githubusercontent.com/lenucksi/aur-malware-check/HEA
 DEFAULT_CAMPAIGNS = ("aur-infected", "chaos-rat", "russian-spam")
 DEFAULT_TTL = 21600  # 6 hours
 
+# Known malicious JS package names, used as an offline seed when the fetched npm
+# IOC list is empty (ported from update.sh's AUR_SEED_BAD_NPM) — so a JS-cache
+# scan is never silently "all clear" just because the feed was unreachable.
+DEFAULT_NPM_SEED = ("atomic-lockfile", "js-digest", "lockfile-js", "nextfile-js")
+
 
 def _fetch(url: str, timeout: float = 20.0) -> str:
     try:
@@ -80,4 +85,4 @@ class IOC:
         out: set[str] = set()
         for c in self.campaigns:
             out |= _nonempty(self._cached(f"{self.base}/campaigns/{c}/npm-packages.txt"))
-        return out
+        return out or set(DEFAULT_NPM_SEED)  # never go blind: fall back to the seed

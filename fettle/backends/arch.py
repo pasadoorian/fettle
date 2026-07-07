@@ -7,6 +7,7 @@ class (fwupd is distro-neutral).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .. import command
@@ -129,12 +130,14 @@ class ArchBackend(PackageBackend):
     # -- maintenance checks (M3) ---------------------------------------------
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
-        foreign = self._query(["pacman", "-Qmq"]).split()
-        kept = [f for f in foreign if not matches_any(f, cfg.exclude_foreign)]
+        # `-Qm` (name + version) mirrors update.sh's alien-pkgs.txt content; filter
+        # on the package name (first field) but keep the version column in the file.
+        foreign = [ln for ln in self._query(["pacman", "-Qm"]).splitlines() if ln.strip()]
+        kept = [ln for ln in foreign if not matches_any(ln.split()[0], cfg.exclude_foreign)]
         alien = ctx.user_home / "alien-pkgs.txt"
         if not ctx.dry_run:
             try:
-                alien.write_text("".join(f"{f}\n" for f in kept))
+                alien.write_text("".join(f"{ln}\n" for ln in kept))
                 chown_to_user(alien, ctx.sudo_user)
             except OSError as exc:
                 out.warn(f"could not write {alien}: {exc}")
@@ -246,6 +249,8 @@ class ArchBackend(PackageBackend):
             return Result()
         out.note("installed kernels:")
         print(self._query(["mhwd-kernel", "-li"]).rstrip())
+        out.note("available kernels:")
+        print(self._query(["mhwd-kernel", "-l"]).rstrip())
         if ctx.dry_run:
             out.note("would prompt to install/remove kernels via mhwd-kernel")
             return Result()
@@ -255,9 +260,17 @@ class ArchBackend(PackageBackend):
                 ctx.execute(["mhwd-kernel", "-i", f"linux{ver}"])
         if ctx.confirm("remove an old kernel?"):
             ver = ctx.ask("kernel version to remove (e.g. 66 for linux66): ")
-            running = self._query(["uname", "-r"]).strip()
-            if ver and f"linux{ver}" and ver in running.replace(".", ""):
+            if ver and ver == self._running_kernel_digits():
                 out.warn(f"refusing to remove the running kernel (linux{ver}); reboot into another first.")
             elif ver:
                 ctx.execute(["mhwd-kernel", "-r", f"linux{ver}"])
         return Result()
+
+    def _running_kernel_digits(self) -> str:
+        """The running kernel's major.minor with the dot dropped (6.12.x -> '612').
+
+        Mirrors update.sh: ``uname -r | sed 's/\\([0-9]*\\.[0-9]*\\).*/\\1/' | tr -d '.'``,
+        so a remove-version like ``612`` is compared exactly (not as a substring).
+        """
+        m = re.match(r"(\d+)\.(\d+)", self._query(["uname", "-r"]).strip())
+        return (m.group(1) + m.group(2)) if m else ""

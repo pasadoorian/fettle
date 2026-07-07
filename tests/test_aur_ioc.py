@@ -2,7 +2,7 @@ import json
 import os
 from unittest.mock import patch
 
-from fettle.aur.ioc import IOC
+from fettle.aur.ioc import DEFAULT_NPM_SEED, IOC
 
 
 def _ioc(tmp_path, **kw):
@@ -45,6 +45,12 @@ def test_stale_cache_refetches(tmp_path):
         _backdate(tmp_path / "ioc", 10_000)  # older than the 100s TTL
         _ioc(tmp_path).bad_npm()
     assert m.call_count > n1
+
+
+def test_bad_npm_seeds_when_feed_empty(tmp_path):
+    # Offline with no npm IOC list -> fall back to the seed, never silently empty.
+    with patch("fettle.aur.ioc._fetch", return_value=""):
+        assert _ioc(tmp_path).bad_npm() == set(DEFAULT_NPM_SEED)
 
 
 def test_failed_fetch_falls_back_to_stale(tmp_path):
