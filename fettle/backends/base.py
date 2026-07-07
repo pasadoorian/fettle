@@ -34,6 +34,26 @@ class Context:
     dry_run: bool = False
     assume_yes: bool = False
     root: Path = Path("/")  # injected so filesystem reads are testable
+    sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
+    user_home: Path = Path.home()
+
+    def execute(self, cmd, *, as_user: str | None = None, quiet: bool = False, msg: str = ""):
+        """Run a command, honoring dry-run in one place.
+
+        - dry-run: print what would run and execute nothing.
+        - quiet: summarize via :meth:`Output.run_quiet` (one-line status).
+        - otherwise: stream the command (for interactive upgrades).
+        """
+        from .. import command
+
+        argv = [str(c) for c in cmd]
+        if self.dry_run:
+            shown = " ".join(argv)
+            self.output.note(f"would run: {'(as ' + as_user + ') ' if as_user else ''}{shown}")
+            return command.Proc(0)
+        if quiet:
+            return self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
+        return command.run(argv, as_user=as_user)
 
 
 @dataclass

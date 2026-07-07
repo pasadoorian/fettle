@@ -14,8 +14,9 @@ def test_dry_run_lists_actions_without_elevating(capsys):
     rc = main(["--distro", "arch", "--dry-run", "-u", "-c"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "update" in out
-    assert "clean" in out
+    assert "Cleaning caches" in out
+    assert "Updating packages" in out
+    assert "would run:" in out  # dry-run shows commands, executes nothing
 
 
 def test_unsupported_action_is_skipped(capsys):
@@ -29,7 +30,7 @@ def test_bare_action_words_work(capsys):
     rc = main(["--distro", "arch", "--dry-run", "clean", "update"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "clean" in out and "update" in out
+    assert "Cleaning caches" in out and "Updating packages" in out
 
 
 def test_unknown_action_word_errors():
@@ -40,9 +41,8 @@ def test_unknown_action_word_errors():
 def test_skip_removes_action(capsys):
     main(["--distro", "arch", "--dry-run", "-c", "-u", "--skip", "update"])
     out = capsys.readouterr().out
-    assert "clean" in out
-    # 'update' should not appear as a section header line
-    assert "▸" in out and "update" not in out
+    assert "Cleaning caches" in out
+    assert "Updating packages" not in out  # skipped
 
 
 def test_unknown_distro_returns_one(capsys):

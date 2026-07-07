@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import pwd
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, actions
 from .backends.base import Context
 from .config import Config
 from .config import load as load_config
@@ -134,9 +135,9 @@ def main(argv: list[str] | None = None) -> int:
         out.err(str(exc))
         return 1
 
-    actions = _requested_actions(args, cfg)
-    runnable = [a for a in actions if backend.supports(a)]
-    for a in actions:
+    requested = _requested_actions(args, cfg)
+    runnable = [a for a in requested if backend.supports(a)]
+    for a in requested:
         if not backend.supports(a):
             out.note(f"skipping '{a}' — not supported by the {backend.name} backend")
 
@@ -148,11 +149,15 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and not _is_root() and not _in_test():
         _reexec_with_sudo()
 
-    out.step_total = len(runnable)
-    _ctx = Context(output=out, config=cfg, dry_run=args.dry_run)
-    for a in runnable:
-        out.section(a)
-        out.note(f"[M1 skeleton] '{a}' via the {backend.name} backend "
-                 f"— implementation lands in a later milestone")
-    out.print_summary()
+    sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    user_home = Path.home()
+    if sudo_user:
+        try:
+            user_home = Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+
+    ctx = Context(output=out, config=cfg, dry_run=args.dry_run,
+                  sudo_user=sudo_user, user_home=user_home)
+    actions.run(runnable, backend, ctx)
     return 0

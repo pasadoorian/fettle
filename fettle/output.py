@@ -72,6 +72,22 @@ class Output:
     def alert(self, msg: str) -> None:
         print(f"{self.B}{self.RED}  !! {msg}{self.NC}", file=sys.stderr)
 
+    # -- run a noisy command, show a one-line status -------------------------
+    def run_quiet(self, msg: str, cmd, *, as_user: str | None = None):
+        """Run ``cmd`` showing only ``msg`` on success; full output on failure
+        (or always, under ``verbose``). Returns the ``command.Proc``."""
+        from . import command  # local import keeps output import-free at module load
+
+        proc = command.run(cmd, as_user=as_user, capture=not self.verbose)
+        if proc.ok:
+            self.ok(msg)
+        else:
+            self.err(f"{msg} failed (exit {proc.returncode}):")
+            text = (proc.stdout + proc.stderr).strip()
+            if text:
+                print(text, file=sys.stderr)
+        return proc
+
     # -- end-of-run summary --------------------------------------------------
     def summary_add(self, line: str) -> None:
         self._summary.append(line)
