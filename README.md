@@ -4,8 +4,9 @@
 
 A cross-distribution Linux system-maintenance and supply-chain tool: update,
 clean, prune orphans, check for rebuilds/restarts, review config-file drift,
-apply firmware updates, manage kernels, and audit third-party package sources —
-with the same command surface on every supported distro.
+apply firmware updates, manage kernels, audit third-party package sources, and
+run a full firmware/boot-chain security scan (`secure-check`) — with the same
+command surface on every supported distro.
 
 `fettle` is the Python successor to the Arch/Manjaro `update.sh` (from
 [`linux_hacks`](https://github.com/pasadoorian/linux_hacks)), rebuilt around a
