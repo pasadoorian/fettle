@@ -70,11 +70,12 @@ ones work everywhere. fettle runs only what your distro's backend supports and
 skips the rest with a note.
 
 examples:
-  fettle                     run the default maintenance set
-  fettle -c -u               clean + update
-  fettle --all --dry-run     show everything that would run; change nothing
-  fettle -A                  AUR health audit
-  sudo fettle sys-audit --all
+  fettle                             run the default maintenance set
+  fettle -c -u                       clean + update
+  fettle --all --dry-run             show everything that would run; change nothing
+  fettle -A                          AUR health audit
+  fettle sys-audit --all             full security scan (elevates itself)
+  fettle sys-audit remote HOST --all scan a remote host over ssh
 """
 
 

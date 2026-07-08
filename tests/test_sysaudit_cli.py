@@ -2,8 +2,18 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from fettle.cli import main as cli_main
 from fettle.secure import audit
+
+
+def test_sys_audit_help_documents_remote(capsys):
+    with pytest.raises(SystemExit):
+        audit.main(["--help"])
+    out = capsys.readouterr().out
+    assert "remote" in out and "ssh" in out.lower()
+    assert "remote server1 --all" in out  # a concrete remote example is shown
 
 
 def test_list_categories(capsys):

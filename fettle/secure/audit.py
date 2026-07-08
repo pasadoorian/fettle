@@ -82,10 +82,31 @@ def run(categories: list[str], scan: Scan) -> None:
     scan.output.print_summary()
 
 
+_SYS_AUDIT_EPILOG = """\
+sys-audit elevates itself (prompts for sudo); pass --user to stay unprivileged.
+--list and remote never elevate.
+
+remote — run the scan on another host over SSH:
+  fettle sys-audit remote [--sudo] [-v] <host> <categories | --all>
+  <host> is any ~/.ssh/config alias or user@host. fettle packages itself as a
+  zipapp, scp's it to the host, runs it over `ssh -t`, and removes it. --sudo
+  runs the remote scan as root; -v is forwarded.
+
+examples:
+  fettle sys-audit --all
+  fettle sys-audit secureboot tpm
+  fettle sys-audit --user hardware
+  fettle sys-audit remote server1 --all
+  fettle sys-audit remote --sudo admin@host2 secureboot tpm
+"""
+
+
 def _parse(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="fettle sys-audit",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         description="System Supply Chain scanner: firmware, boot chain, hardware.",
+        epilog=_SYS_AUDIT_EPILOG,
     )
     p.add_argument("categories", nargs="*", help="check categories to run (see --list)")
     p.add_argument("-a", "--all", action="store_true", help="run every check")
@@ -99,13 +120,22 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def _remote(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="fettle sys-audit remote")
-    p.add_argument("--sudo", action="store_true", help="run the remote scan under sudo")
-    p.add_argument("-v", "--verbose", action="store_true")
-    p.add_argument("-q", "--quiet", action="store_true")
-    p.add_argument("-a", "--all", action="store_true")
-    p.add_argument("host", help="ssh host or ~/.ssh/config alias")
-    p.add_argument("categories", nargs="*", help="check categories (or --all)")
+    p = argparse.ArgumentParser(
+        prog="fettle sys-audit remote",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Run a sys-audit scan on a remote host over SSH.\n"
+                    "fettle is packaged as a zipapp, scp'd to the host, run over "
+                    "`ssh -t`, and removed (remote exit code preserved).",
+        epilog="examples:\n"
+               "  fettle sys-audit remote server1 --all\n"
+               "  fettle sys-audit remote --sudo admin@host2 secureboot tpm\n"
+               "  fettle sys-audit remote -v gateway microcode")
+    p.add_argument("--sudo", action="store_true", help="run the remote scan as root (sudo)")
+    p.add_argument("-v", "--verbose", action="store_true", help="forward -v to the remote scan")
+    p.add_argument("-q", "--quiet", action="store_true", help="forward -q to the remote scan")
+    p.add_argument("-a", "--all", action="store_true", help="run every check on the host")
+    p.add_argument("host", help="ssh host or ~/.ssh/config alias (e.g. server1, user@host)")
+    p.add_argument("categories", nargs="*", help="check categories to run (or --all)")
     args = p.parse_args(argv)
 
     chosen = list(CATEGORIES) if args.all else [c.replace("_", "-") for c in args.categories]
