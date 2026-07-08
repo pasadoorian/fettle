@@ -263,6 +263,9 @@ fettle sys-audit --user hardware     # run as your user, no sudo
 Scan a host over SSH without installing anything on it. fettle builds a single-file
 **zipapp** of itself (pure stdlib → runs under any `python3`), `scp`s it to the
 target, runs it over `ssh -t`, and cleans up — preserving the remote exit code.
+The target only needs a `python3` interpreter; the scanner doesn't read the TOML
+config, so it runs fine on older Pythons (e.g. Ubuntu 22.04's 3.10, which has no
+`tomllib`).
 
 ```sh
 fettle sys-audit remote server1 all               # host from ~/.ssh/config

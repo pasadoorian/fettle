@@ -1,4 +1,5 @@
 import textwrap
+from unittest.mock import patch
 
 from fettle.config import Config, load
 
@@ -7,6 +8,17 @@ def test_missing_file_returns_defaults(tmp_path):
     cfg, warnings = load(tmp_path / "nope.toml")
     assert cfg == Config()
     assert warnings == []
+
+
+def test_no_tomllib_degrades_to_defaults(tmp_path):
+    """On Python < 3.11 with no tomli, a present config file -> defaults + a note
+    (so the remote scanner runs on Ubuntu 22.04's 3.10 instead of crashing)."""
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('auto_rebuild = true\n')
+    with patch("fettle.config.tomllib", None):
+        cfg, warnings = load(cfg_file)
+    assert cfg == Config()  # file ignored, built-in defaults used
+    assert warnings and "Python 3.11+" in warnings[0]
 
 
 def test_loads_known_keys(tmp_path):

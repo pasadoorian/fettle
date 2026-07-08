@@ -8,9 +8,21 @@ that is world-writable or owned by someone other than root or the invoking user
 from __future__ import annotations
 
 import os
-import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+
+# tomllib is stdlib only on Python 3.11+. fettle is otherwise pure-stdlib, so on
+# an older interpreter — notably the remote scanner landing on Ubuntu 22.04
+# (Python 3.10) — we fall back to the `tomli` backport if present, else run with
+# built-in defaults (no config parsing). Everything except the TOML config file
+# works regardless.
+try:
+    import tomllib
+except ModuleNotFoundError:  # < 3.11
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuilds", "python_rebuild",
                    "config_drift", "firmware"]
@@ -65,6 +77,11 @@ def load(path: Path, *, allowed_uids: set[int] | None = None) -> tuple[Config, l
     safe, why = _is_safe(path, allowed_uids or _allowed_uids())
     if not safe:
         warnings.append(why)
+        return cfg, warnings
+
+    if tomllib is None:  # Python < 3.11 without the tomli backport
+        warnings.append(f"{path}: TOML config needs Python 3.11+ (or the 'tomli' "
+                        "package); using built-in defaults.")
         return cfg, warnings
 
     try:
