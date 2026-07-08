@@ -10,7 +10,7 @@ the methods it actually supports — capabilities are added incrementally.
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -111,6 +111,37 @@ class Result:
     summary: str = ""
 
 
+@dataclass
+class TxItem:
+    """One package in a would-run upgrade transaction.
+
+    ``old is None`` marks a package that isn't installed yet (a dependency the
+    upgrade pulls in). ``source`` groups the preview (``repo`` vs ``aur``);
+    ``kind`` is ``upgrade`` | ``new-dep`` | ``remove``.
+    """
+
+    name: str
+    new: str
+    old: str | None = None
+    source: str = "repo"
+    kind: str = "upgrade"
+
+
+@dataclass
+class Transaction:
+    """The full set a dry-run ``update`` would perform, plus any caveats.
+
+    ``ok=False`` means the transaction could not be determined (query tool
+    missing / errored) — distinct from ``ok=True`` with no items, which means
+    genuinely nothing to install. ``notes`` are advisories to surface (stale
+    repos, devel rebuilds not shown, fallbacks).
+    """
+
+    items: list[TxItem] = field(default_factory=list)
+    ok: bool = True
+    notes: list[str] = field(default_factory=list)
+
+
 class PackageBackend(abc.ABC):
     """A distro's package/maintenance operations (one method per action)."""
 
@@ -158,10 +189,23 @@ class PackageBackend(abc.ABC):
     def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
         """Packages that ``update`` would upgrade, as ``(name, old_ver, new_ver)``.
 
-        Read-only (no root, no system change) — used by ``-u --dry-run`` and the
-        Upgrade Checker. Empty list when up to date or the query tool is absent.
+        Read-only (no root, no system change) — used by the Upgrade Checker.
+        Empty list when up to date or the query tool is absent.
         """
         return []
+
+    def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
+        """The full set ``update`` would install (upgrades + new deps), for
+        ``-u --dry-run``. Read-only and rootless.
+
+        Default derives from :meth:`pending_upgrades` (upgrades only, no new
+        deps); backends override to resolve the real transaction. ``sync``
+        requests fresh repo data (may hit the network) when the backend supports
+        a rootless refresh.
+        """
+        items = [TxItem(name=n, new=new, old=old)
+                 for n, old, new in self.pending_upgrades(ctx)]
+        return Transaction(items=items, ok=True)
 
     # -- firmware is distro-neutral: fwupd works everywhere ------------------
     def firmware_updates(self, ctx: Context) -> Result:

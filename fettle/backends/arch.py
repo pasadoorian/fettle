@@ -7,12 +7,13 @@ class (fwupd is distro-neutral).
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 from .. import command
 from ..util import chown_to_user, matches_any
-from .base import Context, PackageBackend, Result
+from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
 _AUR_UPDATERS = {"yay", "pamac", "none"}
@@ -28,6 +29,20 @@ def _parse_arrow_upgrades(text: str) -> list[tuple[str, str, str]]:
         m = _ARROW_RE.match(line.strip())
         if m:
             out.append((m.group(1), m.group(2), m.group(3)))
+    return out
+
+
+def _parse_sup_lines(text: str) -> list[tuple[str, str]]:
+    """Parse `pacman -Sup --print-format '%r/%n %v'`: 'repo/name version' per
+    target. Returns [(name, version), ...]; the repo prefix is dropped."""
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or " " not in line:
+            continue
+        left, ver = line.split(" ", 1)
+        name = left.split("/", 1)[1] if "/" in left else left
+        out.append((name, ver.strip()))
     return out
 
 
@@ -189,6 +204,87 @@ class ArchBackend(PackageBackend):
         else:
             return []
         return _parse_arrow_upgrades(out)
+
+    def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
+        # Resolve the full transaction the real `pacman -Syuu` would perform —
+        # upgrades *and* the new dependencies they drag in — without touching the
+        # system or needing root. `-Sup --print-format` is authoritative (honors
+        # IgnorePkg); `-Qu` supplies old->new to annotate the upgrades. When
+        # `sync`, run the query against a fresh private temp DB (checkupdates'
+        # trick); otherwise use the existing sync DB (fast, possibly stale).
+        if not command.which("pacman"):
+            return Transaction(ok=False, notes=["pacman not found"])
+
+        notes: list[str] = []
+        dbargs: list[str] = []
+        if sync:
+            tmp = self._temp_synced_db()
+            if tmp is not None:
+                dbargs = ["--dbpath", str(tmp)]
+            else:
+                notes.append("could not refresh repos (needs fakeroot + pacman-contrib);"
+                             " preview reflects the last sync and may be stale")
+
+        upgrades = {n: (old, new)
+                    for n, old, new in _parse_arrow_upgrades(
+                        self._query(["pacman", "-Qu", *dbargs]))}
+        items: list[TxItem] = []
+        for name, ver in _parse_sup_lines(
+                self._query(["pacman", "-Sup", "--print-format", "%r/%n %v", *dbargs])):
+            if name in upgrades:
+                old, new = upgrades[name]
+                items.append(TxItem(name=name, new=new, old=old, kind="upgrade"))
+            else:
+                items.append(TxItem(name=name, new=ver, old=None, kind="new-dep"))
+
+        aur_items, aur_note = self._aur_transaction(ctx)
+        items += aur_items
+        if aur_note:
+            notes.append(aur_note)
+        return Transaction(items=items, ok=True, notes=notes)
+
+    def _aur_transaction(self, ctx: Context) -> tuple[list[TxItem], str]:
+        """AUR upgrades via `yay -Qua` (run as the invoking user). Returns items
+        plus a caveat, since `--devel` git rebuilds may not report a version bump
+        until yay fetches their sources."""
+        _, aur = self._updaters(ctx)
+        if aur != "yay" or not command.which("yay"):
+            return [], ""
+        out = command.run(["yay", "-Qua"], as_user=ctx.sudo_user, capture=True).stdout
+        items = [TxItem(name=n, new=new, old=old, source="aur", kind="upgrade")
+                 for n, old, new in _parse_arrow_upgrades(out)]
+        return items, "AUR: --devel/-git rebuilds may not show until sources are fetched"
+
+    def _real_dbpath(self) -> Path:
+        if command.which("pacman-conf"):
+            out = command.run(["pacman-conf", "DBPath"], capture=True).stdout.strip()
+            if out:
+                return Path(out)
+        return Path("/var/lib/pacman")
+
+    def _temp_synced_db(self) -> Path | None:
+        """checkupdates' technique: a private DB in TMPDIR with the real `local`
+        symlinked in, sync'd fresh via `fakeroot pacman -Sy` (no root, no change
+        to the system DB). Returns the path, or None if it can't be prepared."""
+        if not command.which("fakeroot"):
+            return None
+        db = Path(os.environ.get("TMPDIR", "/tmp")) / f"fettle-checkdb-{os.getuid()}"
+        try:
+            (db / "sync").mkdir(parents=True, exist_ok=True)
+            local = db / "local"
+            if not local.is_symlink():
+                local.symlink_to(self._real_dbpath() / "local")
+        except OSError:
+            return None
+        # `--disable-sandbox-filesystem`: pacman 7's download step drops to the
+        # `alpm` user and applies a Landlock ruleset, which fakeroot (fake uid,
+        # no real privilege) can't do — the sync fails without this. checkupdates
+        # passes the same flag. Older pacman lacks it and rejects the arg, so we
+        # just fall back to the system DB (staleness note) — graceful either way.
+        proc = command.run(
+            ["fakeroot", "--", "pacman", "-Sy", "--disable-sandbox-filesystem",
+             "--dbpath", str(db), "--logfile", "/dev/null"], capture=True)
+        return db if proc.ok else None
 
     # -- maintenance checks (M3) ---------------------------------------------
     def check_foreign_orphans(self, ctx: Context) -> Result:
