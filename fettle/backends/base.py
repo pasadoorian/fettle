@@ -149,7 +149,10 @@ class PackageBackend(abc.ABC):
     def manage_kernels(self, ctx: Context) -> Result:
         raise NotImplementedError
 
-    def verify_integrity(self, ctx: Context) -> Result:
+    def verify_integrity(self, scan) -> None:
+        """sys-audit `packages` check — verify installed files against the package
+        DB. Takes a ``secure.base.Scan`` and emits through it (the one distro-
+        specific sys-audit check; see PLAN §3.7)."""
         raise NotImplementedError
 
     # -- firmware is distro-neutral: fwupd works everywhere ------------------

@@ -30,6 +30,29 @@ class ArchBackend(PackageBackend):
         from ..supplychain.aur_source import AURSource
         return [AURSource()]
 
+    # -- sys-audit `packages` integrity (M10) --------------------------------
+    def verify_integrity(self, scan) -> None:
+        scan.sub("Pacman Package Verification")
+        if scan.which("paccheck"):
+            scan.dim("Running paccheck --sha256sum (this may take a while)...")
+            issues = scan.run_text(["paccheck", "--sha256sum", "--quiet"]).splitlines()[:50]
+            if not any(ln.strip() for ln in issues):
+                scan.status("Package Integrity", "All packages verified", "ok")
+            else:
+                scan.status("Package Integrity", "Issues found", "error")
+                scan.result("\n".join(issues))
+        elif scan.which("pacman"):
+            scan.dim("Running pacman -Qkk (checking file presence)...")
+            altered = [ln for ln in scan.run_text(["pacman", "-Qkk"]).splitlines()
+                       if "0 altered files" not in ln][:20]
+            if not altered:
+                scan.status("Package Files", "No alterations detected", "ok")
+            else:
+                scan.status("Package Files", "Modified files found", "warn")
+                scan.result("\n".join(altered))
+        else:
+            scan.status("pacman", "Not found", "error")
+
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str]:
         conf = {}

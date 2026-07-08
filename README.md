@@ -82,8 +82,9 @@ fettle sys-audit secureboot tpm  # run specific categories
 `sys-audit` is the **System Supply Chain** scanner (a port of the Eclypsium
 firmware/boot cheat-sheet): Secure Boot state + the 2026 Microsoft cert-expiry
 matrix, BIOS/UEFI, CPU microcode & vulnerabilities, TPM, Intel ME, fwupd/HSI,
-chipsec, hardware inventory, and storage firmware. Run it under `sudo` for the
-root-only data (dmidecode, chipsec, smartctl).
+chipsec, package-file integrity (`paccheck`/`debsums`), hardware inventory, and
+storage firmware. Run it under `sudo` for the root-only data (dmidecode, chipsec,
+smartctl, integrity).
 
 The two AUR supply-chain commands are distinct: **`-A` / `aur-audit`** is a
 provenance/health census (age, votes, out-of-date, orphan, recently-changed,

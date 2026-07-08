@@ -38,6 +38,27 @@ class DebianBackend(PackageBackend):
         from ..supplychain.snap_source import SnapSource
         return [AptSource(), FlatpakSource(), SnapSource()]
 
+    # -- sys-audit `packages` integrity (M10) --------------------------------
+    def verify_integrity(self, scan) -> None:
+        scan.sub("Dpkg Package Verification")
+        if scan.which("debsums"):
+            scan.dim("Running debsums (this may take a while)...")
+            issues = [ln for ln in scan.run_text(["debsums"]).splitlines()
+                      if not ln.rstrip().endswith("OK")][:50]
+            if not issues:
+                scan.status("Package Integrity", "All packages verified", "ok")
+            else:
+                scan.status("Package Integrity", "Issues found", "warn")
+                scan.result("\n".join(issues))
+        else:
+            scan.status("debsums", "Not installed (apt install debsums)", "warn")
+            scan.dim("Running dpkg --verify...")
+            out = scan.run_text(["dpkg", "--verify"]).splitlines()[:30]
+            if not any(ln.strip() for ln in out):
+                scan.status("Package Files", "No issues detected", "ok")
+            else:
+                scan.result("\n".join(out))
+
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str, str]:
         conf = {}
