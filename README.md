@@ -72,15 +72,63 @@ derivatives resolve to their parent family with no extra code. Override with
 
 ## Requirements
 
-- **Python 3.11+** and **git**.
-- Whatever tools the actions you use need — fettle never installs them, it detects
-  them and skips (with a note) what's missing. Typical extras:
-  - *Arch:* `yay`/`pamac`, `rebuild-detector` (`checkrebuild`), `pacman-contrib`
-    (`pacdiff`), `fwupd`, `mhwd-kernel` (Manjaro), `pacutils` (`paccheck`).
-  - *Debian:* `nala`, `flatpak`, `snapd`, `deborphan`, `needrestart`,
-    `apt-show-versions`, `fwupd`, `debsums`.
-  - *sys-audit:* `mokutil`/`efitools`, `dmidecode`, `inxi`, `tpm2-tools`,
-    `smartmontools`, `fwupd`, optionally `chipsec`.
+Only **Python 3.11+** and **git** are mandatory. Everything else is optional:
+fettle never installs tools — it detects what's present and **skips what's missing
+with a note**, so you install only what the commands you actually use need.
+
+### Maintenance
+
+| | Arch / Manjaro | Debian / Ubuntu |
+|---|---|---|
+| AUR / extras | `yay` or `pamac` | — |
+| rebuilds | `rebuild-detector` (`checkrebuild`) | `needrestart` |
+| config drift | `pacman-contrib` (`pacdiff`) | (built-in `dpkg`) |
+| orphans | (built-in) | `deborphan`, `apt-show-versions` |
+| firmware | `fwupd` | `fwupd` |
+| kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
+| flatpak / snap | — | `flatpak`, `snapd` |
+
+### `pkg-audit` (package supply-chain)
+
+Nothing extra is *required* — the AUR audit uses only `pacman` + the network, and
+the APT/Flatpak/Snap providers read config you already have.
+
+| | Arch / Manjaro | Debian / Ubuntu |
+|---|---|---|
+| standard | *(none — uses `pacman`)* | `debsums` (file integrity); `flatpak`, `snapd` if you use them |
+| manual | *(none)* | *(none)* |
+
+### `sys-audit` (system supply-chain)
+
+**Standard packages** (install what you want covered; missing ones are skipped):
+
+```sh
+# Arch / Manjaro
+sudo pacman -S --needed mokutil efitools dmidecode inxi lshw pciutils \
+    tpm2-tools smartmontools cpuid fwupd pacutils
+
+# Debian / Ubuntu
+sudo apt install mokutil efitools dmidecode inxi lshw pciutils \
+    tpm2-tools smartmontools cpuid fwupd debsums
+```
+
+Which check uses what: `secureboot` → `mokutil`/`efitools` (+ systemd's `bootctl`);
+`bios`·`hardware` → `dmidecode`,`inxi`,`lshw`,`pciutils`,`cpuid`; `fwupd` → `fwupd`;
+`intel-me` → `pciutils`; `tpm` → `tpm2-tools`,`dmidecode`; `storage` →
+`smartmontools`; `packages` → `pacutils` (`paccheck`) on Arch / `debsums` on Ubuntu.
+
+**Manual tools** (not in standard repos — the checks degrade to advice without
+them). fettle looks for each under `/opt/<name>/`, `/usr/share/<name>/`, and
+`~/<name>/`:
+
+| Check | Tool | Get it |
+|---|---|---|
+| `firmware` | **chipsec** (`chipsec/chipsec_main.py`) | Arch: AUR `chipsec`; else `git clone https://github.com/chipsec/chipsec` |
+| `intel-me` | **Intel CSME Version Detection Tool** (`intel_csme/intel_csme_version_detection_tool`) | download from Intel |
+| `tpm` | **tpm-vuln-checker** (`tpm-vuln-checker/tpm-vuln-checker`) | `git clone https://github.com/google/tpm-vuln-checker` |
+
+Example: `git clone https://github.com/google/tpm-vuln-checker ~/tpm-vuln-checker`
+puts the tool where the `tpm` check will find it.
 
 ## Installation
 
