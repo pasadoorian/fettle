@@ -154,8 +154,8 @@ def _remote(argv: list[str]) -> int:
         forwarded.append("-q")
     forwarded += ["--all"] if args.all else chosen
 
-    from . import remote
-    return remote.run(args.host, forwarded, sudo=args.sudo)
+    from .. import remote
+    return remote.run(args.host, ["sys-audit", *forwarded], sudo=args.sudo)
 
 
 def main(argv: list[str]) -> int:

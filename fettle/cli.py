@@ -41,6 +41,10 @@ ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrit
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
+# The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
+# (orphan removal, kernel management) are NOT here — they must be named explicitly.
+REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware")
+
 # Human-facing one-liners for each maintenance action (shown in --help).
 ACTION_HELP = {
     "clean": "clean package-manager caches",
@@ -64,6 +68,8 @@ subcommands (run in place of the action flags above):
                              (Secure Boot, TPM, microcode, ...); try --list,
                              --all, or 'remote <host>'. Elevates itself; no sudo.
   fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
+  fettle remote HOST [acts]  run maintenance on a remote host over ssh (safe set
+                             by default; --yes for unattended). try 'remote -h'
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
@@ -189,6 +195,69 @@ def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
                        sys.executable, "-m", "fettle", *sys.argv[1:]])
 
 
+_REMOTE_EPILOG = """\
+Runs fettle maintenance on a remote host over SSH: fettle is packaged as a zipapp,
+scp'd to the host, run there under sudo over `ssh -t`, and removed. The host needs
+a python3 interpreter — nothing is installed.
+
+With no actions (or -a) the SAFE default set runs: clean, update, firmware.
+Destructive/interactive actions run only when named explicitly, e.g.
+  fettle remote HOST orphans kernels     (removes packages — asks per item)
+
+Prompts (sudo password, AUR review, removals) are interactive over the TTY by
+default; --yes makes the run fully unattended (auto-confirm + non-interactive
+package managers). NOTE: --yes also SKIPS AUR PKGBUILD review.
+
+examples:
+  fettle remote server1 -a                 clean + update + firmware
+  fettle remote server1 -a --dry-run       preview; change nothing
+  fettle remote server1 update --yes       unattended update only
+  fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
+"""
+
+
+def _run_remote_maintenance(argv: list[str]) -> int:
+    from . import remote
+
+    p = argparse.ArgumentParser(
+        prog="fettle remote",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Run fettle maintenance on a remote host over SSH.",
+        epilog=_REMOTE_EPILOG,
+    )
+    p.add_argument("-a", "--all", action="store_true",
+                   help="run the safe remote default set (clean update firmware)")
+    p.add_argument("--yes", action="store_true",
+                   help="unattended: auto-confirm prompts + non-interactive package managers")
+    p.add_argument("--dry-run", action="store_true",
+                   help="show what would run on the host; change nothing (no sudo)")
+    p.add_argument("--ssh-arg", action="append", default=[], metavar="ARG",
+                   help="extra ssh argument, repeatable (e.g. --ssh-arg=-oConnectTimeout=5)")
+    p.add_argument("host", help="ssh host or ~/.ssh/config alias")
+    p.add_argument("actions", nargs="*", help="maintenance actions (default: the safe set)")
+    args = p.parse_args(argv)
+
+    chosen: list[str] = []
+    for word in args.actions:
+        name = word.replace("-", "_")
+        if name not in ACTION_NAMES:
+            print(f"fettle remote: unknown action '{word}'", file=sys.stderr)
+            return 2
+        chosen.append(name)
+    if args.all or not chosen:
+        chosen = list(REMOTE_DEFAULT_ACTIONS)
+
+    remote_args = [a.replace("_", "-") for a in chosen]
+    if args.yes:
+        remote_args.append("--yes")
+    if args.dry_run:
+        remote_args.append("--dry-run")
+    # Maintenance needs root, so run the remote fettle under sudo — which also means
+    # it runs as root and won't try to self-elevate inside the zipapp. A dry-run
+    # changes nothing, so it needs neither sudo nor elevation.
+    return remote.run(args.host, remote_args, sudo=not args.dry_run, ssh_args=args.ssh_arg)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -204,6 +273,10 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "sys-audit":
         from .secure import audit
         return audit.main(argv[1:])
+
+    # `fettle remote <host> <actions>` runs maintenance on a remote host over SSH.
+    if argv and argv[0] == "remote":
+        return _run_remote_maintenance(argv[1:])
 
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
