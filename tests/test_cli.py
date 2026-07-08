@@ -64,14 +64,30 @@ def test_dry_run_lists_actions_without_elevating(capsys):
 def test_dry_run_update_lists_pending_packages(capsys):
     from unittest.mock import patch
 
-    from fettle import command
-    with patch("fettle.command.run") as run, \
+    from fettle.backends.base import Transaction, TxItem
+    tx = Transaction(items=[
+        TxItem(name="linux", new="6.18-1", old="6.12-1", kind="upgrade"),
+        TxItem(name="libfoo", new="1.0-1", old=None, kind="new-dep"),
+    ])
+    with patch("fettle.backends.arch.ArchBackend.pending_transaction", return_value=tx), \
          patch("fettle.command.which", return_value=True):
-        run.return_value = command.Proc(0, "linux 6.12-1 -> 6.18-1\n", "")
         main(["--distro", "arch", "--dry-run", "-u"])
     out = capsys.readouterr().out
-    assert "1 package(s) would be upgraded" in out
+    assert "2 package(s) would be installed/changed" in out
+    assert "official repos (2)" in out
     assert "linux  6.12-1 -> 6.18-1" in out
+    assert "+ libfoo  1.0-1  (new dependency)" in out  # new deps marked
+
+
+def test_dry_run_update_reports_nothing_to_install(capsys):
+    from unittest.mock import patch
+
+    from fettle.backends.base import Transaction
+    with patch("fettle.backends.arch.ArchBackend.pending_transaction",
+               return_value=Transaction(items=[])), \
+         patch("fettle.command.which", return_value=True):
+        main(["--distro", "arch", "--dry-run", "-u"])
+    assert "nothing to install" in capsys.readouterr().out
 
 
 def test_unsupported_action_is_skipped(capsys):

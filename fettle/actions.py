@@ -32,15 +32,52 @@ TITLES = {
 
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
     if ctx.dry_run:
-        pending = backend.pending_upgrades(ctx)
-        if pending:
-            ctx.output.note(f"{len(pending)} package(s) would be upgraded:")
-            for name, old, new in pending:
-                print(f"    {name}  {old} -> {new}")
-        else:
-            ctx.output.ok("no pending upgrades (repos may need a sync to be sure).")
+        _preview_transaction(backend, ctx)
     backend.update_system(ctx)
     backend.update_extras(ctx)
+
+
+# Order within a group: upgrades, then new dependencies, then removals.
+_KIND_ORDER = {"upgrade": 0, "new-dep": 1, "remove": 2}
+_SOURCE_LABELS = {"repo": "official repos", "aur": "AUR"}
+
+
+def _fmt_txitem(it) -> str:
+    if it.kind == "remove":
+        return f"- {it.name}  {it.old}  (remove)"
+    if it.old is None or it.kind == "new-dep":
+        return f"+ {it.name}  {it.new}  (new dependency)"
+    return f"  {it.name}  {it.old} -> {it.new}"
+
+
+def _preview_transaction(backend: "PackageBackend", ctx: "Context") -> None:
+    """Print the full set the upgrade would install (upgrades + new deps + any
+    removals), grouped by source, before the `would run:` command lines."""
+    out = ctx.output
+    tx = backend.pending_transaction(ctx, sync=ctx.sync)
+    if not tx.ok:
+        detail = f" ({'; '.join(tx.notes)})" if tx.notes else " (query tool unavailable)"
+        out.warn(f"could not determine the package transaction{detail}")
+        return
+    for note in tx.notes:
+        out.note(note)
+    if not tx.items:
+        out.ok("nothing to install — system is up to date.")
+        return
+
+    out.note(f"{len(tx.items)} package(s) would be installed/changed:")
+    groups: dict[str, list] = {}
+    for it in tx.items:
+        groups.setdefault(it.source, []).append(it)
+    # Known sources first (repo, aur), then any others deterministically.
+    for source in list(_SOURCE_LABELS) + [s for s in groups if s not in _SOURCE_LABELS]:
+        group = groups.get(source)
+        if not group:
+            continue
+        group.sort(key=lambda i: (_KIND_ORDER.get(i.kind, 9), i.name))
+        print(f"    {_SOURCE_LABELS.get(source, source)} ({len(group)}):")
+        for it in group:
+            print(f"    {_fmt_txitem(it)}")
 
 
 def _emit(out, finding) -> None:

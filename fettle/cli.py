@@ -131,6 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-q", "--quiet", action="store_true")
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="show what would run; change nothing")
+    p.add_argument("--no-sync", action="store_true",
+                   help="dry-run preview: use cached repo data instead of a fresh sync")
     p.add_argument("--only", metavar="ACTION", action="append", default=[],
                    help="restrict to these actions (repeatable)")
     p.add_argument("--skip", metavar="ACTION", action="append", default=[],
@@ -446,6 +448,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = Context(output=out, config=cfg, dry_run=args.dry_run,
                   assume_yes=args.yes, auto_rebuild=args.auto_rebuild or cfg.auto_rebuild,
+                  sync=not args.no_sync,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
     return 0
