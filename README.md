@@ -319,8 +319,8 @@ zipapp is the current transport.
 
 `fettle upgrade-check` asks **Claude** whether a pending upgrade is safe *before*
 you run it. It collects the packages that would upgrade plus a hardware/software
-profile (`inxi`), has Claude research the distro's forums (Arch/Manjaro/Ubuntu/
-Reddit) for known issues, and returns a clean, cited verdict with concrete
+profile (`inxi`), has Claude research the distro's forums (Arch BBS, Manjaro,
+Ubuntu Forums, Launchpad) for known issues, and returns a clean, cited verdict with concrete
 before/after steps. It is **report-only** — it never touches your system; you run
 `fettle -u` yourself once you're satisfied.
 

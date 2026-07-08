@@ -16,11 +16,15 @@ from dataclasses import dataclass, field
 from . import client
 
 # Trusted sources the model may search / cite (grounding, not random blogs).
+# NOTE: every domain here must be reachable by Anthropic's web-search crawler —
+# the API 400s the whole request if `allowed_domains` names one it can't fetch.
+# askubuntu.com and reddit.com block the crawler, so they're excluded (leaving
+# them in was the Ubuntu-VM 400). ubuntuforums.org/ubuntu.com/launchpad.net still
+# cover the Ubuntu side; the Arch/Manjaro forums cover those distros.
 ALLOWED_DOMAINS = (
     "bbs.archlinux.org", "wiki.archlinux.org", "archlinux.org",
     "forum.manjaro.org", "forums.manjaro.org",
-    "askubuntu.com", "ubuntuforums.org", "ubuntu.com", "launchpad.net",
-    "reddit.com",
+    "ubuntuforums.org", "ubuntu.com", "launchpad.net",
 )
 
 _VERDICTS = ("safe", "caution", "risky")
@@ -43,7 +47,8 @@ _SYSTEM = (
     "running this upgrade now is safe.\n\n"
     "Rules:\n"
     "- Ground every claim in the provided package list or a cited forum source. "
-    "Search the distro's forums and Reddit for KNOWN issues with the specific "
+    "Search the distro's official forums (Arch BBS, Manjaro, Ubuntu Forums, "
+    "Launchpad) for KNOWN issues with the specific "
     "packages/versions upgrading — prioritize kernel, GPU driver, glibc, systemd, "
     "mesa, the desktop environment, and python.\n"
     "- If you find no evidence of problems, say the upgrade looks routine. Do NOT "
