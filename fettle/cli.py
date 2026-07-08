@@ -70,8 +70,9 @@ subcommands (run in place of the action flags above):
   fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
   fettle remote HOST [acts]  run maintenance on a remote host over ssh (safe set
                              by default; --yes for unattended). try 'remote -h'
-  fettle upgrade-check       AI pre-upgrade safety check (Claude): is this update
-                             safe, what to do before/after — needs ANTHROPIC_API_KEY
+  fettle upgrade-check       [experimental] AI pre-upgrade safety check (Claude):
+                             is this update safe, what to do before/after —
+                             needs ANTHROPIC_API_KEY
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
@@ -281,7 +282,9 @@ def _run_upgrade_check(argv: list[str]) -> int:
 
     p = argparse.ArgumentParser(
         prog="fettle upgrade-check",
-        description="AI-assisted pre-upgrade safety check (Claude). Read-only.",
+        description="[EXPERIMENTAL] AI-assisted pre-upgrade safety check (Claude). "
+                    "Read-only. Under active testing — treat its advice as a second "
+                    "opinion, not gospel.",
         epilog="Uses ANTHROPIC_API_KEY (or config ai_api_key). Hardware serials are "
                "redacted before sending. Report only — you run `fettle -u` yourself.")
     p.add_argument("--no-web", action="store_true", help="disable distro-forum web search")
@@ -310,6 +313,8 @@ def _run_upgrade_check(argv: list[str]) -> int:
     ctx = Context(output=out, config=cfg, user_home=Path.home())
 
     out.section("Upgrade check")
+    out.warn("experimental feature — still under testing; verify its advice before "
+             "acting on it.")
     pending = backend.pending_upgrades(ctx)
     if not pending:
         out.ok("system is up to date — nothing to upgrade.")

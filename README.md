@@ -171,7 +171,7 @@ fettle clean update        # same thing, as words
 fettle -A                  # AUR health audit  -> ~/aur-audit.txt
 fettle pkg-audit           # normalized package supply-chain audit
 fettle sys-audit --all     # full security scan (elevates itself; no sudo needed)
-fettle upgrade-check       # AI: is this upgrade safe? (needs ANTHROPIC_API_KEY)
+fettle upgrade-check       # AI: is this upgrade safe? [experimental] (needs API key)
 ```
 
 ## Maintenance actions
@@ -311,7 +311,11 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
 A standalone binary (for hosts with no `python3` at all) is a planned option; the
 zipapp is the current transport.
 
-## Upgrade Checker (AI)
+## Upgrade Checker (AI) — experimental
+
+> ⚠️ **Experimental / under active testing.** This feature is still being validated
+> across VMs and distros. Treat its advice as a **second opinion**, not a guarantee —
+> read the cited forum threads and use your own judgment before upgrading.
 
 `fettle upgrade-check` asks **Claude** whether a pending upgrade is safe *before*
 you run it. It collects the packages that would upgrade plus a hardware/software
@@ -368,7 +372,7 @@ aur_recent_days   = 21     # -A flags packages changed within this window
 aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
 aur_ioc_cache_ttl = 21600  # seconds to cache IOC feeds on disk
 
-# Upgrade Checker (fettle upgrade-check) — prefer the ANTHROPIC_API_KEY env var
+# Upgrade Checker (fettle upgrade-check) [experimental] — prefer ANTHROPIC_API_KEY env var
 ai_model            = "claude-sonnet-5"
 ai_effort           = "medium"   # low | medium | high — thinking depth vs cost
 ai_max_web_searches = 5          # cap forum searches per run (bounds tokens/cost)

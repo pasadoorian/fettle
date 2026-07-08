@@ -22,7 +22,8 @@
 #aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
 #aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
 
-# Upgrade Checker (`fettle upgrade-check`). Prefer the ANTHROPIC_API_KEY env var;
+# Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
+# Prefer the ANTHROPIC_API_KEY env var;
 # if you put the key here, keep this file chmod 600 (fettle refuses world-readable).
 #ai_model = "claude-sonnet-5"
 #ai_effort = "medium"          # low | medium | high — thinking depth vs cost
