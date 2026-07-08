@@ -27,16 +27,18 @@ def _fake(responses, calls):
 
 
 # -- clean -------------------------------------------------------------------
+_SNAPS = ("Name Version Rev Tracking Publisher Notes\n"
+          "core20 20230622 1974 latest/stable canonical base\n"
+          "core20 20230801 2015 latest/stable canonical disabled\n"
+          "firefox 117.0 3026 latest/stable mozilla disabled\n")
+
+
 def test_clean_apt_flatpak_and_prunes_disabled_snaps():
     calls = []
-    snaps = ("Name Version Rev Tracking Publisher Notes\n"
-             "core20 20230622 1974 latest/stable canonical base\n"
-             "core20 20230801 2015 latest/stable canonical disabled\n"
-             "firefox 117.0 3026 latest/stable mozilla disabled\n")
-    responses = {("snap", "list", "--all"): snaps}
+    responses = {("snap", "list", "--all"): _SNAPS}
     with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
          patch("fettle.command.which", return_value=True):
-        DebianBackend().clean_caches(_ctx())
+        DebianBackend().clean_caches(_ctx(assume_yes=True))  # --yes accepts all prompts
     argvs = [c for c, _ in calls]
     assert ["apt-get", "clean"] in argvs
     assert ["apt-get", "autoclean", "-y"] in argvs
@@ -45,6 +47,19 @@ def test_clean_apt_flatpak_and_prunes_disabled_snaps():
     assert ["snap", "remove", "core20", "--revision=2015"] in argvs
     assert ["snap", "remove", "firefox", "--revision=3026"] in argvs
     assert not any(c[:3] == ["snap", "remove", "core20"] and "--revision=1974" in c for c in argvs)
+
+
+def test_clean_never_removes_snaps_without_confirmation():
+    """No --yes and no TTY -> the per-revision prompt is declined; nothing removed."""
+    calls = []
+    responses = {("snap", "list", "--all"): _SNAPS}
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True), \
+         patch("builtins.input", side_effect=EOFError):  # no TTY -> prompt declined
+        DebianBackend().clean_caches(_ctx())
+    argvs = [c for c, _ in calls]
+    assert not any(c[:2] == ["snap", "remove"] for c in argvs)  # never removed unasked
+    assert ["apt-get", "clean"] in argvs  # non-interactive cache cleaning still ran
 
 
 def test_clean_skips_flatpak_when_disabled():

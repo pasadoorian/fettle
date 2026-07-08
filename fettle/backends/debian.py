@@ -77,13 +77,27 @@ class DebianBackend(PackageBackend):
         return Result(summary="caches cleaned")
 
     def _prune_disabled_snaps(self, ctx: Context) -> None:
-        """Remove superseded (disabled) snap revisions left after a refresh."""
+        """Offer to remove superseded (disabled) snap revisions left after a refresh.
+
+        Each revision is confirmed individually — removing an installed snap
+        revision is never done without asking (only ``--yes`` opts into all).
+        """
+        disabled = []  # (name, revision)
         for line in self._query(["snap", "list", "--all"]).splitlines()[1:]:
             cols = line.split()
             if len(cols) >= 6 and "disabled" in cols[5]:
-                name, rev = cols[0], cols[2]
-                ctx.execute(["snap", "remove", name, f"--revision={rev}"],
-                            quiet=True, msg=f"removed disabled snap {name} (rev {rev})")
+                disabled.append((cols[0], cols[2]))
+        if not disabled:
+            return
+        ctx.output.note("disabled (superseded) snap revisions:")
+        labels = [f"{name} (rev {rev})" for name, rev in disabled]
+        for label in labels:
+            print(f"    {label}")
+        by_label = dict(zip(labels, disabled))
+        for label in ctx.select(labels, prompt="remove disabled snap revision"):
+            name, rev = by_label[label]
+            ctx.execute(["snap", "remove", name, f"--revision={rev}"],
+                        quiet=True, msg=f"removed disabled snap {name} (rev {rev})")
 
     # -- update --------------------------------------------------------------
     def update_system(self, ctx: Context) -> Result:
