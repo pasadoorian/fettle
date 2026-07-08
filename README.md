@@ -171,6 +171,7 @@ fettle clean update        # same thing, as words
 fettle -A                  # AUR health audit  -> ~/aur-audit.txt
 fettle pkg-audit           # normalized package supply-chain audit
 fettle sys-audit --all     # full security scan (elevates itself; no sudo needed)
+fettle upgrade-check       # AI: is this upgrade safe? (needs ANTHROPIC_API_KEY)
 ```
 
 ## Maintenance actions
@@ -310,6 +311,43 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
 A standalone binary (for hosts with no `python3` at all) is a planned option; the
 zipapp is the current transport.
 
+## Upgrade Checker (AI)
+
+`fettle upgrade-check` asks **Claude** whether a pending upgrade is safe *before*
+you run it. It collects the packages that would upgrade plus a hardware/software
+profile (`inxi`), has Claude research the distro's forums (Arch/Manjaro/Ubuntu/
+Reddit) for known issues, and returns a clean, cited verdict with concrete
+before/after steps. It is **report-only** — it never touches your system; you run
+`fettle -u` yourself once you're satisfied.
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-…
+fettle upgrade-check                 # verdict + steps -> ~/upgrade-check.txt
+fettle upgrade-check --effort high   # deeper analysis for a big/risky upgrade
+fettle upgrade-check --no-web        # skip forum search (faster, cheaper)
+```
+
+- **API key** (first found wins): `ANTHROPIC_API_KEY` env → `ai_api_key` in the
+  config (keep it `chmod 600` — fettle refuses a world-readable config). No key →
+  it just prints the pending-package list. `--print-config` **never** prints the
+  key in full — only a `sk-ant-…1234` hint and its source.
+- **Privacy:** hardware **serials, MAC addresses, and UUIDs are stripped** from the
+  inxi output before anything is sent; only the redacted profile + package list
+  reach the API.
+- **Grounded, not guessed:** the model is given the real package list and told to
+  cite a forum source for every claim (and to call the upgrade routine when it
+  finds nothing). fettle then **drops any flagged package that isn't actually
+  upgrading** and any source outside the trusted forums — so the report can't warn
+  you about things that aren't in your update.
+- **Cost & controls:** one request per run — `claude-sonnet-5` at `effort=medium`,
+  forum searches capped at `ai_max_web_searches` (default 5) — roughly
+  **$0.10–0.30 per check**; the exact token + search count prints at the end. Tune
+  via config (`ai_model`, `ai_effort`, `ai_max_web_searches`) or `--model` /
+  `--effort`.
+
+Pure stdlib, like everything else — the API is called over `urllib`, no
+`anthropic` SDK to install (which also means no `pip`/venv friction on Arch).
+
 ## Configuration
 
 Optional TOML file at `~/.config/fettle/config.toml`. Precedence, low → high:
@@ -329,6 +367,12 @@ aur_max_age_days  = 365    # PKGBUILD older than this is "stale" (pkg-audit)
 aur_recent_days   = 21     # -A flags packages changed within this window
 aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
 aur_ioc_cache_ttl = 21600  # seconds to cache IOC feeds on disk
+
+# Upgrade Checker (fettle upgrade-check) — prefer the ANTHROPIC_API_KEY env var
+ai_model            = "claude-sonnet-5"
+ai_effort           = "medium"   # low | medium | high — thinking depth vs cost
+ai_max_web_searches = 5          # cap forum searches per run (bounds tokens/cost)
+# ai_api_key = "sk-ant-..."      # optional; keep the file chmod 600; never printed in full
 
 # Per-distro tool selection
 [updaters.arch]
