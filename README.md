@@ -396,12 +396,44 @@ snap_updater    = "snap"     # snap | none
 at an alternate file; `--no-config` ignores it entirely. A starter template ships
 as [`fettle.toml.example`](fettle.toml.example).
 
+## Previewing an upgrade
+
+`fettle -u --dry-run` resolves and lists **every package the upgrade would
+install** — version upgrades, the new dependencies they pull in, and any
+removals — grouped by source, before it prints the commands it would run. It
+changes nothing and needs no `sudo`.
+
+```
+▸ [1/1] Updating packages
+  14 package(s) would be installed/changed:
+    official repos (12):
+      linux              6.12.1-1 -> 6.12.4-1
+      systemd            257.2-1  -> 257.3-1
+      + libfoo           2.0-1                 (new dependency)
+      - obsolete-lib     1.2-3                 (remove)
+      …
+    AUR (2):
+      brave-bin          1:1.92.134-1 -> 1:1.92.138-1
+  would run: pacman -Syuu
+  …
+```
+
+On Arch this uses `checkupdates`' trick — a throwaway package DB synced in `/tmp`
+via `fakeroot` — so the preview reflects **fresh** mirror data without touching
+your system DB or needing root (`pacman-contrib` + `fakeroot` recommended; it
+degrades to cached data with a note otherwise). On Debian/Ubuntu it's apt's
+native `apt-get -s dist-upgrade` simulation. Pass `--no-sync` to skip the refresh
+and preview against the cached data (faster; may be stale). AUR `-git`/`-devel`
+packages that rebuild from source may not show a version bump until yay fetches
+them — noted in the output.
+
 ## Common options
 
 | Option | Effect |
 |---|---|
 | `-a`, `--all` | run the default action set |
 | `--dry-run` | print what would run; execute nothing (read-only queries still run) |
+| `--no-sync` | dry-run preview: use cached repo data instead of a fresh sync |
 | `--only ACTION` / `--skip ACTION` | restrict / exclude actions (repeatable) |
 | `--yes` | assume yes to all prompts (non-interactive) |
 | `-R`, `--auto-rebuild` | offer to rebuild instead of only listing (with `-r`/`-y`) |
