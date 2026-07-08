@@ -344,10 +344,13 @@ fettle upgrade-check --no-web        # skip forum search (faster, cheaper)
   upgrading** and any source outside the trusted forums — so the report can't warn
   you about things that aren't in your update.
 - **Cost & controls:** one request per run — `claude-sonnet-5` at `effort=medium`,
-  forum searches capped at `ai_max_web_searches` (default 5) — roughly
-  **$0.10–0.30 per check**; the exact token + search count prints at the end. Tune
-  via config (`ai_model`, `ai_effort`, `ai_max_web_searches`) or `--model` /
-  `--effort`.
+  forum searches capped at `ai_max_web_searches` (default 5). Roughly
+  **$0.10–0.30 for a small upgrade**, up to **~$0.60 for a large batch** (a
+  330-package Ubuntu run with 5 web searches was ~186k input / 7k output tokens),
+  since the fetched forum pages ride in the input. The exact token + search count
+  prints at the end. Tune via config (`ai_model`, `ai_effort`,
+  `ai_max_web_searches`), `--effort`, or `--no-web` (cheapest — skips the forum
+  search entirely).
 
 Pure stdlib, like everything else — the API is called over `urllib`, no
 `anthropic` SDK to install (which also means no `pip`/venv friction on Arch).
