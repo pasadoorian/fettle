@@ -30,6 +30,27 @@ def test_build_payload_no_web():
     assert "tools" not in p
 
 
+def test_build_payload_max_tokens_leaves_room_for_thinking():
+    # Adaptive thinking tokens count toward output; a tight cap truncated the JSON
+    # verdict before it was emitted (the Ubuntu-VM failure). Keep headroom.
+    p = uc.build_payload(_snap(), model="m", effort="medium", allow_web=True, max_uses=5)
+    assert p["max_tokens"] >= 8000
+
+
+def test_analyze_truncated_response_is_diagnosed(monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    from fettle.ai import client
+    client.set_debug(True)
+    try:
+        truncated = {"stop_reason": "max_tokens",
+                     "content": [{"type": "text", "text": '{"safety_verdict"'}]}
+        with patch("fettle.ai.upgrade_check.client.messages", return_value=(truncated, 4)):
+            assert uc.analyze(_snap(), config=Config()) is None
+    finally:
+        client.set_debug(False)
+    assert "max_tokens" in capsys.readouterr().err
+
+
 def test_extract_json_from_text_and_fence():
     assert uc._extract_json({"content": [{"type": "text", "text": '{"a": 1}'}]}) == {"a": 1}
     fenced = {"content": [{"type": "text", "text": 'Here:\n```json\n{"a": 2}\n```'}]}

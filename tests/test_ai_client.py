@@ -53,3 +53,18 @@ def test_messages_returns_none_on_failure():
         {"model": "m", "messages": []}, api_key="k",
         runner=lambda body, key, *, timeout: None)
     assert msg is None and searches == 0
+
+
+def test_debug_diag_explains_exhausted_continuations(capsys):
+    client.set_debug(True)
+    try:
+        msg, _ = client.messages(
+            {"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+            api_key="k", max_continuations=1,
+            runner=lambda body, key, *, timeout: {
+                "stop_reason": "pause_turn",
+                "content": [{"type": "web_search_tool_result"}]})
+    finally:
+        client.set_debug(False)
+    assert msg["stop_reason"] == "pause_turn"      # never finished
+    assert "exhausted" in capsys.readouterr().err  # and said so

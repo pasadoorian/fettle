@@ -74,7 +74,11 @@ def build_payload(snapshot, *, model: str, effort: str,
                   allow_web: bool, max_uses: int) -> dict:
     payload = {
         "model": model,
-        "max_tokens": 2500,
+        # Roomy: adaptive thinking tokens count toward the output budget, so a
+        # tight cap truncates the response before the JSON verdict is emitted
+        # (stop_reason "max_tokens", no parseable object). The verdict is small;
+        # we only pay for tokens actually used.
+        "max_tokens": 8000,
         "thinking": {"type": "adaptive"},
         "output_config": {"effort": effort},
         "system": _SYSTEM,
@@ -176,10 +180,20 @@ def analyze(snapshot, *, config, allow_web: bool = True) -> Result | None:
         max_uses=getattr(config, "ai_max_web_searches", 5),
     )
     msg, searches = client.messages(payload, api_key=api_key)
-    if msg is None or msg.get("stop_reason") == "refusal":
+    if msg is None:
+        return None  # client._diag already explained the HTTP/network failure
+    stop = msg.get("stop_reason")
+    if stop == "refusal":
+        client._diag("model declined the request (stop_reason=refusal)")
         return None
     data = _extract_json(msg)
     if data is None:
+        hint = ("response hit max_tokens before finishing — raise max_tokens"
+                if stop == "max_tokens" else
+                "response was still mid-turn (web search not finished)"
+                if stop == "pause_turn" else
+                f"no JSON verdict in the reply (stop_reason={stop})")
+        client._diag(hint)
         return None
     result = _validate(data, snapshot)
     usage = msg.get("usage") or {}

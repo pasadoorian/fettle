@@ -290,6 +290,8 @@ def _run_upgrade_check(argv: list[str]) -> int:
     p.add_argument("--no-web", action="store_true", help="disable distro-forum web search")
     p.add_argument("--model", metavar="ID", help="override the model (default claude-sonnet-5)")
     p.add_argument("--effort", choices=["low", "medium", "high"], help="thinking depth vs cost")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="explain why the AI step failed (HTTP status, errors)")
     p.add_argument("-q", "--quiet", action="store_true")
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
@@ -304,6 +306,9 @@ def _run_upgrade_check(argv: list[str]) -> int:
         cfg.ai_model = args.model
     if args.effort:
         cfg.ai_effort = args.effort
+    if args.verbose:
+        from .ai.client import set_debug
+        set_debug(True)
 
     try:
         backend = detect()
@@ -333,6 +338,8 @@ def _run_upgrade_check(argv: list[str]) -> int:
     result = uc.analyze(snap, config=cfg, allow_web=not args.no_web)
     if result is None:
         out.warn("AI analysis unavailable (offline / declined / error) — package list:")
+        if not args.verbose:
+            out.note("re-run with --verbose to see why the AI step failed.")
         _print_pending(pending)
         return 0
 
