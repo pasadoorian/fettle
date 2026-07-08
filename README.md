@@ -19,16 +19,17 @@ pluggable per-distro backend so new distributions are a single new class.
 
 **Status:** the Arch/Manjaro backend is feature-complete and at parity with
 `update.sh` (update, clean, orphans, rebuilds, python-rebuild, config drift,
-firmware, kernels, and the AUR package supply-chain audit), including the
-install-time yay hook. The Debian backend and the `sys-audit` security scanner
-are in progress.
+firmware, kernels, plus the AUR audit / IoC scan), including the install-time yay
+hook. The Debian/Ubuntu backend covers the maintenance actions (apt + flatpak +
+snap); its package supply-chain providers (`pkg-audit`) and the `sys-audit`
+security scanner are in progress.
 
 ## Supported distros
 
 | Distro family | Backend | Package tooling | State |
 |---|---|---|---|
-| Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | ready |
-| Debian / Ubuntu | `debian` | apt + flatpak + snap | in progress |
+| Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | ready (maintenance + supply-chain) |
+| Debian / Ubuntu | `debian` | apt + flatpak + snap | maintenance ready; supply-chain in progress |
 
 ## Installation
 
