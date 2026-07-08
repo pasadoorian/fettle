@@ -44,6 +44,12 @@ class Config:
         default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
     )
     aur_ioc_cache_ttl: int = 21600
+    # Upgrade Checker (fettle upgrade-check). ai_api_key is optional — prefer the
+    # ANTHROPIC_API_KEY env var; never printed in full (see --print-config).
+    ai_model: str = "claude-sonnet-5"
+    ai_effort: str = "medium"
+    ai_max_web_searches: int = 5
+    ai_api_key: str = ""
 
 
 def _allowed_uids() -> set[int]:

@@ -174,6 +174,16 @@ def _print_config(cfg: Config, args: argparse.Namespace) -> None:
     print(f"  {'auto_rebuild':18} {cfg.auto_rebuild}")
     print(f"  {'exclude_foreign':18} {' '.join(cfg.exclude_foreign) or '(none)'}")
     print(f"  {'keep_orphans':18} {' '.join(cfg.keep_orphans) or '(none)'}")
+    print(f"  {'ai_model':18} {cfg.ai_model}")
+    # The API key is never printed in full — only its source and a last-4 hint.
+    from .ai.client import redact_key
+    env_key = os.environ.get("ANTHROPIC_API_KEY")
+    if env_key:
+        print(f"  {'ai_api_key':18} {redact_key(env_key)} (from $ANTHROPIC_API_KEY)")
+    elif cfg.ai_api_key:
+        print(f"  {'ai_api_key':18} {redact_key(cfg.ai_api_key)} (from config)")
+    else:
+        print(f"  {'ai_api_key':18} (unset — set $ANTHROPIC_API_KEY or config ai_api_key)")
 
 
 def _is_root() -> bool:
