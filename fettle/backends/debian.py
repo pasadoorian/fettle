@@ -28,8 +28,15 @@ class DebianBackend(PackageBackend):
     name = "debian"
     supported = {
         "clean", "orphans", "update", "rebuilds", "config_drift", "firmware", "kernels",
-        # M8 adds source_audit/pkg-audit; M10 adds integrity. No python_rebuild / aur_* (Arch-only).
+        "pkg_audit",
+        # M10 adds integrity. No python_rebuild / aur_* (Arch-only).
     }
+
+    def supply_chain_sources(self):
+        from ..supplychain.apt_source import AptSource
+        from ..supplychain.flatpak_source import FlatpakSource
+        from ..supplychain.snap_source import SnapSource
+        return [AptSource(), FlatpakSource(), SnapSource()]
 
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str, str]:

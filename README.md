@@ -21,15 +21,15 @@ pluggable per-distro backend so new distributions are a single new class.
 `update.sh` (update, clean, orphans, rebuilds, python-rebuild, config drift,
 firmware, kernels, plus the AUR audit / IoC scan), including the install-time yay
 hook. The Debian/Ubuntu backend covers the maintenance actions (apt + flatpak +
-snap); its package supply-chain providers (`pkg-audit`) and the `sys-audit`
-security scanner are in progress.
+snap) and the package supply-chain audit (APT + Flatpak + Snap providers feeding
+`pkg-audit`). The `sys-audit` firmware/boot security scanner is next.
 
 ## Supported distros
 
 | Distro family | Backend | Package tooling | State |
 |---|---|---|---|
 | Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | ready (maintenance + supply-chain) |
-| Debian / Ubuntu | `debian` | apt + flatpak + snap | maintenance ready; supply-chain in progress |
+| Debian / Ubuntu | `debian` | apt + flatpak + snap | ready (maintenance + supply-chain) |
 
 ## Installation
 
