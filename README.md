@@ -22,7 +22,9 @@ pluggable per-distro backend so new distributions are a single new class.
 firmware, kernels, plus the AUR audit / IoC scan), including the install-time yay
 hook. The Debian/Ubuntu backend covers the maintenance actions (apt + flatpak +
 snap) and the package supply-chain audit (APT + Flatpak + Snap providers feeding
-`pkg-audit`). The `sys-audit` firmware/boot security scanner is next.
+`pkg-audit`). The `sys-audit` firmware/boot security scanner runs its
+distro-neutral checks; package-integrity (`packages`) and remote execution land
+next.
 
 ## Supported distros
 
@@ -71,7 +73,17 @@ fettle -A                # AUR audit: per-package health table -> ~/aur-audit.tx
 fettle aur-ioc-scan      # -S: scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt
 fettle --all --dry-run   # show everything that would run; change nothing
 fettle --print-config    # show the effective configuration
+
+sudo fettle sys-audit --all      # firmware/boot/hardware security scan
+fettle sys-audit --list          # list scan categories
+fettle sys-audit secureboot tpm  # run specific categories
 ```
+
+`sys-audit` is the **System Supply Chain** scanner (a port of the Eclypsium
+firmware/boot cheat-sheet): Secure Boot state + the 2026 Microsoft cert-expiry
+matrix, BIOS/UEFI, CPU microcode & vulnerabilities, TPM, Intel ME, fwupd/HSI,
+chipsec, hardware inventory, and storage firmware. Run it under `sudo` for the
+root-only data (dmidecode, chipsec, smartctl).
 
 The two AUR supply-chain commands are distinct: **`-A` / `aur-audit`** is a
 provenance/health census (age, votes, out-of-date, orphan, recently-changed,

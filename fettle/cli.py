@@ -64,7 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fettle", description="Cross-distribution Linux system maintenance.",
         epilog="Actions tagged [arch]/[debian] are specific to that distro family; "
                "untagged actions work everywhere. fettle runs only the actions your "
-               "distro's backend supports and skips the rest with a note.",
+               "distro's backend supports and skips the rest with a note.\n"
+               "Subcommands: 'fettle sys-audit' (firmware/boot/hardware security scan; "
+               "try --list), 'fettle pkg-audit', 'fettle aur-precheck'.",
     )
     tags = _distro_tags()
     for short, long, action in FLAG_ACTIONS:
@@ -157,6 +159,12 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "aur-precheck":
         from .aur import precheck
         return precheck.main(argv[1:])
+
+    # sys-audit is the System Supply Chain scanner — its own subcommand with a
+    # separate category/--all/--list surface, routed before the maintenance parser.
+    if argv and argv[0] == "sys-audit":
+        from .secure import audit
+        return audit.main(argv[1:])
 
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
