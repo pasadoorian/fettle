@@ -137,6 +137,30 @@ def _validate(data: dict, snapshot) -> Result:
     )
 
 
+def format_report(result: "Result") -> str:
+    """Full plain-text report (for the screen body and ~/upgrade-check.txt)."""
+    lines = [f"Verdict: {result.safety_verdict.upper()}  "
+             f"(failure likelihood: {result.failure_likelihood})"]
+    if result.summary:
+        lines += ["", result.summary]
+    if result.must_do_before:
+        lines += ["", "Before upgrading:"] + [f"  - {s}" for s in result.must_do_before]
+    if result.should_do_after:
+        lines += ["", "After upgrading:"] + [f"  - {s}" for s in result.should_do_after]
+    if result.watch_items:
+        lines += ["", "Watch:"] + [f"  - {w.get('package')}: {w.get('concern')}"
+                                   for w in result.watch_items]
+    if result.recommendation:
+        lines += ["", f"Recommendation: {result.recommendation}"]
+    if result.sources:
+        lines += ["", "Sources:"] + [f"  - {s.get('title', '')}: {s.get('url', '')}"
+                                     for s in result.sources]
+    if result.dropped_watch_items:
+        lines += ["", f"({result.dropped_watch_items} model-flagged item(s) dropped: "
+                  "not in the actual upgrade set)"]
+    return "\n".join(lines)
+
+
 def analyze(snapshot, *, config, allow_web: bool = True) -> Result | None:
     """Run the check. Returns ``None`` if unauthenticated, refused, or on any
     failure — the caller then falls back to showing the plain package diff."""

@@ -70,6 +70,8 @@ subcommands (run in place of the action flags above):
   fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
   fettle remote HOST [acts]  run maintenance on a remote host over ssh (safe set
                              by default; --yes for unattended). try 'remote -h'
+  fettle upgrade-check       AI pre-upgrade safety check (Claude): is this update
+                             safe, what to do before/after — needs ANTHROPIC_API_KEY
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
@@ -271,6 +273,97 @@ def _run_remote_maintenance(argv: list[str]) -> int:
                       ssh_args=args.ssh_arg, tty=not args.yes)
 
 
+def _run_upgrade_check(argv: list[str]) -> int:
+    from .ai import snapshot as ai_snapshot
+    from .ai import upgrade_check as uc
+    from .ai.client import resolve_auth
+    from .backends.base import Context
+
+    p = argparse.ArgumentParser(
+        prog="fettle upgrade-check",
+        description="AI-assisted pre-upgrade safety check (Claude). Read-only.",
+        epilog="Uses ANTHROPIC_API_KEY (or config ai_api_key). Hardware serials are "
+               "redacted before sending. Report only — you run `fettle -u` yourself.")
+    p.add_argument("--no-web", action="store_true", help="disable distro-forum web search")
+    p.add_argument("--model", metavar="ID", help="override the model (default claude-sonnet-5)")
+    p.add_argument("--effort", choices=["low", "medium", "high"], help="thinking depth vs cost")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--no-color", action="store_true")
+    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--no-config", action="store_true", help="ignore the config file")
+    args = p.parse_args(argv)
+
+    out = Output(color=(False if args.no_color else None), quiet=args.quiet)
+    cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
+    for w in warnings:
+        out.warn(w)
+    if args.model:
+        cfg.ai_model = args.model
+    if args.effort:
+        cfg.ai_effort = args.effort
+
+    try:
+        backend = detect()
+    except UnknownDistro as exc:
+        out.err(str(exc))
+        return 1
+    ctx = Context(output=out, config=cfg, user_home=Path.home())
+
+    out.section("Upgrade check")
+    pending = backend.pending_upgrades(ctx)
+    if not pending:
+        out.ok("system is up to date — nothing to upgrade.")
+        return 0
+
+    out.note(f"{len(pending)} package(s) pending; gathering system details (inxi)...")
+    snap = ai_snapshot.gather(ctx, backend)
+
+    if resolve_auth(cfg) is None:
+        out.warn("no API key set (ANTHROPIC_API_KEY or config ai_api_key) — "
+                 "showing the package list only:")
+        _print_pending(pending)
+        return 0
+
+    out.note(f"asking {cfg.ai_model} (may take a minute; searching distro forums)...")
+    result = uc.analyze(snap, config=cfg, allow_web=not args.no_web)
+    if result is None:
+        out.warn("AI analysis unavailable (offline / declined / error) — package list:")
+        _print_pending(pending)
+        return 0
+
+    _render_upgrade_check(out, result, ctx)
+    return 0
+
+
+def _print_pending(pending) -> None:
+    for name, old, new in pending:
+        print(f"    {name}  {old} -> {new}")
+
+
+def _render_upgrade_check(out: Output, result, ctx) -> None:
+    from .ai.upgrade_check import format_report
+    from .util import chown_to_user
+
+    verdict = {"safe": out.ok, "caution": out.warn, "risky": out.alert}.get(
+        result.safety_verdict, out.note)
+    verdict(f"Verdict: {result.safety_verdict.upper()}  "
+            f"(failure likelihood: {result.failure_likelihood})")
+    report = format_report(result)
+    for line in report.splitlines()[1:]:  # verdict already printed (coloured)
+        print(line)
+    u = result.usage or {}
+    out.note(f"[usage: {u.get('input_tokens', 0)} in / {u.get('output_tokens', 0)} out "
+             f"tokens, {u.get('web_searches', 0)} web search(es)]")
+
+    path = ctx.user_home / "upgrade-check.txt"
+    try:
+        path.write_text(report + "\n")
+        chown_to_user(path, ctx.sudo_user)
+        out.note(f"saved to {path}")
+    except OSError as exc:
+        out.warn(f"could not write {path}: {exc}")
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -290,6 +383,10 @@ def main(argv: list[str] | None = None) -> int:
     # `fettle remote <host> <actions>` runs maintenance on a remote host over SSH.
     if argv and argv[0] == "remote":
         return _run_remote_maintenance(argv[1:])
+
+    # `fettle upgrade-check` — AI-assisted pre-upgrade safety advisor (read-only).
+    if argv and argv[0] == "upgrade-check":
+        return _run_upgrade_check(argv[1:])
 
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
