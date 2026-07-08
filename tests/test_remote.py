@@ -64,6 +64,13 @@ def test_run_propagates_remote_rc():
     assert remote.run("h", ["clean"], runner=rec) == 3
 
 
+def test_run_no_tty_omits_dash_t():
+    rec = _Rec()
+    remote.run("h", ["update"], tty=False, runner=rec)
+    ssh = next(c for c in rec.calls if c[0] == "ssh")
+    assert "-t" not in ssh  # unattended: no PTY
+
+
 def test_zipapp_builds_and_runs(tmp_path):
     pyz = tmp_path / "fettle.pyz"
     remote.build_zipapp(pyz)
@@ -103,6 +110,7 @@ def test_remote_maintenance_default_safe_set():
     assert host == "server1"
     assert fettle_args == ["clean", "update", "firmware"]  # safe default, no orphans/kernels
     assert kw["sudo"] is True                              # maintenance runs under sudo
+    assert kw["tty"] is True                               # interactive by default
 
 
 def test_remote_maintenance_all_flag_is_the_safe_set():
@@ -118,6 +126,7 @@ def test_remote_maintenance_explicit_actions_and_yes():
     (_, fettle_args), kw = run.call_args
     assert fettle_args == ["update", "orphans", "--yes"]  # destructive action named explicitly
     assert kw["sudo"] is True
+    assert kw["tty"] is False  # --yes is fully unattended: no PTY
 
 
 def test_remote_maintenance_dry_run_skips_sudo():

@@ -254,8 +254,10 @@ def _run_remote_maintenance(argv: list[str]) -> int:
         remote_args.append("--dry-run")
     # Maintenance needs root, so run the remote fettle under sudo — which also means
     # it runs as root and won't try to self-elevate inside the zipapp. A dry-run
-    # changes nothing, so it needs neither sudo nor elevation.
-    return remote.run(args.host, remote_args, sudo=not args.dry_run, ssh_args=args.ssh_arg)
+    # changes nothing, so it needs neither sudo nor elevation. Allocate a PTY only
+    # for interactive runs; --yes is fully unattended (assumes passwordless sudo).
+    return remote.run(args.host, remote_args, sudo=not args.dry_run,
+                      ssh_args=args.ssh_arg, tty=not args.yes)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -115,8 +115,10 @@ class ArchBackend(PackageBackend):
             if system != "pamac":
                 out.note("AUR updater is pamac, which manages repos too — using pamac for both.")
             out.note("updating repos + AUR via pamac...")
-            ctx.execute(["pamac", "update", "-a", "--enable-downgrade", "--force-refresh"],
-                        as_user=ctx.sudo_user)
+            pamac_cmd = ["pamac", "update", "-a", "--enable-downgrade", "--force-refresh"]
+            if ctx.assume_yes:
+                pamac_cmd.append("--no-confirm")
+            ctx.execute(pamac_cmd, as_user=ctx.sudo_user)
             out.summary_add("packages updated (pamac: repos + AUR)")
             return Result()
         if system == "pacman":
@@ -124,8 +126,10 @@ class ArchBackend(PackageBackend):
             ctx.execute(["pacman", "-Syuu", "--noconfirm"])
         else:  # pamac (repos only)
             out.note("updating official repos (pamac)...")
-            ctx.execute(["pamac", "update", "--enable-downgrade", "--force-refresh"],
-                        as_user=ctx.sudo_user)
+            pamac_cmd = ["pamac", "update", "--enable-downgrade", "--force-refresh"]
+            if ctx.assume_yes:
+                pamac_cmd.append("--no-confirm")
+            ctx.execute(pamac_cmd, as_user=ctx.sudo_user)
         return Result()
 
     def update_extras(self, ctx: Context) -> Result:
@@ -140,12 +144,17 @@ class ArchBackend(PackageBackend):
         if not command.which("yay"):
             out.err("yay not found (aur_updater=yay). Install it, or set aur_updater to pamac/none.")
             return Result(ok=False)
-        out.note("updating AUR packages (yay, with PKGBUILD review)...")
-        ctx.execute(
-            ["yay", "-Sua", "--devel", "--cleanafter", "--answerdiff", "None",
-             "--answeredit", "None", "--diffmenu=true", "--editmenu=true"],
-            as_user=ctx.sudo_user,
-        )
+        yay_cmd = ["yay", "-Sua", "--devel", "--cleanafter",
+                   "--answerdiff", "None", "--answeredit", "None"]
+        if ctx.assume_yes:
+            # Unattended: no prompts and no diff/edit menus — this SKIPS PKGBUILD
+            # review (the documented --yes tradeoff).
+            out.note("updating AUR packages (yay, UNATTENDED — PKGBUILD review skipped)...")
+            yay_cmd += ["--noconfirm", "--diffmenu=false", "--editmenu=false"]
+        else:
+            out.note("updating AUR packages (yay, with PKGBUILD review)...")
+            yay_cmd += ["--diffmenu=true", "--editmenu=true"]
+        ctx.execute(yay_cmd, as_user=ctx.sudo_user)
         out.summary_add(f"packages updated (repos: {system}, AUR: yay)")
         out.next_step("check AUR packages before the next build: fettle -A -S")
         return Result()

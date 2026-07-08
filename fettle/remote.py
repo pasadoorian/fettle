@@ -36,13 +36,14 @@ def build_zipapp(dest: Path) -> None:
 
 
 def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
-        runner=subprocess.run) -> int:
+        tty: bool = True, runner=subprocess.run) -> int:
     """Run ``fettle <fettle_args>`` on ``host`` via a shipped zipapp.
 
     ``fettle_args`` is the full argument list to hand the remote fettle, e.g.
-    ``["sys-audit", "--all"]`` or ``["clean", "update", "--yes"]``. ``runner`` is
-    the subprocess entry point (injected for tests). Returns the remote exit code
-    (or 1 if the upload fails).
+    ``["sys-audit", "--all"]`` or ``["clean", "update", "--yes"]``. ``tty`` forces
+    an ``ssh -t`` PTY (needed for interactive sudo/prompts); drop it for a fully
+    unattended run. ``runner`` is the subprocess entry point (injected for tests).
+    Returns the remote exit code (or 1 if the upload fails).
     """
     remote_path = f"/tmp/fettle-remote.{os.getpid()}.pyz"
     print(f"Remote target: {host}  (sudo={'on' if sudo else 'off'})")
@@ -57,7 +58,10 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
 
     argv = " ".join(shlex.quote(a) for a in fettle_args)
     prefix = "sudo " if sudo else ""
-    # -t: allocate a TTY (interactive sudo prompt + ANSI). Clean up, keep the rc.
     remote_cmd = (f"{prefix}python3 {remote_path} {argv}; "
                   f"rc=$?; rm -f {remote_path}; exit $rc")
-    return runner(["ssh", "-t", *ssh_args, host, remote_cmd]).returncode
+    # -t allocates a PTY for interactive sudo/prompts + ANSI; skip it for
+    # unattended runs (a non-TTY stdin would otherwise warn, and automation
+    # shouldn't depend on a terminal).
+    ssh_cmd = ["ssh", *(["-t"] if tty else []), *ssh_args, host, remote_cmd]
+    return runner(ssh_cmd).returncode

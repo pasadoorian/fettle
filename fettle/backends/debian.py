@@ -132,9 +132,18 @@ class DebianBackend(PackageBackend):
         ctx.execute([tool, "update"])
         out.note("applying upgrades...")
         if tool == "nala":
-            ctx.execute(["nala", "upgrade", "-y"])
+            upgrade = ["nala", "upgrade", "-y"]
         else:
-            ctx.execute(["apt-get", "full-upgrade", "-y"])
+            upgrade = ["apt-get", "full-upgrade", "-y"]
+        if ctx.assume_yes:
+            # Unattended: keep old conffiles on conflict (no dpkg prompt; the kept
+            # file surfaces later via config-drift as .dpkg-dist) and use the
+            # non-interactive frontend so nothing can stall an SSH run.
+            if tool == "apt-get":
+                upgrade = ["apt-get", "-o", "Dpkg::Options::=--force-confold",
+                           "-o", "Dpkg::Options::=--force-confdef", "full-upgrade", "-y"]
+            upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", *upgrade]
+        ctx.execute(upgrade)
         return Result()
 
     def update_extras(self, ctx: Context) -> Result:

@@ -47,6 +47,26 @@ def test_update_default_pacman_then_yay():
     assert any(c[0] == "yay" and u == "paul" for c, u in calls)
 
 
+def test_update_yes_makes_yay_noninteractive():
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        b, ctx = ArchBackend(), _ctx(assume_yes=True)
+        b.update_extras(ctx)
+    yay = next(c for c, _ in calls if c[0] == "yay")
+    assert "--noconfirm" in yay and "--diffmenu=false" in yay  # review skipped, no menus
+    assert "--diffmenu=true" not in yay
+
+
+def test_update_interactive_keeps_yay_review():
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().update_extras(_ctx())  # no assume_yes
+    yay = next(c for c, _ in calls if c[0] == "yay")
+    assert "--diffmenu=true" in yay and "--noconfirm" not in yay
+
+
 def test_update_aur_none_skips_yay():
     calls, fake = _recorder()
     cfg = Config(updaters={"arch": {"aur_updater": "none"}})

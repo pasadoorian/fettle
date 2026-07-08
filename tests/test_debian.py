@@ -87,6 +87,24 @@ def test_update_default_apt_then_extras():
     assert not any(c[0] == "nala" for c in argvs)
 
 
+def test_update_yes_is_noninteractive():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().update_system(_ctx(assume_yes=True))
+    upgrade = next(c for c, _ in calls if "full-upgrade" in c)
+    assert upgrade[:2] == ["env", "DEBIAN_FRONTEND=noninteractive"]
+    assert "Dpkg::Options::=--force-confold" in upgrade  # keep old conffiles, no prompt
+
+
+def test_update_interactive_plain_apt():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().update_system(_ctx())  # no assume_yes
+    assert ["apt-get", "full-upgrade", "-y"] in [c for c, _ in calls]  # plain (may prompt)
+
+
 def test_update_nala_when_configured():
     calls = []
     cfg = Config(updaters={"debian": {"system_updater": "nala"}})
