@@ -184,6 +184,9 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-c` | `clean` | pacman + pamac/yay caches | `apt-get clean`/`autoclean`, unused flatpaks, disabled snap revisions (asks first) |
 | `-o` | `orphans` | foreign pkgs → `~/alien-pkgs.txt`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/obsolete-pkgs.txt`; `deborphan` + `autoremove` |
 | `-u` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap |
+
+`update` **asks before upgrading** (the package manager shows its plan and
+prompts); pass `--yes` to skip the confirmation and run non-interactively.
 | `-r` | `rebuilds` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
 | `-y` | `python-rebuild` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` | — (apt handles transitions) |
 | `-p` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
@@ -272,6 +275,40 @@ fettle sys-audit remote server1 all               # host from ~/.ssh/config
 fettle sys-audit remote --sudo admin@host2 tpm    # prompt once for remote sudo
 fettle sys-audit remote -v gateway secureboot     # -v forwarded to the remote run
 ```
+
+## Remote maintenance
+
+Run maintenance on another host over SSH — same zipapp transport as the scanner
+(nothing installed on the target; it just needs `python3`). The remote invocation
+is wrapped in `sudo`, so the remote fettle runs as root.
+
+```sh
+fettle remote server1 -a               # safe default: clean + update + firmware
+fettle remote server1 -a --dry-run     # preview; changes nothing
+fettle remote server1 update           # just update (asks before upgrading)
+fettle remote server1 update --yes     # unattended update (no prompts)
+fettle remote server1 orphans kernels  # destructive actions run only when named
+fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
+```
+
+- **Safe by default.** `fettle remote <host>` (or `-a`) runs only `clean update
+  firmware`. Destructive/interactive actions — **orphan** and **kernel** removal —
+  run **only when you name them explicitly**.
+- **Asks before upgrading.** By default the run is interactive over an `ssh -t`
+  TTY: the remote package manager shows its plan and prompts before upgrading (and
+  sudo prompts for a password if needed). This is the same locally — `fettle -u`
+  asks; it does **not** auto-upgrade.
+- **`--yes` = fully unattended.** No prompts at all: `pacman --noconfirm` /
+  `apt-get … --force-confold full-upgrade -y` (keeps old conffiles), no TTY. It
+  assumes **passwordless sudo** on the target, and on Arch it **skips yay's
+  PKGBUILD review** — only use it on hosts whose sources you trust.
+
+> After an unattended (`--yes`) run, review kept config files with
+> `fettle remote <host> config-drift` (apt keeps the old file and drops a
+> `.dpkg-dist`; pacman leaves a `.pacnew`).
+
+A standalone binary (for hosts with no `python3` at all) is a planned option; the
+zipapp is the current transport.
 
 ## Configuration
 

@@ -123,7 +123,12 @@ class ArchBackend(PackageBackend):
             return Result()
         if system == "pacman":
             out.note("updating official repos (pacman)...")
-            ctx.execute(["pacman", "-Syuu", "--noconfirm"])
+            # Ask before upgrading by default — pacman shows the plan and prompts;
+            # --yes (assume_yes) skips it.
+            pacman_cmd = ["pacman", "-Syuu"]
+            if ctx.assume_yes:
+                pacman_cmd.append("--noconfirm")
+            ctx.execute(pacman_cmd)
         else:  # pamac (repos only)
             out.note("updating official repos (pamac)...")
             pamac_cmd = ["pamac", "update", "--enable-downgrade", "--force-refresh"]

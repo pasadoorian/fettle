@@ -43,8 +43,16 @@ def test_update_default_pacman_then_yay():
         b.update_system(ctx)
         b.update_extras(ctx)
     argvs = [c for c, _ in calls]
-    assert ["pacman", "-Syuu", "--noconfirm"] in argvs
+    assert ["pacman", "-Syuu"] in argvs          # interactive: pacman prompts (no --noconfirm)
     assert any(c[0] == "yay" and u == "paul" for c, u in calls)
+
+
+def test_update_yes_makes_pacman_noninteractive():
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().update_system(_ctx(assume_yes=True))
+    assert ["pacman", "-Syuu", "--noconfirm"] in [c for c, _ in calls]
 
 
 def test_update_yes_makes_yay_noninteractive():

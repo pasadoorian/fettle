@@ -131,18 +131,19 @@ class DebianBackend(PackageBackend):
         out.note(f"updating package lists ({tool})...")
         ctx.execute([tool, "update"])
         out.note("applying upgrades...")
-        if tool == "nala":
-            upgrade = ["nala", "upgrade", "-y"]
-        else:
-            upgrade = ["apt-get", "full-upgrade", "-y"]
         if ctx.assume_yes:
-            # Unattended: keep old conffiles on conflict (no dpkg prompt; the kept
-            # file surfaces later via config-drift as .dpkg-dist) and use the
-            # non-interactive frontend so nothing can stall an SSH run.
-            if tool == "apt-get":
-                upgrade = ["apt-get", "-o", "Dpkg::Options::=--force-confold",
+            # Unattended: auto-confirm, keep old conffiles (no dpkg prompt; the kept
+            # file surfaces later via config-drift as .dpkg-dist), non-interactive
+            # frontend so nothing can stall an SSH run.
+            if tool == "nala":
+                upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", "nala", "upgrade", "-y"]
+            else:
+                upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get",
+                           "-o", "Dpkg::Options::=--force-confold",
                            "-o", "Dpkg::Options::=--force-confdef", "full-upgrade", "-y"]
-            upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", *upgrade]
+        else:
+            # Ask before upgrading by default — apt/nala show the plan and prompt.
+            upgrade = ["nala", "upgrade"] if tool == "nala" else ["apt-get", "full-upgrade"]
         ctx.execute(upgrade)
         return Result()
 

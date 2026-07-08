@@ -81,7 +81,7 @@ def test_update_default_apt_then_extras():
         b.update_extras(ctx)
     argvs = [c for c, _ in calls]
     assert ["apt-get", "update"] in argvs
-    assert ["apt-get", "full-upgrade", "-y"] in argvs
+    assert ["apt-get", "full-upgrade"] in argvs  # interactive: apt prompts (no -y)
     assert ["flatpak", "update", "-y"] in argvs
     assert ["snap", "refresh"] in argvs
     assert not any(c[0] == "nala" for c in argvs)
@@ -97,12 +97,14 @@ def test_update_yes_is_noninteractive():
     assert "Dpkg::Options::=--force-confold" in upgrade  # keep old conffiles, no prompt
 
 
-def test_update_interactive_plain_apt():
+def test_update_interactive_apt_prompts():
     calls = []
     with patch("fettle.command.run", side_effect=_fake({}, calls)), \
          patch("fettle.command.which", return_value=True):
         DebianBackend().update_system(_ctx())  # no assume_yes
-    assert ["apt-get", "full-upgrade", "-y"] in [c for c, _ in calls]  # plain (may prompt)
+    argvs = [c for c, _ in calls]
+    assert ["apt-get", "full-upgrade"] in argvs      # no -y -> apt asks before upgrading
+    assert not any(c[:2] == ["apt-get", "full-upgrade"] and "-y" in c for c in argvs)
 
 
 def test_update_nala_when_configured():
@@ -112,7 +114,7 @@ def test_update_nala_when_configured():
          patch("fettle.command.which", return_value=True):
         DebianBackend().update_system(_ctx(cfg))
     argvs = [c for c, _ in calls]
-    assert ["nala", "update"] in argvs and ["nala", "upgrade", "-y"] in argvs
+    assert ["nala", "update"] in argvs and ["nala", "upgrade"] in argvs  # interactive: prompts
     assert not any("apt-get" in c for c in argvs)
 
 

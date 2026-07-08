@@ -49,7 +49,7 @@ REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware")
 ACTION_HELP = {
     "clean": "clean package-manager caches",
     "orphans": "list foreign packages; remove true orphans",
-    "update": "update everything (repos, then AUR / flatpak / snap)",
+    "update": "update everything (asks before upgrading; --yes to skip)",
     "rebuilds": "find packages/services needing a rebuild or restart",
     "python_rebuild": "rebuild packages stranded on an old Python",
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
@@ -120,7 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("-R", "--auto-rebuild", action="store_true",
                    help="offer to rebuild (with -r / -y) instead of only listing")
-    p.add_argument("--yes", action="store_true", help="assume yes to prompts (non-interactive)")
+    p.add_argument("--yes", action="store_true",
+                   help="assume yes to all prompts incl. the upgrade confirmation (non-interactive)")
     p.add_argument("actions", nargs="*", help="action names (same as the flags above)")
     p.add_argument("--distro", metavar="NAME", help="override distro detection")
     p.add_argument("-v", "--verbose", action="store_true")
