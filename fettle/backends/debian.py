@@ -17,11 +17,35 @@ import re
 
 from .. import command
 from ..util import chown_to_user, matches_any
-from .base import Context, PackageBackend, Result
+from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _SYSTEM_UPDATERS = {"apt", "nala", "none"}
 _FLATPAK_UPDATERS = {"flatpak", "none"}
 _SNAP_UPDATERS = {"snap", "none"}
+
+# `apt-get -s dist-upgrade` simulation lines:
+#   Inst name [oldver] (newver origin [arch])   -> upgrade  ([old] present)
+#   Inst name (newver origin [arch])            -> new dependency (no [old])
+#   Remv name [ver] ...                         -> removal
+# (Conf lines are the post-install configure phase — ignored.)
+_APT_INST_RE = re.compile(r"^Inst\s+(\S+)\s+(?:\[([^\]]+)\]\s+)?\((\S+)")
+_APT_REMV_RE = re.compile(r"^Remv\s+(\S+)\s+\[([^\]]+)\]")
+
+
+def _parse_apt_sim(text: str) -> list[TxItem]:
+    items = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        m = _APT_INST_RE.match(line)
+        if m:
+            name, old, new = m.group(1), m.group(2), m.group(3)
+            items.append(TxItem(name=name, new=new, old=old,
+                                kind="upgrade" if old else "new-dep"))
+            continue
+        r = _APT_REMV_RE.match(line)
+        if r:
+            items.append(TxItem(name=r.group(1), new="", old=r.group(2), kind="remove"))
+    return items
 
 
 class DebianBackend(PackageBackend):
@@ -96,6 +120,38 @@ class DebianBackend(PackageBackend):
             if m:
                 out.append((m.group(1), m.group(3).strip(), m.group(2)))
         return out
+
+    def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
+        # apt simulates the *full* resolver as a normal user (`-s`), so unlike the
+        # Arch backend there's no temp-DB/fakeroot trick — `dist-upgrade` gives the
+        # upgrades AND the new dependencies (and any removals) in one shot. We match
+        # the real update verb (full-upgrade == dist-upgrade). apt can't refresh the
+        # lists rootlessly, so we simulate against the current lists and warn if
+        # they look stale (`sync` requests that freshness check).
+        apt = ("apt-get" if command.which("apt-get")
+               else "apt" if command.which("apt") else None)
+        if apt is None:
+            return Transaction(ok=False, notes=["apt-get not found"])
+        items = _parse_apt_sim(self._query([apt, "-s", "dist-upgrade"]))
+        notes: list[str] = []
+        if sync:
+            age = self._apt_lists_age_days(ctx)
+            if age is not None and age >= 7:
+                notes.append(f"apt lists are ~{int(age)} days old — run "
+                             "`sudo apt update` for an accurate preview")
+        return Transaction(items=items, ok=True, notes=notes)
+
+    @staticmethod
+    def _apt_lists_age_days(ctx: Context) -> float | None:
+        """Days since the apt package lists were last refreshed (dir mtime), or
+        None if the path is missing. Rootless read; ctx.root keeps it testable."""
+        import time
+
+        try:
+            mtime = (ctx.root / "var/lib/apt/lists").stat().st_mtime
+        except OSError:
+            return None
+        return max(0.0, (time.time() - mtime) / 86400)
 
     # -- clean ---------------------------------------------------------------
     def clean_caches(self, ctx: Context) -> Result:

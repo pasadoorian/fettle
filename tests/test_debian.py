@@ -101,6 +101,56 @@ def test_pending_upgrades_parses_apt_list():
     assert "Listing..." not in [p[0] for p in pending]  # header skipped
 
 
+# -- pending_transaction (M2) ------------------------------------------------
+_APT_SIM = (
+    "NOTE: This is only a simulation!\n"
+    "Inst base-files [13ubuntu10] (13ubuntu10.4 Ubuntu:24.04/noble-updates [amd64])\n"
+    "Inst libc6 [2.39-0ubuntu8.3] (2.39-0ubuntu8.4 Ubuntu [amd64])\n"
+    "Inst linux-image-6.8.0-134-generic (6.8.0-134.134 Ubuntu:24.04 [amd64])\n"
+    "Remv obsolete-lib [1.2-3]\n"
+    "Conf base-files (13ubuntu10.4 Ubuntu:24.04/noble-updates [amd64])\n"
+)
+
+
+def test_parse_apt_sim_classifies_lines():
+    from fettle.backends.debian import _parse_apt_sim
+    kinds = {i.name: (i.kind, i.old, i.new) for i in _parse_apt_sim(_APT_SIM)}
+    assert kinds["base-files"] == ("upgrade", "13ubuntu10", "13ubuntu10.4")
+    assert kinds["linux-image-6.8.0-134-generic"] == ("new-dep", None, "6.8.0-134.134")
+    assert kinds["obsolete-lib"] == ("remove", "1.2-3", "")
+    assert "base-files" not in [n for n in kinds if False]  # Conf line ignored
+    assert len(kinds) == 4  # 3 Inst + 1 Remv; the Conf line adds nothing
+
+
+def test_pending_transaction_simulates_dist_upgrade():
+    calls = []
+    responses = {("apt-get", "-s", "dist-upgrade"): _APT_SIM}
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True), \
+         patch.object(DebianBackend, "_apt_lists_age_days", return_value=1.0):
+        tx = DebianBackend().pending_transaction(_ctx())
+    assert tx.ok and not tx.notes  # fresh lists -> no staleness note
+    names = {i.name: i.kind for i in tx.items}
+    assert names["base-files"] == "upgrade"
+    assert names["linux-image-6.8.0-134-generic"] == "new-dep"
+    assert names["obsolete-lib"] == "remove"
+    assert ["apt-get", "-s", "dist-upgrade"] in [c for c, _ in calls]
+
+
+def test_pending_transaction_flags_stale_lists():
+    with patch("fettle.command.run", side_effect=_fake({}, [])), \
+         patch("fettle.command.which", return_value=True), \
+         patch.object(DebianBackend, "_apt_lists_age_days", return_value=30.0):
+        tx = DebianBackend().pending_transaction(_ctx())
+    assert any("apt update" in n for n in tx.notes)
+
+
+def test_pending_transaction_no_apt_is_not_ok():
+    with patch("fettle.command.which", return_value=False):
+        tx = DebianBackend().pending_transaction(_ctx())
+    assert tx.ok is False and tx.items == []
+
+
 def test_update_yes_is_noninteractive():
     calls = []
     with patch("fettle.command.run", side_effect=_fake({}, calls)), \
