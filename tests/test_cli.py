@@ -61,6 +61,19 @@ def test_dry_run_lists_actions_without_elevating(capsys):
     assert "would run:" in out  # dry-run shows commands, executes nothing
 
 
+def test_dry_run_update_lists_pending_packages(capsys):
+    from unittest.mock import patch
+
+    from fettle import command
+    with patch("fettle.command.run") as run, \
+         patch("fettle.command.which", return_value=True):
+        run.return_value = command.Proc(0, "linux 6.12-1 -> 6.18-1\n", "")
+        main(["--distro", "arch", "--dry-run", "-u"])
+    out = capsys.readouterr().out
+    assert "1 package(s) would be upgraded" in out
+    assert "linux  6.12-1 -> 6.18-1" in out
+
+
 def test_unsupported_action_is_skipped(capsys):
     # python_rebuild is Arch-only; the Debian backend should skip it (a note on stdout).
     main(["--distro", "debian", "--dry-run", "-y"])

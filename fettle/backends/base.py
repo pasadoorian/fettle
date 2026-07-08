@@ -155,6 +155,14 @@ class PackageBackend(abc.ABC):
         specific sys-audit check; see PLAN §3.7)."""
         raise NotImplementedError
 
+    def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
+        """Packages that ``update`` would upgrade, as ``(name, old_ver, new_ver)``.
+
+        Read-only (no root, no system change) — used by ``-u --dry-run`` and the
+        Upgrade Checker. Empty list when up to date or the query tool is absent.
+        """
+        return []
+
     # -- firmware is distro-neutral: fwupd works everywhere ------------------
     def firmware_updates(self, ctx: Context) -> Result:
         from .. import command

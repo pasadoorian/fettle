@@ -47,6 +47,32 @@ def test_update_default_pacman_then_yay():
     assert any(c[0] == "yay" and u == "paul" for c, u in calls)
 
 
+def test_pending_upgrades_via_checkupdates():
+    calls, _ = _recorder()
+    resp = "linux 6.12.1-1 -> 6.18.2-1\nnvidia 550.1-1 -> 560.3-1 [ignored]\n"
+
+    def fake(cmd, *, as_user=None, capture=False):
+        return command.Proc(0, resp if cmd[0] == "checkupdates" else "", "")
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        pending = ArchBackend().pending_upgrades(_ctx())
+    assert ("linux", "6.12.1-1", "6.18.2-1") in pending
+    assert ("nvidia", "550.1-1", "560.3-1") in pending  # trailing [ignored] tolerated
+
+
+def test_pending_upgrades_falls_back_to_pacman_qu():
+    calls = []
+
+    def fake(cmd, *, as_user=None, capture=False):
+        calls.append(list(cmd))
+        return command.Proc(0, "bash 5.2-1 -> 5.3-1\n" if cmd[:2] == ["pacman", "-Qu"] else "", "")
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", side_effect=lambda n: n == "pacman"):  # no checkupdates
+        pending = ArchBackend().pending_upgrades(_ctx())
+    assert pending == [("bash", "5.2-1", "5.3-1")]
+    assert ["pacman", "-Qu"] in calls
+
+
 def test_update_yes_makes_pacman_noninteractive():
     calls, fake = _recorder()
     with patch("fettle.command.run", side_effect=fake), \

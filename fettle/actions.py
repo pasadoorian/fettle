@@ -31,6 +31,14 @@ TITLES = {
 
 
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
+    if ctx.dry_run:
+        pending = backend.pending_upgrades(ctx)
+        if pending:
+            ctx.output.note(f"{len(pending)} package(s) would be upgraded:")
+            for name, old, new in pending:
+                print(f"    {name}  {old} -> {new}")
+        else:
+            ctx.output.ok("no pending upgrades (repos may need a sync to be sure).")
     backend.update_system(ctx)
     backend.update_extras(ctx)
 

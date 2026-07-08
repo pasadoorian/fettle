@@ -17,6 +17,19 @@ from .base import Context, PackageBackend, Result
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
 _AUR_UPDATERS = {"yay", "pamac", "none"}
 
+# `checkupdates` / `pacman -Qu` line: "pkgname oldver -> newver" (optional trailing
+# "[ignored]"). Capture the three fields; ignore anything that doesn't match.
+_ARROW_RE = re.compile(r"^(\S+)\s+(\S+)\s+->\s+(\S+)")
+
+
+def _parse_arrow_upgrades(text: str) -> list[tuple[str, str, str]]:
+    out = []
+    for line in text.splitlines():
+        m = _ARROW_RE.match(line.strip())
+        if m:
+            out.append((m.group(1), m.group(2), m.group(3)))
+    return out
+
 
 class ArchBackend(PackageBackend):
     name = "arch"
@@ -163,6 +176,19 @@ class ArchBackend(PackageBackend):
         out.summary_add(f"packages updated (repos: {system}, AUR: yay)")
         out.next_step("check AUR packages before the next build: fettle -A -S")
         return Result()
+
+    # -- pending upgrades (UC1) ----------------------------------------------
+    def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
+        # `checkupdates` (pacman-contrib) syncs a private temp DB, so it's safe and
+        # rootless — unlike `pacman -Sy`. Fall back to `pacman -Qu` against the
+        # existing sync DB when it's absent (may be stale if never synced).
+        if command.which("checkupdates"):
+            out = self._query(["checkupdates"])
+        elif command.which("pacman"):
+            out = self._query(["pacman", "-Qu"])
+        else:
+            return []
+        return _parse_arrow_upgrades(out)
 
     # -- maintenance checks (M3) ---------------------------------------------
     def check_foreign_orphans(self, ctx: Context) -> Result:

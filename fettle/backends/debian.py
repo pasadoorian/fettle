@@ -83,6 +83,20 @@ class DebianBackend(PackageBackend):
         """Run a read-only query and return stdout (runs even under dry-run)."""
         return command.run(cmd, capture=True).stdout
 
+    # -- pending upgrades (UC1) ----------------------------------------------
+    def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
+        if not command.which("apt"):
+            return []
+        # `apt list --upgradable` reads the current lists (no root, no fetch). Lines:
+        #   pkg/suite newver arch [upgradable from: oldver]
+        out = []
+        for line in self._query(["apt", "list", "--upgradable"]).splitlines():
+            m = re.match(r"^(\S+?)/\S+\s+(\S+)\s+\S+\s+\[upgradable from:\s*([^\]]+)\]",
+                         line.strip())
+            if m:
+                out.append((m.group(1), m.group(3).strip(), m.group(2)))
+        return out
+
     # -- clean ---------------------------------------------------------------
     def clean_caches(self, ctx: Context) -> Result:
         out = ctx.output

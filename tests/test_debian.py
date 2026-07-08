@@ -87,6 +87,20 @@ def test_update_default_apt_then_extras():
     assert not any(c[0] == "nala" for c in argvs)
 
 
+def test_pending_upgrades_parses_apt_list():
+    calls = []
+    listing = ("Listing...\n"
+               "libc6/jammy-updates 2.35-0ubuntu3.8 amd64 [upgradable from: 2.35-0ubuntu3.6]\n"
+               "vim/jammy 2:8.2.4919-1 amd64 [upgradable from: 2:8.2.3995-1]\n")
+    responses = {("apt", "list", "--upgradable"): listing}
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True):
+        pending = DebianBackend().pending_upgrades(_ctx())
+    assert ("libc6", "2.35-0ubuntu3.6", "2.35-0ubuntu3.8") in pending
+    assert ("vim", "2:8.2.3995-1", "2:8.2.4919-1") in pending
+    assert "Listing..." not in [p[0] for p in pending]  # header skipped
+
+
 def test_update_yes_is_noninteractive():
     calls = []
     with patch("fettle.command.run", side_effect=_fake({}, calls)), \
