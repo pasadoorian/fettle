@@ -77,7 +77,14 @@ fettle --print-config    # show the effective configuration
 sudo fettle sys-audit --all      # firmware/boot/hardware security scan
 fettle sys-audit --list          # list scan categories
 fettle sys-audit secureboot tpm  # run specific categories
+
+fettle sys-audit remote server1 all              # scan a remote host over ssh
+fettle sys-audit remote --sudo admin@host2 tpm   # remote, elevated
 ```
+
+Remote scans build a single-file **zipapp** of fettle (pure stdlib), `scp` it to
+the host, run `python3 fettle.pyz sys-audit …` over `ssh -t`, and clean up — the
+host may be any `~/.ssh/config` alias, and `-v` is forwarded.
 
 `sys-audit` is the **System Supply Chain** scanner (a port of the Eclypsium
 firmware/boot cheat-sheet): Secure Boot state + the 2026 Microsoft cert-expiry

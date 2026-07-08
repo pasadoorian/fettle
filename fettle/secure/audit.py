@@ -8,6 +8,7 @@ lands in M10 and ``remote`` execution in M11.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from ..output import Output
@@ -95,10 +96,39 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _remote(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="fettle sys-audit remote")
+    p.add_argument("--sudo", action="store_true", help="run the remote scan under sudo")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("-a", "--all", action="store_true")
+    p.add_argument("host", help="ssh host or ~/.ssh/config alias")
+    p.add_argument("categories", nargs="*", help="check categories (or --all)")
+    args = p.parse_args(argv)
+
+    chosen = list(CATEGORIES) if args.all else [c.replace("_", "-") for c in args.categories]
+    if not chosen:
+        print("Error: remote requires check categories or --all", file=sys.stderr)
+        return 1
+    unknown = [c for c in chosen if c not in CATEGORIES]
+    if unknown:
+        print(f"Error: unknown check(s): {', '.join(unknown)}", file=sys.stderr)
+        return 1
+
+    forwarded: list[str] = []
+    if args.verbose:
+        forwarded.append("-v")
+    if args.quiet:
+        forwarded.append("-q")
+    forwarded += ["--all"] if args.all else chosen
+
+    from . import remote
+    return remote.run(args.host, forwarded, sudo=args.sudo)
+
+
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "remote":
-        print("sys-audit remote execution arrives in M11.")
-        return 0
+        return _remote(argv[1:])
 
     args = _parse(argv)
     out = Output(color=(False if args.no_color else None),
