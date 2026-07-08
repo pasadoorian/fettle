@@ -41,6 +41,42 @@ ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrit
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
+# Human-facing one-liners for each maintenance action (shown in --help).
+ACTION_HELP = {
+    "clean": "clean package-manager caches",
+    "orphans": "list foreign packages; remove true orphans",
+    "update": "update everything (repos, then AUR / flatpak / snap)",
+    "rebuilds": "find packages/services needing a rebuild or restart",
+    "python_rebuild": "rebuild packages stranded on an old Python",
+    "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
+    "firmware": "check for firmware updates (fwupd)",
+    "kernels": "manage installed kernels (running one protected)",
+    "aur_audit": "AUR health table -> ~/aur-audit.txt",
+    "aur_ioc_scan": "scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt",
+}
+
+_EPILOG = """\
+subcommands (run in place of the action flags above):
+  fettle pkg-audit           package supply-chain audit — where installed
+                             software came from and whether it's tampered
+                             (AUR / APT / Flatpak / Snap) -> ~/pkg-audit.txt
+  fettle sys-audit [CATS]    firmware / boot / hardware security scan
+                             (Secure Boot, TPM, microcode, ...); try --list,
+                             --all, or 'remote <host>'. Run under sudo.
+  fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
+
+Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
+ones work everywhere. fettle runs only what your distro's backend supports and
+skips the rest with a note.
+
+examples:
+  fettle                     run the default maintenance set
+  fettle -c -u               clean + update
+  fettle --all --dry-run     show everything that would run; change nothing
+  fettle -A                  AUR health audit
+  sudo fettle sys-audit --all
+"""
+
 
 def _distro_tags() -> dict[str, str]:
     """Map each action to a ``' [arch]'``-style tag naming the distro families that
@@ -61,17 +97,19 @@ def _distro_tags() -> dict[str, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="fettle", description="Cross-distribution Linux system maintenance.",
-        epilog="Actions tagged [arch]/[debian] are specific to that distro family; "
-               "untagged actions work everywhere. fettle runs only the actions your "
-               "distro's backend supports and skips the rest with a note.\n"
-               "Subcommands: 'fettle sys-audit' (firmware/boot/hardware security scan; "
-               "try --list), 'fettle pkg-audit', 'fettle aur-precheck'.",
+        prog="fettle",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Cross-distribution Linux system maintenance and supply-chain tool.\n"
+                    "Run with no action to execute the default maintenance set.",
+        epilog=_EPILOG,
     )
     tags = _distro_tags()
+    maint = p.add_argument_group(
+        "maintenance actions",
+        "combine freely, as flags or bare words (fettle -c -u == fettle clean update)")
     for short, long, action in FLAG_ACTIONS:
-        p.add_argument(short, long, dest=f"do_{action}", action="store_true",
-                       help=f"run the '{action}' action{tags[action]}")
+        maint.add_argument(short, long, dest=f"do_{action}", action="store_true",
+                           help=f"{ACTION_HELP.get(action, action)}{tags[action]}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("-R", "--auto-rebuild", action="store_true",
                    help="offer to rebuild (with -r / -y) instead of only listing")

@@ -29,11 +29,20 @@ def test_help_tags_distro_specific_actions(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     help_text = capsys.readouterr().out
-    # Arch-only actions are tagged; cross-distro ones are not.
-    assert "run the 'aur_audit' action [arch]" in help_text
-    assert "run the 'python_rebuild' action [arch]" in help_text
-    assert "run the 'clean' action\n" in help_text or "run the 'clean' action " in help_text
-    assert "[arch]/[debian] are specific to that distro family" in help_text
+    # Arch-only actions carry the [arch] tag; cross-distro ones don't.
+    assert "--aur-audit" in help_text and "[arch]" in help_text
+    assert "--python-rebuild" in help_text
+    assert "clean package-manager caches" in help_text  # descriptive per-action help
+    assert "[arch]/[debian] are specific to that distro" in help_text
+
+
+def test_help_documents_subcommands(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    help_text = capsys.readouterr().out
+    assert "fettle pkg-audit" in help_text
+    assert "fettle sys-audit" in help_text
+    assert "fettle aur-precheck" in help_text
 
 
 def test_print_config_exits_zero(capsys):
