@@ -1,5 +1,7 @@
 # fettle
 
+> # **⚠️ NOTE: THIS IS BETA CODE — USE AT YOUR OWN RISK.**
+
 > *in fine fettle* — in good working order.
 
 **fettle** is a cross-distribution Linux system-maintenance and supply-chain tool.
