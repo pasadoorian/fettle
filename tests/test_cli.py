@@ -25,6 +25,17 @@ def test_reexec_carries_pythonpath_across_sudo():
     assert argv[3:] == [sys.executable, "-m", "fettle", "-c"]
 
 
+def test_help_tags_distro_specific_actions(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    help_text = capsys.readouterr().out
+    # Arch-only actions are tagged; cross-distro ones are not.
+    assert "run the 'aur_audit' action [arch]" in help_text
+    assert "run the 'python_rebuild' action [arch]" in help_text
+    assert "run the 'clean' action\n" in help_text or "run the 'clean' action " in help_text
+    assert "[arch]/[debian] are specific to that distro family" in help_text
+
+
 def test_print_config_exits_zero(capsys):
     rc = main(["--print-config", "--no-config"])
     out = capsys.readouterr().out

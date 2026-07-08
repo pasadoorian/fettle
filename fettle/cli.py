@@ -42,13 +42,34 @@ ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrit
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
 
+def _distro_tags() -> dict[str, str]:
+    """Map each action to a ``' [arch]'``-style tag naming the distro families that
+    support it — empty when every backend does. Derived from the backends' own
+    ``supported`` sets, so it stays correct as backends gain capabilities.
+    """
+    from .distro import _REGISTRY
+
+    backends = {cls.name: cls.supported for cls in set(_REGISTRY.values())}
+    all_names = set(backends)
+    tags: dict[str, str] = {}
+    for action in ACTION_NAMES:
+        supporting = {name for name, sup in backends.items() if action in sup}
+        tags[action] = (f" [{'/'.join(sorted(supporting))}]"
+                        if supporting and supporting != all_names else "")
+    return tags
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="fettle", description="Cross-distribution Linux system maintenance."
+        prog="fettle", description="Cross-distribution Linux system maintenance.",
+        epilog="Actions tagged [arch]/[debian] are specific to that distro family; "
+               "untagged actions work everywhere. fettle runs only the actions your "
+               "distro's backend supports and skips the rest with a note.",
     )
+    tags = _distro_tags()
     for short, long, action in FLAG_ACTIONS:
         p.add_argument(short, long, dest=f"do_{action}", action="store_true",
-                       help=f"run the '{action}' action")
+                       help=f"run the '{action}' action{tags[action]}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("-R", "--auto-rebuild", action="store_true",
                    help="offer to rebuild (with -r / -y) instead of only listing")
