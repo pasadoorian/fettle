@@ -62,7 +62,7 @@ subcommands (run in place of the action flags above):
                              (AUR / APT / Flatpak / Snap) -> ~/pkg-audit.txt
   fettle sys-audit [CATS]    firmware / boot / hardware security scan
                              (Secure Boot, TPM, microcode, ...); try --list,
-                             --all, or 'remote <host>'. Run under sudo.
+                             --all, or 'remote <host>'. Elevates itself; no sudo.
   fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged

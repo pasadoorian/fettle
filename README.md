@@ -122,7 +122,7 @@ fettle -c -u               # clean + update (short flags)
 fettle clean update        # same thing, as words
 fettle -A                  # AUR health audit  -> ~/aur-audit.txt
 fettle pkg-audit           # normalized package supply-chain audit
-sudo fettle sys-audit --all   # full firmware/boot/hardware security scan
+fettle sys-audit --all     # full security scan (elevates itself; no sudo needed)
 ```
 
 ## Maintenance actions
@@ -180,16 +180,22 @@ always exits 0. Tunable via env vars (`AUR_PRECHECK=false` to disable,
 
 ## System supply-chain — `sys-audit`
 
-A port of the Eclypsium firmware/boot-chain cheat-sheet. **Run under `sudo`** for
-the root-only data (dmidecode, chipsec, smartctl, package integrity); it degrades
-gracefully and tells you what needs root.
+A port of the Eclypsium firmware/boot-chain cheat-sheet. Most checks need root, so
+`sys-audit` **elevates itself** (prompting for sudo) — just run `fettle sys-audit`,
+**no `sudo` prefix needed**. Pass `--user` to stay unprivileged (partial results).
 
 ```sh
-fettle sys-audit --list              # list categories
-sudo fettle sys-audit --all          # run everything
-sudo fettle sys-audit secureboot tpm # run specific categories
+fettle sys-audit --list              # list categories (no elevation)
+fettle sys-audit --all               # run everything (prompts for sudo)
+fettle sys-audit secureboot tpm      # run specific categories
 fettle sys-audit -v microcode        # verbose (raw tool output)
+fettle sys-audit --user hardware     # run as your user, no sudo
 ```
+
+> **`sudo: fettle: command not found`?** Don't prefix `sudo` — `fettle` lives in
+> `~/.local/bin`, which isn't on root's `PATH`. fettle elevates itself, so plain
+> `fettle sys-audit …` works. (If you *want* `sudo fettle` to work, also symlink it
+> onto a system path: `sudo ln -sf ~/src/fettle/bin/fettle /usr/local/bin/fettle`.)
 
 | Category | Checks |
 |---|---|
@@ -266,11 +272,19 @@ as [`fettle.toml.example`](fettle.toml.example).
 
 ## How elevation works
 
-fettle elevates **lazily**: it re-execs under `sudo` only when a selected action
-will actually change the system. Read-only work — `pkg-audit`, `aur-audit` (`-A`),
-`aur-ioc-scan` (`-S`), and `config-drift` (`-p`) — runs unprivileged, so those
-never prompt for a password. `--dry-run` never elevates. `sys-audit` does not
-auto-elevate; run it under `sudo` yourself for complete results.
+fettle elevates **lazily and by itself** — you never need to type `sudo fettle`.
+
+- **Maintenance actions** re-exec under `sudo` only when a selected action will
+  actually change the system. Read-only work — `pkg-audit`, `aur-audit` (`-A`),
+  `aur-ioc-scan` (`-S`), `config-drift` (`-p`) — runs unprivileged and never
+  prompts. `--dry-run` never elevates.
+- **`sys-audit`** elevates itself too (most checks need root); pass `--user` to
+  stay unprivileged. `--list` and `remote` don't elevate.
+
+Because elevation re-execs the full `python3 -m fettle` path (not the `fettle`
+name), it works even though the launcher in `~/.local/bin` isn't on root's `PATH`
+— which is why `sudo fettle …` is unnecessary (and fails with *command not found*
+unless you also install to a system path).
 
 ## Architecture
 

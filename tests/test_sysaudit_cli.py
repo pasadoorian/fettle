@@ -46,3 +46,40 @@ def test_cli_routes_sys_audit_subcommand(capsys):
     rc = cli_main(["sys-audit", "--list"])
     assert rc == 0
     assert "Available check categories" in capsys.readouterr().out
+
+
+# -- self-elevation (so `fettle sys-audit` works without typing `sudo fettle`) --
+def test_sys_audit_self_elevates_when_not_root():
+    with patch("fettle.cli._is_root", return_value=False), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec, \
+         patch("fettle.secure.audit.run"):
+        audit.main(["microcode"])
+    reexec.assert_called_once()  # re-execs under sudo via the full module path
+
+
+def test_sys_audit_user_flag_skips_elevation():
+    with patch("fettle.cli._is_root", return_value=False), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec, \
+         patch("fettle.secure.audit.run") as run:
+        audit.main(["--user", "microcode"])
+    reexec.assert_not_called()
+    run.assert_called_once()
+
+
+def test_sys_audit_no_elevation_when_already_root():
+    with patch("fettle.cli._is_root", return_value=True), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec, \
+         patch("fettle.secure.audit.run"):
+        audit.main(["microcode"])
+    reexec.assert_not_called()
+
+
+def test_sys_audit_list_does_not_elevate(capsys):
+    with patch("fettle.cli._is_root", return_value=False), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec:
+        audit.main(["--list"])
+    reexec.assert_not_called()  # --list is informational, never elevates

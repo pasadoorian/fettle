@@ -93,6 +93,8 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     p.add_argument("-v", "--verbose", action="store_true", help="show raw command output")
     p.add_argument("-q", "--quiet", action="store_true")
     p.add_argument("--no-color", action="store_true")
+    p.add_argument("--user", action="store_true",
+                   help="run unprivileged (skip auto-sudo; partial results)")
     return p.parse_args(argv)
 
 
@@ -146,6 +148,14 @@ def main(argv: list[str]) -> int:
     if not chosen:
         out.warn("nothing to check. Pick categories, use --all, or --list.")
         return 0
+
+    # Most checks need root. Self-elevate (like the maintenance actions) so
+    # `fettle sys-audit` Just Works without the user typing `sudo fettle` — which
+    # fails when the launcher lives in ~/.local/bin (not on root's PATH). The
+    # re-exec uses the full `python3 -m fettle` path, so it's PATH-independent.
+    from .. import cli
+    if not args.user and not cli._is_root() and not cli._in_test():
+        cli._reexec_with_sudo()  # replaces the process (carries PYTHONPATH via env)
 
     run(chosen, Scan(output=out, root=Path("/"), verbose=args.verbose))
     return 0
