@@ -117,6 +117,35 @@ def test_main_always_returns_zero(env):
         assert precheck.main(["evil-pkg"]) == 0
 
 
+def test_bare_main_scans_all_installed_foreign(env, capsys):
+    # No args -> enumerate installed foreign packages and scan them all.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.precheck._installed_foreign",
+                   lambda: ["evil-pkg", "good-pkg"])
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        rc = precheck.main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "scanning 2 installed" in out
+    assert "KNOWN-COMPROMISED" in out          # evil-pkg flagged in the batch
+
+
+def test_bare_main_no_foreign_packages(env, capsys):
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.precheck._installed_foreign", lambda: [])
+        rc = precheck.main([])
+    assert rc == 0
+    assert "no foreign/AUR packages installed" in capsys.readouterr().out
+
+
+def test_bare_main_clean_reports_no_issues(env, capsys):
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.precheck._installed_foreign", lambda: ["good-pkg"])
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        precheck.main([])
+    assert "no issues found." in capsys.readouterr().out
+
+
 def test_master_toggle_disables(env, monkeypatch):
     monkeypatch.setenv("AUR_PRECHECK", "false")
     out = []

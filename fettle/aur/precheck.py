@@ -119,7 +119,41 @@ def check(pkgs, *, home: Path | None = None, emit=print) -> None:
                  f"'{maint}' -- do NOT install")
 
 
+def _installed_foreign() -> list[str]:
+    """Installed foreign (AUR / manually-built) package names via `pacman -Qmq`."""
+    from .. import command
+
+    if not command.which("pacman"):
+        return []
+    out = command.run(["pacman", "-Qmq"], capture=True).stdout
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+
 def main(argv) -> int:
-    """``fettle aur-precheck <pkg> [<pkg> ...]`` — always returns 0 (advisory)."""
-    check(list(argv))
+    """``fettle aur-precheck [<pkg> ...]`` — always returns 0 (advisory).
+
+    With package names (the yay hook path) it checks exactly those and stays
+    silent when clean, byte-for-byte as before. With NO arguments it scans every
+    installed AUR/foreign package and prints a friendly summary.
+    """
+    pkgs = [a for a in argv if not a.startswith("-")]  # tolerate stray display flags
+    if pkgs:
+        check(pkgs)
+        return 0
+
+    installed = _installed_foreign()
+    if not installed:
+        print("no foreign/AUR packages installed to check.")
+        return 0
+    print(f"scanning {len(installed)} installed AUR/foreign package(s) "
+          "for supply-chain issues...")
+    findings: list[str] = []
+
+    def _emit(line: str) -> None:
+        findings.append(line)
+        print(line)
+
+    check(installed, emit=_emit)
+    if not findings:
+        print("no issues found.")
     return 0
