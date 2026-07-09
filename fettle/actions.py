@@ -28,6 +28,16 @@ TITLES = {
 }
 
 
+def _clean(backend: "PackageBackend", ctx: "Context") -> None:
+    # One confirmation for the whole clean (it deletes cache files). --yes and
+    # non-interactive both proceed; a dry-run shows what would run without asking.
+    if not ctx.dry_run and not ctx.confirm(
+            "remove package-manager caches and build dirs?", default=False):
+        ctx.output.note("skipped cache cleaning.")
+        return
+    backend.clean_caches(ctx)
+
+
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
     if ctx.dry_run:
         _preview_transaction(backend, ctx)
@@ -133,7 +143,7 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
 
 # action name -> callable(backend, ctx). Only implemented actions appear here.
 HANDLERS = {
-    "clean": lambda b, c: b.clean_caches(c),
+    "clean": _clean,
     "update": _update,
     "orphans": lambda b, c: b.check_foreign_orphans(c),
     "rebuild_check": lambda b, c: b.check_rebuilds(c),

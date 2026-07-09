@@ -67,8 +67,8 @@ class Context:
             return True
         try:
             ans = input(f"  {question} [y/N] ").strip().lower()
-        except EOFError:
-            return default
+        except (EOFError, OSError):
+            return default  # no readable stdin (piped / no tty) -> safe default
         return ans in ("y", "yes")
 
     def ask(self, prompt: str) -> str:

@@ -50,7 +50,7 @@ REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware_check")
 
 # Human-facing one-liners for each maintenance action (shown in --help).
 ACTION_HELP = {
-    "clean": "clean package-manager caches",
+    "clean": "clean package-manager caches (asks first; --yes to skip the prompt)",
     "orphans": "list foreign packages; remove true orphans",
     "update": "update everything (asks before upgrading; --yes to skip)",
     "rebuild_check": "find packages/services needing a rebuild or restart",

@@ -26,6 +26,35 @@ def test_unimplemented_action_notes_gracefully(capsys):
 
 
 def test_step_counter_reflects_action_count(capsys):
-    actions.run(["clean", "integrity"], ArchBackend(), _ctx())
+    actions.run(["clean", "future_action"], ArchBackend(), _ctx())
     out = capsys.readouterr().out
     assert "[1/2]" in out and "[2/2]" in out
+
+
+class _CleanSpy:
+    def __init__(self):
+        self.ran = 0
+
+    def clean_caches(self, ctx):
+        self.ran += 1
+
+
+def test_clean_asks_and_skips_when_declined(capsys):
+    # dry_run=False + assume_yes=False + no stdin -> confirm returns default (No).
+    ctx = Context(output=Output(color=False), config=Config())
+    spy = _CleanSpy()
+    actions.run(["clean"], spy, ctx)
+    assert spy.ran == 0
+    assert "skipped cache cleaning" in capsys.readouterr().out
+
+
+def test_clean_runs_without_prompt_when_assume_yes():
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    spy = _CleanSpy()
+    actions.run(["clean"], spy, ctx)
+    assert spy.ran == 1
+
+
+def test_clean_dry_run_shows_would_run_without_prompt(capsys):
+    actions.run(["clean"], ArchBackend(), _ctx())  # _ctx is dry_run=True
+    assert "would run:" in capsys.readouterr().out
