@@ -215,68 +215,90 @@ def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
 
 
 _REMOTE_EPILOG = """\
-Runs fettle maintenance on a remote host over SSH: fettle is packaged as a zipapp,
-scp'd to the host, run there under sudo over `ssh -t`, and removed. The host needs
-a python3 interpreter — nothing is installed.
+fettle remote [--ssh-arg ARG]... HOST [any fettle action/flags...]
 
-With no actions (or -a) the SAFE default set runs: clean, update, firmware.
-Destructive/interactive actions run only when named explicitly, e.g.
-  fettle remote HOST orphans kernels     (removes packages — asks per item)
+Runs fettle on a remote host over SSH: fettle is packaged as a zipapp, scp'd to
+the host, run there (under sudo for changes) over `ssh -t`, and removed. The host
+needs a python3 interpreter — nothing is installed, and the host must run the same
+fettle version to understand the forwarded flags.
 
-Prompts (sudo password, AUR review, removals) are interactive over the TTY by
-default; --yes makes the run fully unattended (auto-confirm + non-interactive
-package managers). NOTE: --yes also SKIPS AUR PKGBUILD review.
+Everything after HOST is forwarded verbatim to fettle on the remote, so ANY action
+works remotely. With NO action named, the SAFE set runs: clean, update,
+firmware-check (never orphan/kernel removal unless you name it).
+
+--dry-run (change nothing; no sudo) and --yes (unattended: auto-confirm +
+non-interactive) are forwarded and interpreted on the remote. NOTE: --yes also
+SKIPS AUR PKGBUILD review. `-U`/upgrade-check needs ANTHROPIC_API_KEY on the host.
 
 examples:
-  fettle remote server1 -a                 clean + update + firmware
-  fettle remote server1 -a --dry-run       preview; change nothing
-  fettle remote server1 update --yes       unattended update only
-  fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
+  fettle remote server1                     safe set (clean + update + firmware)
+  fettle remote server1 -c -u               clean, then upgrade packages
+  fettle remote server1 update --dry-run    preview an update; change nothing
+  fettle remote server1 -a --yes            the full default set, unattended
+  fettle remote server1 -S                  security scan on the host
+  fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 """
+
+# Tokens that count as "an action was named" (so we DON'T inject the safe set):
+# any action flag, any dispatch shortcut, or -a/--all. Bare words also count.
+def _remote_has_action(forwarded: list[str]) -> bool:
+    intent = ({opt for opts, _ in FLAG_ACTIONS for opt in opts}
+              | set(DISPATCH_SHORTCUTS) | {"-a", "--all"})
+    return any(tok in intent or not tok.startswith("-") for tok in forwarded)
 
 
 def _run_remote_maintenance(argv: list[str]) -> int:
     from . import remote
 
-    p = argparse.ArgumentParser(
-        prog="fettle remote",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="Run fettle maintenance on a remote host over SSH.",
-        epilog=_REMOTE_EPILOG,
-    )
-    p.add_argument("-a", "--all", action="store_true",
-                   help="run the safe remote default set (clean update firmware)")
-    p.add_argument("--yes", action="store_true",
-                   help="unattended: auto-confirm prompts + non-interactive package managers")
-    p.add_argument("--dry-run", action="store_true",
-                   help="show what would run on the host; change nothing (no sudo)")
-    p.add_argument("--ssh-arg", action="append", default=[], metavar="ARG",
-                   help="extra ssh argument, repeatable (e.g. --ssh-arg=-oConnectTimeout=5)")
-    p.add_argument("host", help="ssh host or ~/.ssh/config alias")
-    p.add_argument("actions", nargs="*", help="maintenance actions (default: the safe set)")
-    args = p.parse_args(argv)
+    # Grammar: [--ssh-arg X]... HOST <rest forwarded>. ssh options precede HOST;
+    # the first bare token is HOST; everything after it forwards verbatim.
+    ssh_args: list[str] = []
+    host: str | None = None
+    forwarded: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if host is None:
+            if tok in ("-h", "--help"):
+                print(_REMOTE_EPILOG)
+                return 0
+            if tok == "--ssh-arg":
+                if i + 1 >= len(argv):
+                    print("fettle remote: --ssh-arg needs a value", file=sys.stderr)
+                    return 2
+                ssh_args.append(argv[i + 1])
+                i += 2
+                continue
+            if tok.startswith("--ssh-arg="):
+                ssh_args.append(tok.split("=", 1)[1])
+            elif tok.startswith("-"):
+                print(f"fettle remote: ssh options go before HOST and actions after "
+                      f"it; got '{tok}' before HOST", file=sys.stderr)
+                return 2
+            else:
+                host = tok
+            i += 1
+            continue
+        forwarded.append(tok)
+        i += 1
 
-    chosen: list[str] = []
-    for word in args.actions:
-        name = word.replace("-", "_")
-        if name not in ACTION_NAMES:
-            print(f"fettle remote: unknown action '{word}'", file=sys.stderr)
-            return 2
-        chosen.append(name)
-    if args.all or not chosen:
-        chosen = list(REMOTE_DEFAULT_ACTIONS)
+    if host is None:
+        print("fettle remote: missing HOST. Try 'fettle remote -h'.", file=sys.stderr)
+        return 2
 
-    remote_args = [a.replace("_", "-") for a in chosen]
-    if args.yes:
-        remote_args.append("--yes")
-    if args.dry_run:
-        remote_args.append("--dry-run")
-    # Maintenance needs root, so run the remote fettle under sudo — which also means
-    # it runs as root and won't try to self-elevate inside the zipapp. A dry-run
-    # changes nothing, so it needs neither sudo nor elevation. Allocate a PTY only
-    # for interactive runs; --yes is fully unattended (assumes passwordless sudo).
-    return remote.run(args.host, remote_args, sudo=not args.dry_run,
-                      ssh_args=args.ssh_arg, tty=not args.yes)
+    # No action named -> run the SAFE set (never destructive unless asked for).
+    if not _remote_has_action(forwarded):
+        forwarded = [a.replace("_", "-") for a in REMOTE_DEFAULT_ACTIONS] + forwarded
+
+    if any(t in ("-U", "--upgrade-check", "upgrade-check") for t in forwarded):
+        print("note: upgrade-check runs on the remote host and needs ANTHROPIC_API_KEY "
+              "set there — the local key is not forwarded.", file=sys.stderr)
+
+    # dry-run needs neither sudo nor a PTY; --yes is fully unattended (no PTY).
+    dry_run = "--dry-run" in forwarded
+    unattended = "--yes" in forwarded
+    return remote.run(host, forwarded, sudo=not dry_run,
+                      ssh_args=ssh_args, tty=not unattended)
 
 
 def _run_upgrade_check(argv: list[str]) -> int:

@@ -291,22 +291,34 @@ fettle sys-audit remote -v gateway secureboot     # -v forwarded to the remote r
 
 ## Remote maintenance
 
-Run maintenance on another host over SSH — same zipapp transport as the scanner
-(nothing installed on the target; it just needs `python3`). The remote invocation
-is wrapped in `sudo`, so the remote fettle runs as root.
+Run **any** action on another host over SSH — same zipapp transport as the scanner
+(nothing installed on the target; it just needs `python3` and the same fettle
+version). The grammar is:
 
-```sh
-fettle remote server1 -a               # safe default: clean + update + firmware
-fettle remote server1 -a --dry-run     # preview; changes nothing
-fettle remote server1 update           # just update (asks before upgrading)
-fettle remote server1 update --yes     # unattended update (no prompts)
-fettle remote server1 orphans kernels  # destructive actions run only when named
-fettle remote --ssh-arg=-oConnectTimeout=5 server1 -a
+```
+fettle remote [--ssh-arg ARG]... HOST [any fettle action/flags...]
 ```
 
-- **Safe by default.** `fettle remote <host>` (or `-a`) runs only `clean update
-  firmware`. Destructive/interactive actions — **orphan** and **kernel** removal —
-  run **only when you name them explicitly**.
+Everything after `HOST` is forwarded verbatim to fettle on the remote, so the full
+CLI works remotely. Changes are wrapped in `sudo` (the remote fettle runs as root);
+a `--dry-run` needs neither sudo nor a password.
+
+```sh
+fettle remote server1                  # safe default: clean + update + firmware-check
+fettle remote server1 -c -u            # clean, then upgrade packages
+fettle remote server1 update --dry-run # preview an update; changes nothing
+fettle remote server1 -a --yes         # the full default set, unattended
+fettle remote server1 -S               # security scan on the host (sys-audit --all)
+fettle remote server1 orphans kernel   # destructive actions run only when named
+fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
+```
+
+- **Safe by default.** `fettle remote <host>` with **no action named** runs only
+  `clean update firmware-check` — even with `--yes`. Destructive/interactive
+  actions (**orphan** and **kernel** removal) run **only when you name them**; `-a`
+  forwards through and runs the remote's full default set.
+- **`-U`/upgrade-check** runs on the *remote* and needs `ANTHROPIC_API_KEY` set
+  there (your local key is not forwarded) — fettle warns you when you use it.
 - **Asks before upgrading.** By default the run is interactive over an `ssh -t`
   TTY: the remote package manager shows its plan and prompts before upgrading (and
   sudo prompts for a password if needed). This is the same locally — `fettle -u`

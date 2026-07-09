@@ -113,36 +113,60 @@ def test_remote_maintenance_default_safe_set():
     assert kw["tty"] is True                               # interactive by default
 
 
-def test_remote_maintenance_all_flag_is_the_safe_set():
+def test_remote_all_flag_forwarded_verbatim():
+    # -a is now forwarded (remote runs its own full default set), not remapped.
     with patch("fettle.remote.run", return_value=0) as run:
         cli_main(["remote", "server1", "-a"])
     (_, fettle_args), _ = run.call_args
-    assert fettle_args == ["clean", "update", "firmware-check"]
+    assert fettle_args == ["-a"]
+
+
+def test_remote_bare_yes_still_runs_the_safe_set():
+    # Safety net: --yes with no action named must NOT run the full destructive set.
+    with patch("fettle.remote.run", return_value=0) as run:
+        cli_main(["remote", "host", "--yes"])
+    (_, fettle_args), kw = run.call_args
+    assert fettle_args == ["clean", "update", "firmware-check", "--yes"]
+    assert kw["tty"] is False  # unattended
 
 
 def test_remote_maintenance_explicit_actions_and_yes():
     with patch("fettle.remote.run", return_value=0) as run:
         cli_main(["remote", "host", "update", "orphans", "--yes"])
     (_, fettle_args), kw = run.call_args
-    assert fettle_args == ["update", "orphans", "--yes"]  # destructive action named explicitly
+    assert fettle_args == ["update", "orphans", "--yes"]  # forwarded verbatim
     assert kw["sudo"] is True
     assert kw["tty"] is False  # --yes is fully unattended: no PTY
 
 
-def test_remote_maintenance_dry_run_skips_sudo():
+def test_remote_forwards_arbitrary_flags_and_dry_run_skips_sudo():
     with patch("fettle.remote.run", return_value=0) as run:
-        cli_main(["remote", "host", "-a", "--dry-run"])
+        cli_main(["remote", "host", "-c", "--dry-run"])
     (_, fettle_args), kw = run.call_args
-    assert "--dry-run" in fettle_args and kw["sudo"] is False
+    assert fettle_args == ["-c", "--dry-run"] and kw["sudo"] is False
 
 
-def test_remote_maintenance_unknown_action(capsys):
-    rc = cli_main(["remote", "host", "bogus"])
-    assert rc == 2 and "unknown action 'bogus'" in capsys.readouterr().err
+def test_remote_forwards_dispatch_shortcut():
+    with patch("fettle.remote.run", return_value=0) as run:
+        cli_main(["remote", "host", "-S"])
+    (_, fettle_args), _ = run.call_args
+    assert fettle_args == ["-S"]  # sys-audit runs on the remote
+
+
+def test_remote_upgrade_check_warns_about_remote_key(capsys):
+    with patch("fettle.remote.run", return_value=0):
+        cli_main(["remote", "host", "-U"])
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_remote_option_before_host_errors(capsys):
+    rc = cli_main(["remote", "-c", "host"])
+    assert rc == 2 and "before HOST" in capsys.readouterr().err
 
 
 def test_remote_maintenance_ssh_arg_passthrough():
     with patch("fettle.remote.run", return_value=0) as run:
         cli_main(["remote", "--ssh-arg=-oConnectTimeout=5", "host", "-a"])
-    _, kw = run.call_args
+    (_, fettle_args), kw = run.call_args
     assert kw["ssh_args"] == ["-oConnectTimeout=5"]
+    assert fettle_args == ["-a"]
