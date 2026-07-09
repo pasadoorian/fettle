@@ -145,6 +145,17 @@ def test_pending_transaction_flags_stale_lists():
     assert any("apt update" in n for n in tx.notes)
 
 
+def test_refresh_metadata_updates_lists_not_upgrade():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().refresh_metadata(_ctx())
+    cmds = [c for c, _ in calls]
+    assert ["apt-get", "update"] in cmds                        # metadata refresh
+    assert ["flatpak", "update", "--appstream"] in cmds          # flatpak metadata only
+    assert not any("upgrade" in c for cmd in cmds for c in cmd)  # never upgrades
+
+
 def test_pending_transaction_no_apt_is_not_ok():
     with patch("fettle.command.which", return_value=False):
         tx = DebianBackend().pending_transaction(_ctx())

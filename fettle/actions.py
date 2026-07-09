@@ -17,6 +17,7 @@ TITLES = {
     "clean": "Cleaning caches",
     "orphans": "Foreign & orphaned packages",
     "update": "Updating packages",
+    "only_update": "Refreshing metadata",
     "rebuild_check": "Rebuild check",
     "python_rebuild_check": "Python rebuild check",
     "config_drift": "Config file drift",
@@ -43,6 +44,13 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
         _preview_transaction(backend, ctx)
     backend.update_system(ctx)
     backend.update_extras(ctx)
+
+
+def _only_update(backend: "PackageBackend", ctx: "Context") -> None:
+    """Refresh package metadata (no upgrade) and report what's now upgradable."""
+    ctx.output.note("refreshing package metadata (no packages will be upgraded)...")
+    backend.refresh_metadata(ctx)
+    _preview_transaction(backend, ctx)
 
 
 # Order within a group: upgrades, then new dependencies, then removals.
@@ -144,6 +152,7 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
 # action name -> callable(backend, ctx). Only implemented actions appear here.
 HANDLERS = {
     "clean": _clean,
+    "only_update": _only_update,
     "update": _update,
     "orphans": lambda b, c: b.check_foreign_orphans(c),
     "rebuild_check": lambda b, c: b.check_rebuilds(c),

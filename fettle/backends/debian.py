@@ -51,8 +51,8 @@ def _parse_apt_sim(text: str) -> list[TxItem]:
 class DebianBackend(PackageBackend):
     name = "debian"
     supported = {
-        "clean", "orphans", "update", "rebuild_check", "config_drift",
-        "firmware_check", "kernel", "pkg_audit",
+        "clean", "orphans", "update", "only_update", "rebuild_check",
+        "config_drift", "firmware_check", "kernel", "pkg_audit",
         # No python_rebuild_check / aur_* (Arch-only). Integrity lives in sys-audit.
     }
 
@@ -120,6 +120,18 @@ class DebianBackend(PackageBackend):
             if m:
                 out.append((m.group(1), m.group(3).strip(), m.group(2)))
         return out
+
+    def refresh_metadata(self, ctx: Context) -> Result:
+        # apt update is safe (no partial-upgrade concept like Arch) and needs root.
+        system, flatpak, _snap = self._updaters(ctx)
+        if system != "none":
+            tool = "nala" if system == "nala" and command.which("nala") else "apt-get"
+            ctx.execute([tool, "update"], quiet=True, msg="apt package lists refreshed")
+        if flatpak != "none" and command.which("flatpak"):
+            ctx.execute(["flatpak", "update", "--appstream"], quiet=True,
+                        msg="flatpak metadata refreshed")
+        # snap has no safe metadata-only refresh (snapd refreshes itself) — skipped.
+        return Result()
 
     def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
         # apt simulates the *full* resolver as a normal user (`-s`), so unlike the

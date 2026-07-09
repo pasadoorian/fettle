@@ -161,6 +161,17 @@ def test_base_pending_transaction_derives_from_pending_upgrades():
         [("bash", "5.2-1", "5.3-1", "upgrade")]
 
 
+def test_refresh_metadata_never_syncs_system_db(capsys):
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().refresh_metadata(_ctx())
+    # Safety: -O must never run `pacman -Sy` (partial-upgrade footgun); it only
+    # notes that the report comes from a private cache.
+    assert all(c[:2] != ["pacman", "-Sy"] for c, _ in calls)
+    assert "untouched" in capsys.readouterr().out
+
+
 def test_update_yes_makes_pacman_noninteractive():
     calls, fake = _recorder()
     with patch("fettle.command.run", side_effect=fake), \

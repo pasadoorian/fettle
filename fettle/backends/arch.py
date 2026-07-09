@@ -49,9 +49,9 @@ def _parse_sup_lines(text: str) -> list[tuple[str, str]]:
 class ArchBackend(PackageBackend):
     name = "arch"
     supported = {
-        "clean", "orphans", "update", "rebuild_check", "python_rebuild_check",
-        "config_drift", "firmware_check", "kernel", "aur_audit", "aur_ioc_scan",
-        "pkg_audit",
+        "clean", "orphans", "update", "only_update", "rebuild_check",
+        "python_rebuild_check", "config_drift", "firmware_check", "kernel",
+        "aur_audit", "aur_ioc_scan", "pkg_audit",
     }
 
     def supply_chain_sources(self):
@@ -204,6 +204,15 @@ class ArchBackend(PackageBackend):
         else:
             return []
         return _parse_arrow_upgrades(out)
+
+    def refresh_metadata(self, ctx: Context) -> Result:
+        # Deliberately NO `pacman -Sy`: syncing the system DB without a full
+        # upgrade is the partial-upgrade footgun. The upgradable report is derived
+        # from a private temp DB (see pending_transaction), so it is both fresh and
+        # safe — the system database is left untouched.
+        ctx.output.note("official repos: previewed from a fresh private cache; "
+                        "system database left untouched (no partial-upgrade risk).")
+        return Result()
 
     def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
         # Resolve the full transaction the real `pacman -Syuu` would perform —

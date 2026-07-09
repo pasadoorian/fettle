@@ -195,6 +195,15 @@ class PackageBackend(abc.ABC):
         """
         return []
 
+    def refresh_metadata(self, ctx: Context) -> Result:
+        """Safely refresh package metadata WITHOUT upgrading (for ``only-update``).
+
+        Default is a no-op; backends refresh their repos and any managed
+        flatpak/snap metadata. Must never leave the system in a partial-upgrade
+        state (Arch previews from a private cache instead of ``pacman -Sy``).
+        """
+        return Result()
+
     def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
         """The full set ``update`` would install (upgrades + new deps), for
         ``-u --dry-run``. Read-only and rootless.

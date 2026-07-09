@@ -58,3 +58,25 @@ def test_clean_runs_without_prompt_when_assume_yes():
 def test_clean_dry_run_shows_would_run_without_prompt(capsys):
     actions.run(["clean"], ArchBackend(), _ctx())  # _ctx is dry_run=True
     assert "would run:" in capsys.readouterr().out
+
+
+def test_only_update_refreshes_then_reports(capsys):
+    from fettle.backends.base import Result, Transaction, TxItem
+
+    class _B:
+        def __init__(self):
+            self.refreshed = 0
+
+        def refresh_metadata(self, ctx):
+            self.refreshed += 1
+            return Result()
+
+        def pending_transaction(self, ctx, *, sync=True):
+            return Transaction(items=[TxItem(name="bash", new="5.3-1", old="5.2-1")])
+
+    b = _B()
+    actions.run(["only_update"], b, _ctx())
+    out = capsys.readouterr().out
+    assert b.refreshed == 1                      # refreshed before reporting
+    assert "Refreshing metadata" in out          # section title
+    assert "bash  5.2-1 -> 5.3-1" in out          # upgradable report
