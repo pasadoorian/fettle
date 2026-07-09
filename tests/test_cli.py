@@ -47,12 +47,34 @@ def test_update_upgrade_aliases_and_long_options():
     assert _actions_for(["--pkg-audit"]) == ["pkg_audit"]
 
 
-def test_retired_short_flags_are_unrecognized():
-    # -S and -p no longer select pipeline actions (they become dispatch shortcuts
-    # in 6A.3); --pacnew/--rebuilds/--python-rebuild long forms are gone.
-    for dead in (["-S"], ["-p"], ["--pacnew"], ["--rebuilds"]):
+def test_retired_long_flags_are_unrecognized():
+    # Old long forms are gone from the pipeline parser.
+    for dead in (["--pacnew"], ["--rebuilds"]):
         with pytest.raises(SystemExit):
             cli.build_parser().parse_args(dead)
+
+
+def test_dispatch_shortcuts_route_to_runners():
+    with patch("fettle.secure.audit.main", return_value=0) as sa:
+        main(["-S"])
+    sa.assert_called_once_with(["--all"])  # bare -S == sys-audit --all
+
+    with patch("fettle.secure.audit.main", return_value=0) as sa:
+        main(["-S", "--list"])
+    sa.assert_called_once_with(["--all", "--list"])  # sub-args forwarded
+
+    with patch("fettle.cli._run_upgrade_check", return_value=0) as uc:
+        main(["-U", "--effort", "high"])
+    uc.assert_called_once_with(["--effort", "high"])
+
+    with patch("fettle.aur.precheck.main", return_value=0) as pc:
+        main(["-p", "somepkg"])
+    pc.assert_called_once_with(["somepkg"])
+
+
+def test_two_dispatch_shortcuts_error():
+    with pytest.raises(SystemExit):
+        main(["-S", "-U"])
 
 
 def test_help_tags_distro_specific_actions(capsys):

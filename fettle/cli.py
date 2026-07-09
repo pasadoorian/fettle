@@ -382,6 +382,27 @@ def _render_upgrade_check(out: Output, result, ctx) -> None:
         out.warn(f"could not write {path}: {exc}")
 
 
+# Single-flag aliases -> subcommand runner. Handled before the pipeline parser.
+DISPATCH_SHORTCUTS = {
+    "-S": "sys-audit", "--sys-audit": "sys-audit",
+    "-U": "upgrade-check", "--upgrade-check": "upgrade-check",
+    "-p": "aur-precheck", "--aur-precheck": "aur-precheck",
+}
+
+
+def _find_dispatch_shortcut(argv: list[str]) -> tuple[str, list[str]] | None:
+    """If argv contains a dispatch shortcut, return (target, remaining_args);
+    else None. Raises SystemExit on two different shortcuts at once."""
+    hits = [i for i, tok in enumerate(argv) if tok in DISPATCH_SHORTCUTS]
+    if not hits:
+        return None
+    targets = {DISPATCH_SHORTCUTS[argv[i]] for i in hits}
+    if len(targets) > 1:
+        raise SystemExit("fettle: choose only one of -S/-U/-p")
+    i = hits[0]
+    return DISPATCH_SHORTCUTS[argv[i]], argv[:i] + argv[i + 1:]
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -405,6 +426,23 @@ def main(argv: list[str] | None = None) -> int:
     # `fettle upgrade-check` — AI-assisted pre-upgrade safety advisor (read-only).
     if argv and argv[0] == "upgrade-check":
         return _run_upgrade_check(argv[1:])
+
+    # Dispatch shortcuts: -S / -U / -p are single-flag aliases for the sys-audit,
+    # upgrade-check, and aur-precheck runners (Q4: flag = shortcut, subcommand =
+    # full control). Detected anywhere in argv; the remaining args forward to the
+    # runner, so `fettle -S --list` and `fettle -U --effort high` still work.
+    # Combining a shortcut with pipeline flags errors (the runner rejects the
+    # leftover); two shortcuts at once is an explicit error.
+    shortcut = _find_dispatch_shortcut(argv)
+    if shortcut is not None:
+        target, rest = shortcut
+        if target == "sys-audit":
+            from .secure import audit
+            return audit.main(["--all", *rest])  # bare -S == sys-audit --all
+        if target == "upgrade-check":
+            return _run_upgrade_check(rest)
+        from .aur import precheck
+        return precheck.main(rest)
 
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
