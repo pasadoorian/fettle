@@ -66,31 +66,28 @@ ACTION_HELP = {
 }
 
 _EPILOG = """\
-subcommands (run in place of the action flags above):
-  fettle pkg-audit           package supply-chain audit — where installed
-                             software came from and whether it's tampered
-                             (AUR / APT / Flatpak / Snap) -> ~/pkg-audit.txt
-  fettle sys-audit [CATS]    firmware / boot / hardware security scan
-                             (Secure Boot, TPM, microcode, ...); try --list,
-                             --all, or 'remote <host>'. Elevates itself; no sudo.
-  fettle aur-precheck PKG    install-time AUR pre-flight (used by the yay hook)
-  fettle remote HOST [acts]  run maintenance on a remote host over ssh (safe set
-                             by default; --yes for unattended). try 'remote -h'
-  fettle upgrade-check       [experimental] AI pre-upgrade safety check (Claude):
-                             is this update safe, what to do before/after —
-                             needs ANTHROPIC_API_KEY
+shortcut flags & their fuller subcommand forms (use the subcommand for options):
+  -S  ==  fettle sys-audit [CATS] [--all|--list]   firmware/boot/hardware security
+                                                   scan (-S runs --all; self-elevates)
+  -U  ==  fettle upgrade-check [--effort ...]      [experimental] AI pre-upgrade
+                                                   safety check; needs ANTHROPIC_API_KEY
+  -p  ==  fettle aur-precheck [PKG ...]            AUR pre-flight; bare = scan every
+                                                   installed AUR pkg (also the yay hook) [arch]
+  fettle remote HOST [actions]                     run maintenance on a remote host
+                                                   over ssh (safe set by default; 'remote -h')
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
 skips the rest with a note.
 
 examples:
-  fettle                             run the default maintenance set
-  fettle -c -u                       clean + update
-  fettle --all --dry-run             show everything that would run; change nothing
-  fettle -A                          AUR health audit
-  fettle sys-audit --all             full security scan (elevates itself)
-  fettle sys-audit remote HOST --all scan a remote host over ssh
+  fettle                       run the default maintenance set
+  fettle -c -u                 clean, then upgrade packages
+  fettle -a --dry-run          preview the whole default set; change nothing
+  fettle -O                    refresh metadata + show what's upgradable (no upgrade)
+  fettle -A                    AUR health audit          [arch]
+  fettle -S                    full security scan (sys-audit --all; self-elevates)
+  fettle -U                    AI pre-upgrade safety check
 """
 
 

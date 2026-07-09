@@ -167,13 +167,14 @@ directly too.
 
 ```sh
 fettle                     # run the default maintenance set (auto-elevates)
-fettle --all --dry-run     # show exactly what would run; change nothing
-fettle -c -u               # clean + update (short flags)
+fettle -a --dry-run        # preview the whole default set; change nothing
+fettle -c -u               # clean, then upgrade packages (short flags)
 fettle clean update        # same thing, as words
+fettle -O                  # refresh metadata + report upgradable (no upgrade; safe)
 fettle -A                  # AUR health audit  -> ~/aur-audit.txt
-fettle pkg-audit           # normalized package supply-chain audit
-fettle sys-audit --all     # full security scan (elevates itself; no sudo needed)
-fettle upgrade-check       # AI: is this upgrade safe? [experimental] (needs API key)
+fettle -P                  # package supply-chain audit -> ~/pkg-audit.txt
+fettle -S                  # full security scan (sys-audit --all; self-elevates)
+fettle -U                  # AI: is this upgrade safe? [experimental] (needs API key)
 ```
 
 ## Maintenance actions
@@ -184,21 +185,30 @@ Anything a distro's backend doesn't support is skipped with a note.
 
 | Flag | Action | Arch | Debian |
 |---|---|---|---|
-| `-c` | `clean` | pacman + pamac/yay caches | `apt-get clean`/`autoclean`, unused flatpaks, disabled snap revisions (asks first) |
+| `-c` | `clean` | pacman + pamac/yay caches (**asks first**; `--yes` skips) | `apt-get clean`/`autoclean`, unused flatpaks, disabled snap revisions (**asks first**) |
 | `-o` | `orphans` | foreign pkgs → `~/alien-pkgs.txt`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/obsolete-pkgs.txt`; `deborphan` + `autoremove` |
-| `-u` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap |
+| `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap |
+| `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable |
+| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
+| `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` | — (apt handles transitions) |
+| `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
+| `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
+| `-k` | `kernel` | `mhwd-kernel` (running protected) | `dpkg -l 'linux-image-*'`, purge old (running protected) |
+| `-A` | `aur-audit` *(arch)* | AUR health table → `~/aur-audit.txt` | — |
+| `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/aur-ioc-scan.txt` | — |
+| `-P` | `pkg-audit` | package supply-chain audit → `~/pkg-audit.txt` | apt/flatpak/snap provenance |
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
-| `-r` | `rebuilds` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
-| `-y` | `python-rebuild` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` | — (apt handles transitions) |
-| `-p` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
-| `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
-| `-k` | `kernels` | `mhwd-kernel` (running protected) | `dpkg -l 'linux-image-*'`, purge old (running protected) |
 
-**Default set** (run when you pass no action, or `--all`): clean, orphans, update,
-rebuilds, python-rebuild, config-drift, firmware. `-k`, `-A`, and `-S` are excluded
-from the default/`--all` set and must be requested explicitly.
+Three more flags are **shortcuts to subcommands** (not part of the action
+pipeline): `-S` → `sys-audit --all` (security scan), `-U` → `upgrade-check` (AI
+advisor), `-p` → `aur-precheck` (AUR pre-flight; bare = scan all installed). Use
+the subcommand form for their own options.
+
+**Default set** (run when you pass no action, or `-a`/`--all`): clean, orphans,
+update, rebuild-check, python-rebuild-check, config-drift, firmware-check.
+Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-I`, `-P`.
 
 `-R` / `--auto-rebuild` turns the `-r` / `-y` checks from "list" into "offer to
 rebuild". Destructive steps (orphan/kernel removal, disabled-snap pruning) always

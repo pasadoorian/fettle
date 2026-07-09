@@ -92,9 +92,10 @@ def test_help_documents_subcommands(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     help_text = capsys.readouterr().out
-    assert "fettle pkg-audit" in help_text
-    assert "fettle sys-audit" in help_text
-    assert "fettle aur-precheck" in help_text
+    assert "--pkg-audit" in help_text          # pkg-audit is now the -P action
+    assert "fettle sys-audit" in help_text      # sys-audit still a subcommand (via -S)
+    assert "fettle aur-precheck" in help_text   # aur-precheck subcommand (via -p)
+    assert "fettle remote" in help_text
 
 
 def test_print_config_exits_zero(capsys):
