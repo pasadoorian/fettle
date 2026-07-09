@@ -60,6 +60,31 @@ def _allowed_uids() -> set[int]:
     return uids
 
 
+# Action names retired in v0.4.0 -> the new name to point users at (config help).
+_RETIRED_ACTIONS = {
+    "rebuilds": "rebuild-check",
+    "python_rebuild": "python-rebuild-check",
+    "firmware": "firmware-check",
+    "kernels": "kernel",
+    "source_audit": "removed (use pkg-audit)",
+    "integrity": "removed (now part of sys-audit)",
+}
+
+
+def _normalize_default_actions(actions) -> tuple[list[str], list[str]]:
+    """Accept hyphen or underscore action names; drop + explain retired ones."""
+    out: list[str] = []
+    warnings: list[str] = []
+    for a in actions:
+        key = str(a).replace("-", "_")
+        if key in _RETIRED_ACTIONS:
+            warnings.append(f"config default_actions: '{a}' -> "
+                            f"{_RETIRED_ACTIONS[key]}; ignoring the old name")
+            continue
+        out.append(key)
+    return out, warnings
+
+
 def _is_safe(path: Path, allowed: set[int]) -> tuple[bool, str]:
     st = path.stat()
     if st.st_uid not in allowed:
@@ -103,4 +128,8 @@ def load(path: Path, *, allowed_uids: set[int] | None = None) -> tuple[Config, l
             setattr(cfg, key, value)
         else:
             warnings.append(f"config: ignoring unknown key '{key}'")
+
+    # Accept hyphenated action names and steer old ones to their new spelling.
+    cfg.default_actions, da_warnings = _normalize_default_actions(cfg.default_actions)
+    warnings.extend(da_warnings)
     return cfg, warnings

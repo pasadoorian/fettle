@@ -35,6 +35,24 @@ def test_loads_known_keys(tmp_path):
     assert warnings == []
 
 
+def test_default_actions_accepts_hyphens(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('default_actions = ["clean", "rebuild-check", "config-drift"]\n')
+    cfg, warnings = load(p)
+    assert cfg.default_actions == ["clean", "rebuild_check", "config_drift"]
+    assert warnings == []
+
+
+def test_default_actions_warns_on_retired_names(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('default_actions = ["clean", "rebuilds", "firmware", "integrity"]\n')
+    cfg, warnings = load(p)
+    assert cfg.default_actions == ["clean"]  # retired names dropped
+    assert any("rebuilds" in w and "rebuild-check" in w for w in warnings)
+    assert any("firmware" in w and "firmware-check" in w for w in warnings)
+    assert any("integrity" in w for w in warnings)
+
+
 def test_unknown_key_warns_but_still_loads(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text('auto_rebuild = true\nbogus = 1\n')

@@ -334,9 +334,11 @@ fettle upgrade-check --no-web        # skip forum search (faster, cheaper)
 ```
 
 - **API key** (first found wins): `ANTHROPIC_API_KEY` env → `ai_api_key` in the
-  config (keep it `chmod 600` — fettle refuses a world-readable config). No key →
-  it just prints the pending-package list. `--print-config` **never** prints the
-  key in full — only a `sk-ant-…1234` hint and its source.
+  config. Prefer the env var. If you put the key in the config, **`chmod 600` it
+  yourself** — fettle refuses a world-*writable* config but does **not** reject a
+  world-*readable* one, so a default `644` file leaks the key to other local
+  users. No key → it just prints the pending-package list. `--print-config`
+  **never** prints the key in full — only a `sk-ant-…1234` hint and its source.
 - **Privacy:** hardware **serials, MAC addresses, and UUIDs are stripped** from the
   inxi output before anything is sent; only the redacted profile + package list
   reach the API.
@@ -361,12 +363,14 @@ Pure stdlib, like everything else — the API is called over `urllib`, no
 
 Optional TOML file at `~/.config/fettle/config.toml`. Precedence, low → high:
 **built-in defaults < config file < command-line flags**. fettle refuses to read a
-config that is world-writable or owned by someone other than you or root.
+config that is world-**writable** or owned by someone other than you or root — it
+does **not** reject a world-**readable** one, so `chmod 600` it yourself if it
+holds a secret. Action names accept hyphens or underscores.
 
 ```toml
 # ~/.config/fettle/config.toml  (all keys optional; values shown are the defaults)
 
-default_actions = ["clean", "orphans", "update", "rebuilds", "python_rebuild", "config_drift", "firmware"]
+default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "firmware-check"]
 auto_rebuild    = false
 exclude_foreign = ["brave-bin", "google-chrome"]   # names or globs; skip in reports
 keep_orphans    = ["downgrade", "nvchecker"]        # never offer these for removal
