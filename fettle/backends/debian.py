@@ -51,9 +51,9 @@ def _parse_apt_sim(text: str) -> list[TxItem]:
 class DebianBackend(PackageBackend):
     name = "debian"
     supported = {
-        "clean", "orphans", "update", "rebuilds", "config_drift", "firmware", "kernels",
-        "pkg_audit",
-        # M10 adds integrity. No python_rebuild / aur_* (Arch-only).
+        "clean", "orphans", "update", "rebuild_check", "config_drift",
+        "firmware_check", "kernel", "pkg_audit",
+        # No python_rebuild_check / aur_* (Arch-only). Integrity lives in sys-audit.
     }
 
     def supply_chain_sources(self):

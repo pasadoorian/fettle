@@ -28,33 +28,33 @@ FLAG_ACTIONS = [
     ("-c", "--clean", "clean"),
     ("-o", "--orphans", "orphans"),
     ("-u", "--update", "update"),
-    ("-r", "--rebuilds", "rebuilds"),
-    ("-y", "--python-rebuild", "python_rebuild"),
+    ("-r", "--rebuilds", "rebuild_check"),
+    ("-y", "--python-rebuild", "python_rebuild_check"),
     ("-p", "--pacnew", "config_drift"),
-    ("-f", "--firmware", "firmware"),
-    ("-k", "--kernel", "kernels"),
+    ("-f", "--firmware", "firmware_check"),
+    ("-k", "--kernel", "kernel"),
     ("-A", "--aur-audit", "aur_audit"),
     ("-S", "--aur-ioc-scan", "aur_ioc_scan"),
 ]
-ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit", "integrity", "source_audit"}
+ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit"}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
 # The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
 # (orphan removal, kernel management) are NOT here — they must be named explicitly.
-REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware")
+REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware_check")
 
 # Human-facing one-liners for each maintenance action (shown in --help).
 ACTION_HELP = {
     "clean": "clean package-manager caches",
     "orphans": "list foreign packages; remove true orphans",
     "update": "update everything (asks before upgrading; --yes to skip)",
-    "rebuilds": "find packages/services needing a rebuild or restart",
-    "python_rebuild": "rebuild packages stranded on an old Python",
+    "rebuild_check": "find packages/services needing a rebuild or restart",
+    "python_rebuild_check": "rebuild packages stranded on an old Python",
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
-    "firmware": "check for firmware updates (fwupd)",
-    "kernels": "manage installed kernels (running one protected)",
+    "firmware_check": "check for firmware updates (fwupd)",
+    "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health table -> ~/aur-audit.txt",
     "aur_ioc_scan": "scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt",
 }

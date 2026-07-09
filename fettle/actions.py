@@ -17,16 +17,14 @@ TITLES = {
     "clean": "Cleaning caches",
     "orphans": "Foreign & orphaned packages",
     "update": "Updating packages",
-    "rebuilds": "Rebuild check",
-    "python_rebuild": "Python rebuild check",
+    "rebuild_check": "Rebuild check",
+    "python_rebuild_check": "Python rebuild check",
     "config_drift": "Config file drift",
-    "firmware": "Firmware",
-    "kernels": "Kernel management",
+    "firmware_check": "Firmware",
+    "kernel": "Kernel management",
     "aur_audit": "AUR audit",
     "aur_ioc_scan": "AUR IoC scan",
     "pkg_audit": "Package supply-chain audit",
-    "integrity": "Package integrity",
-    "source_audit": "Package supply-chain audit",
 }
 
 
@@ -138,11 +136,11 @@ HANDLERS = {
     "clean": lambda b, c: b.clean_caches(c),
     "update": _update,
     "orphans": lambda b, c: b.check_foreign_orphans(c),
-    "rebuilds": lambda b, c: b.check_rebuilds(c),
-    "python_rebuild": lambda b, c: b.check_python_rebuilds(c),
+    "rebuild_check": lambda b, c: b.check_rebuilds(c),
+    "python_rebuild_check": lambda b, c: b.check_python_rebuilds(c),
     "config_drift": lambda b, c: b.check_config_drift(c),
-    "firmware": lambda b, c: b.firmware_updates(c),
-    "kernels": lambda b, c: b.manage_kernels(c),
+    "firmware_check": lambda b, c: b.firmware_updates(c),
+    "kernel": lambda b, c: b.manage_kernels(c),
     "pkg_audit": pkg_audit,
     # -A and -S are distinct AUR-specific commands (not pkg-audit aliases):
     # -A is the health/metrics table; -S is the installed-package IoC scan.

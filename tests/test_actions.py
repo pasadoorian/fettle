@@ -17,10 +17,11 @@ def test_implemented_action_shows_title_and_would_run(capsys):
 
 
 def test_unimplemented_action_notes_gracefully(capsys):
-    # 'integrity' has no handler yet (lands in a later milestone).
-    actions.run(["integrity"], ArchBackend(), _ctx())
+    # Defensive path: an action with no handler degrades gracefully. Every real
+    # action does have one (guaranteed by test_action_registry); this exercises
+    # the fallback with a synthetic name.
+    actions.run(["future_action"], ArchBackend(), _ctx())
     out = capsys.readouterr().out
-    assert "Package integrity" in out
     assert "not yet implemented" in out
 
 

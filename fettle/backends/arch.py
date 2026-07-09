@@ -49,9 +49,9 @@ def _parse_sup_lines(text: str) -> list[tuple[str, str]]:
 class ArchBackend(PackageBackend):
     name = "arch"
     supported = {
-        "clean", "orphans", "update", "rebuilds", "python_rebuild",
-        "config_drift", "firmware", "kernels", "aur_audit", "aur_ioc_scan",
-        "pkg_audit", "integrity",
+        "clean", "orphans", "update", "rebuild_check", "python_rebuild_check",
+        "config_drift", "firmware_check", "kernel", "aur_audit", "aur_ioc_scan",
+        "pkg_audit",
     }
 
     def supply_chain_sources(self):

@@ -24,8 +24,8 @@ except ModuleNotFoundError:  # < 3.11
     except ModuleNotFoundError:
         tomllib = None  # type: ignore[assignment]
 
-DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuilds", "python_rebuild",
-                   "config_drift", "firmware"]
+DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuild_check",
+                   "python_rebuild_check", "config_drift", "firmware_check"]
 
 
 @dataclass

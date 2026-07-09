@@ -108,7 +108,7 @@ def test_remote_maintenance_default_safe_set():
         cli_main(["remote", "server1"])
     (host, fettle_args), kw = run.call_args
     assert host == "server1"
-    assert fettle_args == ["clean", "update", "firmware"]  # safe default, no orphans/kernels
+    assert fettle_args == ["clean", "update", "firmware-check"]  # safe default, no orphans/kernels
     assert kw["sudo"] is True                              # maintenance runs under sudo
     assert kw["tty"] is True                               # interactive by default
 
@@ -117,7 +117,7 @@ def test_remote_maintenance_all_flag_is_the_safe_set():
     with patch("fettle.remote.run", return_value=0) as run:
         cli_main(["remote", "server1", "-a"])
     (_, fettle_args), _ = run.call_args
-    assert fettle_args == ["clean", "update", "firmware"]
+    assert fettle_args == ["clean", "update", "firmware-check"]
 
 
 def test_remote_maintenance_explicit_actions_and_yes():
