@@ -23,20 +23,23 @@ from .output import Output
 
 DEFAULT_CONFIG = Path.home() / ".config/fettle/config.toml"
 
-# (short, long, action-name). Mirrors update.sh letters where the concept carries over.
+# (option-strings, action-name). Pipeline actions selectable as flags or bare words.
+# Dispatch-only shortcuts (-S sys-audit, -U upgrade-check, -p aur-precheck) are NOT
+# here — they route to their own runners (see main()).
 FLAG_ACTIONS = [
-    ("-c", "--clean", "clean"),
-    ("-o", "--orphans", "orphans"),
-    ("-u", "--update", "update"),
-    ("-r", "--rebuilds", "rebuild_check"),
-    ("-y", "--python-rebuild", "python_rebuild_check"),
-    ("-p", "--pacnew", "config_drift"),
-    ("-f", "--firmware", "firmware_check"),
-    ("-k", "--kernel", "kernel"),
-    ("-A", "--aur-audit", "aur_audit"),
-    ("-S", "--aur-ioc-scan", "aur_ioc_scan"),
+    (("-c", "--clean"), "clean"),
+    (("-o", "--orphans"), "orphans"),
+    (("-u", "--update", "--upgrade"), "update"),
+    (("-r", "--rebuild-check"), "rebuild_check"),
+    (("-y", "--python-rebuild-check"), "python_rebuild_check"),
+    (("-d", "--config-drift"), "config_drift"),
+    (("-f", "--firmware"), "firmware_check"),
+    (("-k", "--kernel"), "kernel"),
+    (("-A", "--aur-audit"), "aur_audit"),
+    (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
+    (("-P", "--pkg-audit"), "pkg_audit"),
 ]
-ACTION_NAMES = {action for *_, action in FLAG_ACTIONS} | {"pkg_audit"}
+ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
@@ -57,6 +60,7 @@ ACTION_HELP = {
     "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health table -> ~/aur-audit.txt",
     "aur_ioc_scan": "scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt",
+    "pkg_audit": "package supply-chain audit -> ~/pkg-audit.txt",
 }
 
 _EPILOG = """\
@@ -117,8 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     maint = p.add_argument_group(
         "maintenance actions",
         "combine freely, as flags or bare words (fettle -c -u == fettle clean update)")
-    for short, long, action in FLAG_ACTIONS:
-        maint.add_argument(short, long, dest=f"do_{action}", action="store_true",
+    for opts, action in FLAG_ACTIONS:
+        maint.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"{ACTION_HELP.get(action, action)}{tags[action]}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("-R", "--auto-rebuild", action="store_true",

@@ -25,6 +25,36 @@ def test_reexec_carries_pythonpath_across_sudo():
     assert argv[3:] == [sys.executable, "-m", "fettle", "-c"]
 
 
+def _actions_for(argv):
+    from fettle.cli import _requested_actions, build_parser
+    from fettle.config import Config
+    return _requested_actions(build_parser().parse_args(argv), Config())
+
+
+def test_new_short_flags_route_to_renamed_actions():
+    assert _actions_for(["-I"]) == ["aur_ioc_scan"]   # was -S
+    assert _actions_for(["-d"]) == ["config_drift"]   # was -p/--pacnew
+    assert _actions_for(["-P"]) == ["pkg_audit"]      # new flag
+    assert _actions_for(["-r"]) == ["rebuild_check"]
+    assert _actions_for(["-y"]) == ["python_rebuild_check"]
+
+
+def test_update_upgrade_aliases_and_long_options():
+    assert _actions_for(["--update"]) == ["update"]
+    assert _actions_for(["--upgrade"]) == ["update"]
+    assert _actions_for(["--config-drift"]) == ["config_drift"]
+    assert _actions_for(["--aur-ioc-scan"]) == ["aur_ioc_scan"]
+    assert _actions_for(["--pkg-audit"]) == ["pkg_audit"]
+
+
+def test_retired_short_flags_are_unrecognized():
+    # -S and -p no longer select pipeline actions (they become dispatch shortcuts
+    # in 6A.3); --pacnew/--rebuilds/--python-rebuild long forms are gone.
+    for dead in (["-S"], ["-p"], ["--pacnew"], ["--rebuilds"]):
+        with pytest.raises(SystemExit):
+            cli.build_parser().parse_args(dead)
+
+
 def test_help_tags_distro_specific_actions(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
