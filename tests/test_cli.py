@@ -77,6 +77,24 @@ def test_two_dispatch_shortcuts_error():
         main(["-S", "-U"])
 
 
+def test_shortcut_combined_with_action_flag_errors_clearly(capsys):
+    # `fettle -A -S` used to forward -A to sys-audit -> cryptic subparser error.
+    rc = main(["-A", "-S"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "-S (sys-audit) can't be combined" in err and "-A" in err
+
+
+def test_shortcut_suboptions_still_pass_through():
+    # --list / --effort / categories are NOT action flags — must still forward.
+    with patch("fettle.secure.audit.main", return_value=0) as sa:
+        main(["-S", "secureboot"])
+    sa.assert_called_once_with(["--all", "secureboot"])
+    with patch("fettle.cli._run_upgrade_check", return_value=0) as uc:
+        main(["-U", "--effort", "high"])
+    uc.assert_called_once_with(["--effort", "high"])
+
+
 def test_help_tags_distro_specific_actions(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])

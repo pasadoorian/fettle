@@ -189,7 +189,7 @@ class ArchBackend(PackageBackend):
             yay_cmd += ["--diffmenu=true", "--editmenu=true"]
         ctx.execute(yay_cmd, as_user=ctx.sudo_user)
         out.summary_add(f"packages updated (repos: {system}, AUR: yay)")
-        out.next_step("check AUR packages before the next build: fettle -A -S")
+        out.next_step("check AUR packages before the next build: fettle -A -I")
         return Result()
 
     # -- pending upgrades (UC1) ----------------------------------------------

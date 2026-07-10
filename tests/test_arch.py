@@ -47,6 +47,19 @@ def test_update_default_pacman_then_yay():
     assert any(c[0] == "yay" and u == "paul" for c, u in calls)
 
 
+def test_update_extras_hint_uses_current_aur_flags():
+    # v0.4.0: AUR IoC scan is -I (-S is now sys-audit). The post-update hint must
+    # point at `-A -I`, not the old `-A -S`.
+    _, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ctx = _ctx()
+        ArchBackend().update_extras(ctx)
+    steps = ctx.output._next_steps
+    assert any("fettle -A -I" in s for s in steps)
+    assert not any("-A -S" in s for s in steps)
+
+
 def test_pending_upgrades_via_checkupdates():
     calls, _ = _recorder()
     resp = "linux 6.12.1-1 -> 6.18.2-1\nnvidia 550.1-1 -> 560.3-1 [ignored]\n"

@@ -452,11 +452,23 @@ def main(argv: list[str] | None = None) -> int:
     # upgrade-check, and aur-precheck runners (Q4: flag = shortcut, subcommand =
     # full control). Detected anywhere in argv; the remaining args forward to the
     # runner, so `fettle -S --list` and `fettle -U --effort high` still work.
-    # Combining a shortcut with pipeline flags errors (the runner rejects the
-    # leftover); two shortcuts at once is an explicit error.
+    # Two shortcuts at once is an explicit error.
     shortcut = _find_dispatch_shortcut(argv)
     if shortcut is not None:
         target, rest = shortcut
+        # A shortcut is a standalone command — mixing it with a pipeline action
+        # flag (e.g. `fettle -A -S`) forwards a fettle flag the sub-runner can't
+        # parse. Catch it here with a clear message instead of a cryptic subparser
+        # error. (Sub-options like --list / --effort and sys-audit categories are
+        # not action flags, so they still pass through.)
+        pipeline_flags = {opt for opts, _ in FLAG_ACTIONS for opt in opts}
+        clash = [t for t in rest if t in pipeline_flags]
+        if clash:
+            letter = {"sys-audit": "-S", "upgrade-check": "-U",
+                      "aur-precheck": "-p"}[target]
+            print(f"fettle: {letter} ({target}) can't be combined with other action "
+                  f"flags ({' '.join(clash)}) — run them separately.", file=sys.stderr)
+            return 2
         if target == "sys-audit":
             from .secure import audit
             return audit.main(["--all", *rest])  # bare -S == sys-audit --all
