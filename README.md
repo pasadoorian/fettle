@@ -519,6 +519,11 @@ pure standard library.
 
 ## Changelog
 
+### v0.4.2 — fixes
+
+- **`fettle upgrade` now works** as a synonym for `update` (install package
+  upgrades). The `--upgrade` flag already worked; the bare word didn't.
+
 ### v0.4.1 — fixes
 
 - **Fixed the post-update AUR hint.** The Arch update summary pointed at
