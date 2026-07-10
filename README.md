@@ -519,6 +519,20 @@ pure standard library.
 
 ## Changelog
 
+### v0.4.1 — fixes
+
+- **Fixed the post-update AUR hint.** The Arch update summary pointed at
+  `fettle -A -S`, a pre-v0.4.0 combo — since `-S` is now sys-audit, running it
+  errored. It now correctly suggests `fettle -A -I` (AUR audit + IoC scan).
+- **Clearer error for clashing shortcuts.** Combining a dispatch shortcut with an
+  action flag (e.g. `fettle -A -S`) now prints a clear message instead of a
+  cryptic sub-parser error; sub-options like `-S --list` still pass through.
+- **`fettle sys-audit` with no arguments runs all checks** (was a "nothing to
+  check" no-op) — matching `fettle -S`. Named categories and `--list` unchanged;
+  the `remote` form still requires explicit categories/`--all`.
+- **Debian/Ubuntu: autoremove previews first.** `apt-get autoremove` now lists the
+  exact packages it would drop **before** asking, instead of confirming blind.
+
 ### v0.4.0 — CLI rework (breaking)
 
 A **hard break** that reorganizes the command-line surface. Update any scripts,
