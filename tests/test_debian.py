@@ -217,6 +217,7 @@ def test_orphans_writes_obsolete_and_purges(tmp_path):
     responses = {
         ("apt-show-versions",): apt_show,
         ("deborphan",): "liborphan1\nliborphan2\n",
+        ("apt-get", "autoremove", "--dry-run"): "Remv libunused [1.0]\n",
     }
     ctx = Context(output=Output(color=False), config=Config(), sudo_user="paul",
                   user_home=tmp_path, assume_yes=True)
@@ -228,6 +229,43 @@ def test_orphans_writes_obsolete_and_purges(tmp_path):
     argvs = [c for c, _ in calls]
     assert any(c[:3] == ["apt-get", "purge", "-y"] and "liborphan1" in c for c in argvs)
     assert ["apt-get", "autoremove", "-y"] in argvs  # assume_yes confirms it
+
+
+def test_orphans_previews_autoremove_before_asking(tmp_path, capsys):
+    # The removal list must be shown BEFORE autoremove runs.
+    calls = []
+    responses = {("apt-get", "autoremove", "--dry-run"):
+                 "Remv libslirp0 [4.6.1-1build1]\nRemv slirp4netns [1.0.1-2]\n"}
+    ctx = Context(output=Output(color=False), config=Config(), sudo_user="paul",
+                  user_home=tmp_path, assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_foreign_orphans(ctx)
+    out = capsys.readouterr().out
+    assert "libslirp0" in out and "slirp4netns" in out         # listed first
+    assert "2 unused dependency(ies) would be removed" in out
+    assert ["apt-get", "autoremove", "-y"] in [c for c, _ in calls]
+
+
+def test_orphans_skips_autoremove_when_nothing_unused(tmp_path, capsys):
+    # No Remv lines in the simulation -> don't run autoremove, don't prompt.
+    ctx = Context(output=Output(color=False), config=Config(), sudo_user="paul",
+                  user_home=tmp_path, assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fake({}, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_foreign_orphans(ctx)
+    assert "no unused dependencies to autoremove" in capsys.readouterr().out
+
+
+def test_orphans_dry_run_previews_without_removing(tmp_path):
+    calls = []
+    responses = {("apt-get", "autoremove", "--dry-run"): "Remv libunused [1.0]\n"}
+    ctx = Context(output=Output(color=False), config=Config(), sudo_user="paul",
+                  user_home=tmp_path, dry_run=True)
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_foreign_orphans(ctx)
+    assert ["apt-get", "autoremove", "-y"] not in [c for c, _ in calls]  # never removes
 
 
 def test_orphans_keep_list_protects_libraries(tmp_path):

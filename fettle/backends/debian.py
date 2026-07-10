@@ -278,11 +278,29 @@ class DebianBackend(PackageBackend):
         else:
             out.note("deborphan not found (install it to detect orphaned libraries); skipping.")
 
-        # Unused dependencies.
-        if ctx.confirm("run apt-get autoremove to drop unused dependencies?"):
-            ctx.execute(["apt-get", "autoremove", "-y"])
-            out.summary_add("autoremove completed")
+        # Unused dependencies — show exactly what autoremove would drop, THEN ask.
+        removable = self._autoremove_preview(ctx)
+        if not removable:
+            out.ok("no unused dependencies to autoremove.")
+        else:
+            out.note(f"{len(removable)} unused dependency(ies) would be removed:")
+            for p in removable:
+                print(f"    {p}")
+            if ctx.dry_run:
+                out.note("would run: apt-get autoremove -y")
+            elif ctx.confirm("remove these now (apt-get autoremove)?"):
+                ctx.execute(["apt-get", "autoremove", "-y"])
+                out.summary_add(f"{len(removable)} unused dependency(ies) autoremoved")
         return Result()
+
+    def _autoremove_preview(self, ctx: Context) -> list[str]:
+        """Packages `apt-get autoremove` would remove — simulated, rootless."""
+        removed = []
+        for line in self._query(["apt-get", "autoremove", "--dry-run"]).splitlines():
+            m = _APT_REMV_RE.match(line.strip())
+            if m:
+                removed.append(m.group(1))
+        return removed
 
     def _obsolete_packages(self, ctx: Context) -> list[str]:
         if command.which("apt-show-versions"):
