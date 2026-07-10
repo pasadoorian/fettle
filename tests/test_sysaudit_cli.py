@@ -29,10 +29,14 @@ def test_unknown_category_errors(capsys):
     assert "unknown check" in capsys.readouterr().err
 
 
-def test_no_categories_is_a_noop(capsys):
-    rc = audit.main([])
+def test_no_categories_defaults_to_all():
+    # Bare `fettle sys-audit` runs every check (== --all).
+    seen = []
+    fakes = {cat: (lambda scan, c=cat: seen.append(c)) for cat in audit.CATEGORIES}
+    with patch("fettle.secure.audit._registry", return_value=fakes):
+        rc = audit.main([])
     assert rc == 0
-    assert "nothing to check" in capsys.readouterr().err
+    assert seen == list(audit.CATEGORIES)
 
 
 def test_all_dispatches_every_category():

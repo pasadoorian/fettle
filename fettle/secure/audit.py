@@ -108,8 +108,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
         description="System Supply Chain scanner: firmware, boot chain, hardware.",
         epilog=_SYS_AUDIT_EPILOG,
     )
-    p.add_argument("categories", nargs="*", help="check categories to run (see --list)")
-    p.add_argument("-a", "--all", action="store_true", help="run every check")
+    p.add_argument("categories", nargs="*",
+                   help="check categories to run (default: all; see --list)")
+    p.add_argument("-a", "--all", action="store_true",
+                   help="run every check (the default when no categories are given)")
     p.add_argument("-l", "--list", action="store_true", help="list check categories and exit")
     p.add_argument("-v", "--verbose", action="store_true", help="show raw command output")
     p.add_argument("-q", "--quiet", action="store_true")
@@ -170,14 +172,15 @@ def main(argv: list[str]) -> int:
         list_checks(out)
         return 0
 
-    chosen = list(CATEGORIES) if args.all else [c.replace("_", "-") for c in args.categories]
-    unknown = [c for c in chosen if c not in CATEGORIES]
-    if unknown:
-        out.err(f"unknown check(s): {', '.join(unknown)}. Try: fettle sys-audit --list")
-        return 1
-    if not chosen:
-        out.warn("nothing to check. Pick categories, use --all, or --list.")
-        return 0
+    # Bare `fettle sys-audit` (no categories, no --all) runs every check.
+    if args.all or not args.categories:
+        chosen = list(CATEGORIES)
+    else:
+        chosen = [c.replace("_", "-") for c in args.categories]
+        unknown = [c for c in chosen if c not in CATEGORIES]
+        if unknown:
+            out.err(f"unknown check(s): {', '.join(unknown)}. Try: fettle sys-audit --list")
+            return 1
 
     # Most checks need root. Self-elevate (like the maintenance actions) so
     # `fettle sys-audit` Just Works without the user typing `sudo fettle` — which
