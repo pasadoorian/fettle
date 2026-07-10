@@ -42,6 +42,8 @@ def test_new_short_flags_route_to_renamed_actions():
 def test_update_upgrade_aliases_and_long_options():
     assert _actions_for(["--update"]) == ["update"]
     assert _actions_for(["--upgrade"]) == ["update"]
+    assert _actions_for(["upgrade"]) == ["update"]   # bare word alias
+    assert _actions_for(["update"]) == ["update"]
     assert _actions_for(["--config-drift"]) == ["config_drift"]
     assert _actions_for(["--aur-ioc-scan"]) == ["aur_ioc_scan"]
     assert _actions_for(["--pkg-audit"]) == ["pkg_audit"]

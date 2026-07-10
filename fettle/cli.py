@@ -42,6 +42,10 @@ FLAG_ACTIONS = [
 ]
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 
+# Bare-word synonyms -> canonical action. `upgrade` mirrors the --upgrade flag
+# (both alias -u/update): `fettle upgrade` == `fettle update` (install upgrades).
+WORD_ALIASES = {"upgrade": "update"}
+
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
 
@@ -154,6 +158,7 @@ def _requested_actions(args: argparse.Namespace, cfg: Config) -> list[str]:
             chosen.append(action)
     for word in args.actions:
         name = word.replace("-", "_")
+        name = WORD_ALIASES.get(name, name)
         if name not in ACTION_NAMES:
             raise SystemExit(f"fettle: unknown action '{word}'")
         chosen.append(name)
