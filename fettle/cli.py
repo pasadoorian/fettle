@@ -64,9 +64,9 @@ ACTION_HELP = {
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",
-    "aur_audit": "AUR health table -> ~/aur-audit.txt",
-    "aur_ioc_scan": "scan installed AUR pkgs for IoCs -> ~/aur-ioc-scan.txt",
-    "pkg_audit": "package supply-chain audit -> ~/pkg-audit.txt",
+    "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/aur-audit.txt",
+    "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/aur-ioc-scan.txt",
+    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/pkg-audit.txt",
 }
 
 _EPILOG = """\
@@ -80,16 +80,22 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
   fettle remote HOST [actions]                     run maintenance on a remote host
                                                    over ssh (safe set by default; 'remote -h')
 
+which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
+  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap): provenance + tampering
+  -A  aur-audit     AUR health census: age, votes, out-of-date, orphan
+  -I  aur-ioc-scan  match installed AUR pkgs to known-compromise (IoC) feeds
+  -p  aur-precheck  per-package pre-install check (RPC + IoC); bare = all installed
+
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
 skips the rest with a note.
 
 examples:
   fettle                       run the default maintenance set
-  fettle -c -u                 clean, then upgrade packages
+  fettle clean update          actions as words (== `fettle -c -u`)
+  fettle upgrade               upgrade packages (synonym of `update` / -u)
   fettle -a --dry-run          preview the whole default set; change nothing
   fettle -O                    refresh metadata + show what's upgradable (no upgrade)
-  fettle -A                    AUR health audit          [arch]
   fettle -S                    full security scan (sys-audit --all; self-elevates)
   fettle -U                    AI pre-upgrade safety check
 """
@@ -123,7 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     tags = _distro_tags()
     maint = p.add_argument_group(
         "maintenance actions",
-        "combine freely, as flags or bare words (fettle -c -u == fettle clean update)")
+        "each runs as a flag OR a bare word, and they combine: `fettle -c -u` == "
+        "`fettle clean update`. (`upgrade` is a synonym for `update`.)")
     for opts, action in FLAG_ACTIONS:
         maint.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"{ACTION_HELP.get(action, action)}{tags[action]}")

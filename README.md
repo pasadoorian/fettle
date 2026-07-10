@@ -170,7 +170,8 @@ directly too.
 fettle                     # run the default maintenance set (auto-elevates)
 fettle -a --dry-run        # preview the whole default set; change nothing
 fettle -c -u               # clean, then upgrade packages (short flags)
-fettle clean update        # same thing, as words
+fettle clean update        # identical — every action also works as a bare word
+fettle upgrade             # `upgrade` is a synonym for `update`
 fettle -O                  # refresh metadata + report upgradable (no upgrade; safe)
 fettle -A                  # AUR health audit  -> ~/aur-audit.txt
 fettle -P                  # package supply-chain audit -> ~/pkg-audit.txt
@@ -217,13 +218,16 @@ prompt per item unless you pass `--yes`.
 
 ## Package supply-chain
 
-Three distinct commands — do not confuse them:
+Four commands touch package provenance/safety and are easy to confuse. Rule of
+thumb: **`-P` is the broad, all-ecosystem one; `-A`/`-I`/`-p` are AUR-only and each
+answers a different question.**
 
-| Command | Scope | Output |
-|---|---|---|
-| `fettle -A` / `aur-audit` *(arch)* | **Health census** of installed AUR pkgs: age, votes, out-of-date, orphan, recently-changed, and maintainer-change (re-adoption tell) | table → `~/aur-audit.txt` |
-| `fettle -S` / `aur-ioc-scan` *(arch)* | **IoC scan** of installed AUR pkgs: known-malicious package names, malicious maintainer accounts, malicious JS-cache traces (lenucksi feed) | findings → `~/aur-ioc-scan.txt` |
-| `fettle pkg-audit` | **Cross-distro** normalized audit merging every present source provider | findings → `~/pkg-audit.txt` |
+| Command | What it answers | Use it when | Output |
+|---|---|---|---|
+| `fettle -P` / `pkg-audit` | Across **all** ecosystems (AUR/APT/Flatpak/Snap): where did my installed software come from, and has it been tampered with? | you want one whole-system supply-chain report | findings → `~/pkg-audit.txt` |
+| `fettle -A` / `aur-audit` *(arch)* | AUR **health census**: age, votes, out-of-date, orphan, recently-changed, maintainer-change (re-adoption tell) | you want to vet how well-maintained your AUR pkgs are | table → `~/aur-audit.txt` |
+| `fettle -I` / `aur-ioc-scan` *(arch)* | AUR **threat sweep**: do any installed AUR pkgs match known-compromise feeds (bad package names, malicious maintainers, malicious JS-cache traces)? | you want a known-compromise check (lenucksi IoC feed) | findings → `~/aur-ioc-scan.txt` |
+| `fettle -p` / `aur-precheck` *(arch)* | AUR **pre-install / quick sweep**: is this package (or every installed AUR pkg) risky right now — orphaned, out-of-date, stale, compromised name, malicious maintainer? | before building an AUR pkg (the yay hook), or a fast all-installed check | `CRIT`/`WARN` lines |
 
 `pkg-audit` runs each provider whose package manager is present and reports one
 normalized `Finding` format with one severity language:
@@ -239,9 +243,16 @@ Each provider prints a **coverage line** so uneven depth is explicit — a real
 malware/IOC feed exists only for the AUR, and fettle never pretends otherwise.
 
 `fettle aur-precheck <pkg>…` is the install-time helper (used by the yay hook): it
-prints machine-readable `CRIT`/`WARN` lines for a not-yet-installed package and
-always exits 0. Tunable via env vars (`AUR_PRECHECK=false` to disable,
-`AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …).
+prints machine-readable `CRIT`/`WARN` lines for the named packages and always exits
+0. **With no package named** (`fettle aur-precheck` or `fettle -p`) it scans *every*
+installed AUR package instead — a quick safety sweep. Tunable via env vars
+(`AUR_PRECHECK=false` to disable, `AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …).
+
+How it differs from the others: `aur-precheck` is the fast, self-contained,
+env-driven per-package gate (no config/TOML load, silent when clean — built for the
+hook); `aur-audit` is the detailed health *report*; `aur-ioc-scan` is the pure
+threat/IoC sweep; `pkg-audit` is the cross-ecosystem umbrella that folds AUR
+health+IoC in alongside APT/Flatpak/Snap.
 
 ## System supply-chain — `sys-audit`
 
@@ -475,9 +486,9 @@ them — noted in the output.
 fettle elevates **lazily and by itself** — you never need to type `sudo fettle`.
 
 - **Maintenance actions** re-exec under `sudo` only when a selected action will
-  actually change the system. Read-only work — `pkg-audit`, `aur-audit` (`-A`),
-  `aur-ioc-scan` (`-S`), `config-drift` (`-p`) — runs unprivileged and never
-  prompts. `--dry-run` never elevates.
+  actually change the system. Read-only work — `pkg-audit` (`-P`), `aur-audit`
+  (`-A`), `aur-ioc-scan` (`-I`), `config-drift` (`-d`) — runs unprivileged and
+  never prompts. `--dry-run` never elevates.
 - **`sys-audit`** elevates itself too (most checks need root); pass `--user` to
   stay unprivileged. `--list` and `remote` don't elevate.
 
