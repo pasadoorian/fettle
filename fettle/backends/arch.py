@@ -22,6 +22,11 @@ _AUR_UPDATERS = {"yay", "pamac", "none"}
 # "[ignored]"). Capture the three fields; ignore anything that doesn't match.
 _ARROW_RE = re.compile(r"^(\S+)\s+(\S+)\s+->\s+(\S+)")
 
+# Python interpreter package names (python, python3, python310, python312, ...).
+# These OWN an old python3.X dir but are the interpreter itself, not a module that
+# needs rebuilding — excluded from the Python-rebuild candidate list.
+_PY_INTERP_RE = re.compile(r"^python3?\d*$")
+
 
 def _parse_arrow_upgrades(text: str) -> list[tuple[str, str, str]]:
     out = []
@@ -377,9 +382,16 @@ class ArchBackend(PackageBackend):
         for d in old_dirs:
             print(f"    {d}")
         pkgs: set[str] = set()
+        interpreters: set[str] = set()
         for d in old_dirs:
             pkgs.update(x for x in self._query(["pacman", "-Qoq", str(d)]).split() if x)
-        ordered = sorted(pkgs)
+            # The interpreter for this dir owns its stdlib — probe a sentinel file
+            # (os.py exists in every CPython) for the non-recursive dir owner. That
+            # package IS Python, not a module stranded on it, so it's not a rebuild
+            # target (e.g. the foreign `python312` package owning /usr/lib/python3.12).
+            interpreters.update(self._query(["pacman", "-Qoq", str(d / "os.py")]).split())
+        ordered = sorted(p for p in pkgs
+                         if p not in interpreters and not _PY_INTERP_RE.match(p))
         if not ordered:
             out.ok("no packages need rebuilding for the new Python version.")
             return Result()

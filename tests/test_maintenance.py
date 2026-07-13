@@ -80,20 +80,62 @@ def test_rebuilds_auto_rebuild_invokes_yay():
 
 
 # -- python rebuild ----------------------------------------------------------
+def _pyfake(current, dir_owners, os_py_owners):
+    """python-rebuild mock: dir_owners[ver] = recursive `-Qoq <dir>` output;
+    os_py_owners[ver] = owner of the stdlib sentinel <dir>/os.py (the interpreter)."""
+    def run(cmd, *, as_user=None, capture=False):
+        if cmd[:2] == ["python3", "-c"]:
+            return command.Proc(0, current, "")
+        if cmd[:2] == ["pacman", "-Qoq"]:
+            path = cmd[2]
+            if path.endswith("/os.py"):
+                for ver, owner in os_py_owners.items():
+                    if f"python{ver}/os.py" in path:
+                        return command.Proc(0, owner, "")
+                return command.Proc(0, "", "")
+            for ver, owners in dir_owners.items():
+                if path.endswith(f"python{ver}"):
+                    return command.Proc(0, owners, "")
+        return command.Proc(0, "", "")
+    return run
+
+
 def test_python_rebuild_finds_old_dir(tmp_path, capsys):
     (tmp_path / "usr/lib/python3.11").mkdir(parents=True)
     (tmp_path / "usr/lib/python3.13").mkdir(parents=True)
-    calls = []
-    responses = {
-        ("python3",): "3.13",
-        ("pacman", "-Qoq"): "stale-pkg\n",
-    }
+    fake = _pyfake("3.13",
+                   {"3.11": "python311\nstale-pkg\n"},   # interpreter + a real module
+                   {"3.11": "python311\n"})               # os.py owner = the interpreter
     ctx = _ctx(root=tmp_path)
-    with patch("fettle.command.run", side_effect=_fake(responses, calls)):
+    with patch("fettle.command.run", side_effect=fake):
         ArchBackend().check_python_rebuilds(ctx)
     out = capsys.readouterr().out
-    assert "python3.11" in out and "stale-pkg" in out
-    assert "python3.13" not in out  # current version excluded
+    assert "python3.11" in out and "stale-pkg" in out     # the module needs rebuilding
+    assert "python3.13" not in out                        # current version excluded
+
+
+def test_python_rebuild_excludes_interpreter_package(tmp_path, capsys):
+    # The wopr case: an old dir owned ONLY by its interpreter package (python312)
+    # -> nothing to rebuild, and the interpreter is not listed.
+    (tmp_path / "usr/lib/python3.12").mkdir(parents=True)
+    fake = _pyfake("3.14", {"3.12": "python312\n"}, {"3.12": "python312\n"})
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", side_effect=fake):
+        ArchBackend().check_python_rebuilds(ctx)
+    out = capsys.readouterr().out
+    assert "python312" not in out                         # interpreter not flagged
+    assert "no packages need rebuilding" in out
+
+
+def test_python_rebuild_name_fallback_excludes_interpreter(tmp_path, capsys):
+    # Even if the os.py sentinel query returns nothing, the name pattern drops it.
+    (tmp_path / "usr/lib/python3.12").mkdir(parents=True)
+    fake = _pyfake("3.14", {"3.12": "python312\nreal-mod\n"}, {"3.12": ""})
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", side_effect=fake):
+        ArchBackend().check_python_rebuilds(ctx)
+    out = capsys.readouterr().out
+    assert "python312" not in out and "real-mod" in out
 
 
 # -- config drift ------------------------------------------------------------
