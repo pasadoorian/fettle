@@ -100,6 +100,12 @@ def _pyfake(current, dir_owners, os_py_owners):
     return run
 
 
+def _rebuild_section(out: str) -> str:
+    """The text after the 'need rebuilding' header (the actual candidate list)."""
+    marker = "need rebuilding"
+    return out[out.index(marker):] if marker in out else ""
+
+
 def test_python_rebuild_finds_old_dir(tmp_path, capsys):
     (tmp_path / "usr/lib/python3.11").mkdir(parents=True)
     (tmp_path / "usr/lib/python3.13").mkdir(parents=True)
@@ -110,21 +116,22 @@ def test_python_rebuild_finds_old_dir(tmp_path, capsys):
     with patch("fettle.command.run", side_effect=fake):
         ArchBackend().check_python_rebuilds(ctx)
     out = capsys.readouterr().out
-    assert "python3.11" in out and "stale-pkg" in out     # the module needs rebuilding
-    assert "python3.13" not in out                        # current version excluded
+    assert "stale-pkg" in _rebuild_section(out)            # the module needs rebuilding
+    assert "python311" not in _rebuild_section(out)        # interpreter not a candidate
+    assert "skipped 1 installed Python interpreter" in out  # ...but noted as skipped
 
 
 def test_python_rebuild_excludes_interpreter_package(tmp_path, capsys):
     # The wopr case: an old dir owned ONLY by its interpreter package (python312)
-    # -> nothing to rebuild, and the interpreter is not listed.
+    # -> nothing to rebuild; python312 is noted as skipped, not flagged.
     (tmp_path / "usr/lib/python3.12").mkdir(parents=True)
     fake = _pyfake("3.14", {"3.12": "python312\n"}, {"3.12": "python312\n"})
     ctx = _ctx(root=tmp_path)
     with patch("fettle.command.run", side_effect=fake):
         ArchBackend().check_python_rebuilds(ctx)
     out = capsys.readouterr().out
-    assert "python312" not in out                         # interpreter not flagged
     assert "no packages need rebuilding" in out
+    assert "python312" in out and "python312" not in _rebuild_section(out)
 
 
 def test_python_rebuild_name_fallback_excludes_interpreter(tmp_path, capsys):
@@ -135,7 +142,24 @@ def test_python_rebuild_name_fallback_excludes_interpreter(tmp_path, capsys):
     with patch("fettle.command.run", side_effect=fake):
         ArchBackend().check_python_rebuilds(ctx)
     out = capsys.readouterr().out
-    assert "python312" not in out and "real-mod" in out
+    assert "real-mod" in _rebuild_section(out)
+    assert "python312" not in _rebuild_section(out)
+
+
+def test_python_rebuild_notes_orphaned_dir_as_cruft(tmp_path, capsys):
+    # A dir with no owning package (e.g. /usr/lib/python3.10 left over) -> cruft,
+    # not a rebuild target.
+    (tmp_path / "usr/lib/python3.10").mkdir(parents=True)
+    (tmp_path / "usr/lib/python3.12").mkdir(parents=True)
+    fake = _pyfake("3.14",
+                   {"3.10": "", "3.12": "python312\n"},   # 3.10 owned by nothing
+                   {"3.12": "python312\n"})
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", side_effect=fake):
+        ArchBackend().check_python_rebuilds(ctx)
+    out = capsys.readouterr().out
+    assert "orphaned old-Python directories" in out and "python3.10" in out
+    assert "no packages need rebuilding" in out
 
 
 # -- config drift ------------------------------------------------------------

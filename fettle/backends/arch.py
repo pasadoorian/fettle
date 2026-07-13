@@ -378,24 +378,37 @@ class ArchBackend(PackageBackend):
         if not old_dirs:
             out.ok("no old Python directories found; nothing to rebuild.")
             return Result()
-        out.note("found old Python directories:")
-        for d in old_dirs:
-            print(f"    {d}")
+
         pkgs: set[str] = set()
         interpreters: set[str] = set()
+        orphaned: list[Path] = []
         for d in old_dirs:
-            pkgs.update(x for x in self._query(["pacman", "-Qoq", str(d)]).split() if x)
+            owners = [x for x in self._query(["pacman", "-Qoq", str(d)]).split() if x]
+            if not owners:
+                orphaned.append(d)  # no owning package -> leftover cruft
+                continue
+            pkgs.update(owners)
             # The interpreter for this dir owns its stdlib — probe a sentinel file
             # (os.py exists in every CPython) for the non-recursive dir owner. That
             # package IS Python, not a module stranded on it, so it's not a rebuild
             # target (e.g. the foreign `python312` package owning /usr/lib/python3.12).
             interpreters.update(self._query(["pacman", "-Qoq", str(d / "os.py")]).split())
-        ordered = sorted(p for p in pkgs
-                         if p not in interpreters and not _PY_INTERP_RE.match(p))
+        interpreters |= {p for p in pkgs if _PY_INTERP_RE.match(p)}  # name fallback
+
+        if orphaned:
+            out.note("orphaned old-Python directories (no owning package — "
+                     "leftover, removable):")
+            for d in orphaned:
+                print(f"    {d}")
+        if interpreters:
+            out.note(f"skipped {len(interpreters)} installed Python interpreter "
+                     f"package(s), not rebuild targets: {', '.join(sorted(interpreters))}")
+
+        ordered = sorted(pkgs - interpreters)
         if not ordered:
             out.ok("no packages need rebuilding for the new Python version.")
             return Result()
-        out.note("packages owning files under an old Python dir:")
+        out.note("packages stranded on an old Python (need rebuilding):")
         for pk in ordered:
             print(f"    {pk}")
         if ctx.auto_rebuild:
