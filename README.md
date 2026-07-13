@@ -192,7 +192,7 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap |
 | `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable |
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
-| `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` | — (apt handles transitions) |
+| `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) |
@@ -529,6 +529,16 @@ special hardware. Runtime code never imports pytest — the shipped tool is
 pure standard library.
 
 ## Changelog
+
+### v0.4.4 — Python rebuild check no longer flags Python itself
+
+- **`-y` / `python-rebuild-check` ignores Python interpreter packages.** It used
+  to list packages like `python312` (a separate, deliberately-installed Python
+  interpreter) as "needing rebuild" just because they own `/usr/lib/python3.12`.
+  Now the interpreter that owns an old Python dir is excluded (via its stdlib
+  owner + a name-pattern fallback), so only genuinely **stranded modules** are
+  flagged. Old Python dirs owned by *no* package are reported separately as
+  removable leftover cruft, and skipped interpreters are named for transparency.
 
 ### v0.4.3 — kernel-removal safety fix
 
