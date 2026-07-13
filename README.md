@@ -195,7 +195,7 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` | — (apt handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
-| `-k` | `kernel` | `mhwd-kernel` (running protected) | `dpkg -l 'linux-image-*'`, purge old (running protected) |
+| `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/aur-audit.txt` | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/aur-ioc-scan.txt` | — |
 | `-P` | `pkg-audit` | package supply-chain audit → `~/pkg-audit.txt` | apt/flatpak/snap provenance |
@@ -529,6 +529,17 @@ special hardware. Runtime code never imports pytest — the shipped tool is
 pure standard library.
 
 ## Changelog
+
+### v0.4.3 — kernel-removal safety fix
+
+- **Debian/Ubuntu: never offer to remove the *newest* kernel.** Kernel management
+  protected only the *running* kernel, so after a kernel upgrade before reboot
+  (running the old kernel, newer one installed) it offered to purge the newer,
+  next-boot kernel — a potential rollback. It now protects the running kernel
+  **and** the newest installed one(s), compared numerically (a string sort ranks
+  `6.8.0-99` above `6.8.0-124`), and nudges you to reboot when a newer kernel is
+  installed but not yet active. Arch/Manjaro was audited and is unaffected
+  (removal is user-named; the running series is refused).
 
 ### v0.4.2 — fixes
 
