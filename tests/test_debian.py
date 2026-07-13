@@ -397,6 +397,30 @@ def test_kernels_pending_reboot_reports_nothing_removable(capsys):
     assert "6.8.0-134-generic" in out and "boots next" in out  # newest flagged
 
 
+def test_kernels_reboot_pending_nudge(capsys):
+    # M2: running an older kernel than the newest -> warn + reboot next-step.
+    responses = {("dpkg", "-l", "linux-image-*"): _DPKG_KERNELS_PENDING_REBOOT,
+                 ("uname", "-r"): "6.8.0-124-generic\n"}
+    ctx = _ctx()
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().manage_kernels(ctx)
+    cap = capsys.readouterr()
+    assert "reboot to activate it" in cap.err          # warn -> stderr
+    assert any("reboot" in s for s in ctx.output._next_steps)
+
+
+def test_kernels_no_reboot_nudge_when_running_newest(capsys):
+    # Running the newest -> no reboot nudge.
+    responses = {("dpkg", "-l", "linux-image-*"): _DPKG_KERNELS,
+                 ("uname", "-r"): "6.8.0-35-generic\n"}  # 35 is newest here
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().manage_kernels(_ctx(dry_run=True))
+    cap = capsys.readouterr()
+    assert "reboot to activate" not in (cap.out + cap.err)
+
+
 def test_kernels_protects_running_and_newest_middle_case():
     # Three kernels, running the middle one -> only the oldest is removable.
     calls = []

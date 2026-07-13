@@ -401,6 +401,15 @@ class DebianBackend(PackageBackend):
             if _kernel_version_key(p) == newest_key and p != running:
                 tags.append("newest — boots next")
             print(f"    {p}{'  (' + ', '.join(tags) + ')' if tags else ''}")
+
+        # Reboot-pending nudge: you're running an older kernel than the newest
+        # installed one. Explains why the newer kernel isn't offered for removal.
+        running_key = _kernel_version_key(running)
+        if running_key and running_key < newest_key:
+            out.warn("a newer kernel is installed but not running — reboot to "
+                     "activate it (it stays protected from removal until then).")
+            out.next_step("reboot to switch to the newest kernel")
+
         if not removable:
             out.ok("no kernel images to remove (running + newest are protected).")
             return Result()
