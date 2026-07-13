@@ -358,3 +358,57 @@ def test_kernels_purges_only_old_versioned_images():
     assert purges and "linux-image-6.8.0-31-generic" in purges[0]
     assert "linux-image-6.8.0-35-generic" not in purges[0]  # running protected
     assert "linux-image-generic" not in purges[0]            # meta-package never purged
+
+
+def test_kernel_version_key_is_numeric():
+    from fettle.backends.debian import _kernel_version_key
+    key = _kernel_version_key
+    # 124 > 99 numerically (a string sort gets this backwards).
+    assert key("linux-image-6.8.0-99-generic") < key("linux-image-6.8.0-124-generic")
+    assert key("linux-image-5.15.0-100-generic") < key("linux-image-6.8.0-1-generic")
+
+
+# The ec3 bug: running kernel is OLD (pre-reboot), a newer one is installed.
+_DPKG_KERNELS_PENDING_REBOOT = (
+    "ii  linux-image-6.8.0-124-generic  6.8.0-124.124  amd64  Signed kernel image\n"
+    "ii  linux-image-6.8.0-134-generic  6.8.0-134.134  amd64  Signed kernel image\n"
+)
+
+
+def test_kernels_protects_newer_kernel_when_pending_reboot():
+    calls = []
+    responses = {("dpkg", "-l", "linux-image-*"): _DPKG_KERNELS_PENDING_REBOOT,
+                 ("uname", "-r"): "6.8.0-124-generic\n"}  # running the OLD one
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().manage_kernels(_ctx(assume_yes=True))
+    # The newer 6.8.0-134 must NOT be purged — nothing is removable here.
+    assert not any(c[:3] == ["apt-get", "purge", "-y"] for c, _ in calls)
+
+
+def test_kernels_pending_reboot_reports_nothing_removable(capsys):
+    responses = {("dpkg", "-l", "linux-image-*"): _DPKG_KERNELS_PENDING_REBOOT,
+                 ("uname", "-r"): "6.8.0-124-generic\n"}
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().manage_kernels(_ctx())
+    out = capsys.readouterr().out
+    assert "no kernel images to remove" in out
+    assert "6.8.0-134-generic" in out and "boots next" in out  # newest flagged
+
+
+def test_kernels_protects_running_and_newest_middle_case():
+    # Three kernels, running the middle one -> only the oldest is removable.
+    calls = []
+    dpkg = ("ii  linux-image-6.8.0-31-generic  6.8.0-31.31  amd64  img\n"
+            "ii  linux-image-6.8.0-35-generic  6.8.0-35.35  amd64  img\n"
+            "ii  linux-image-6.8.0-40-generic  6.8.0-40.40  amd64  img\n")
+    responses = {("dpkg", "-l", "linux-image-*"): dpkg,
+                 ("uname", "-r"): "6.8.0-35-generic\n"}  # running the middle
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().manage_kernels(_ctx(assume_yes=True))
+    purges = [c for c, _ in calls if c[:3] == ["apt-get", "purge", "-y"]][0]
+    assert "linux-image-6.8.0-31-generic" in purges           # oldest -> removed
+    assert "linux-image-6.8.0-35-generic" not in purges       # running protected
+    assert "linux-image-6.8.0-40-generic" not in purges       # newest protected

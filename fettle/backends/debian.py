@@ -32,6 +32,12 @@ _APT_INST_RE = re.compile(r"^Inst\s+(\S+)\s+(?:\[([^\]]+)\]\s+)?\((\S+)")
 _APT_REMV_RE = re.compile(r"^Remv\s+(\S+)\s+\[([^\]]+)\]")
 
 
+def _kernel_version_key(name: str) -> tuple[int, ...]:
+    """Numeric sort key for a `linux-image-<ver>-<flavor>` package name, so
+    6.8.0-124 sorts above 6.8.0-99 (a plain string sort gets this wrong)."""
+    return tuple(int(n) for n in re.findall(r"\d+", name))
+
+
 def _parse_apt_sim(text: str) -> list[TxItem]:
     items = []
     for raw in text.splitlines():
@@ -376,17 +382,33 @@ class DebianBackend(PackageBackend):
             return Result()
         installed = self._installed_kernel_images()
         running = "linux-image-" + self._query(["uname", "-r"]).strip()
-        removable = [p for p in installed if p != running]
+
+        # Protect the running kernel AND the newest installed one(s). After a
+        # kernel upgrade before reboot, the RUNNING kernel is the OLD one and the
+        # freshly installed newer kernel is the next-boot target — protecting only
+        # `running` would offer to purge that newer kernel (a rollback). Compare
+        # versions numerically: string sort ranks 6.8.0-99 above 6.8.0-124.
+        newest_key = max((_kernel_version_key(p) for p in installed), default=())
+        protected = {p for p in installed if _kernel_version_key(p) == newest_key}
+        protected.add(running)
+        removable = [p for p in installed if p not in protected]
+
         out.note("installed kernel images:")
         for p in installed:
-            print(f"    {p}{'  (running)' if p == running else ''}")
+            tags = []
+            if p == running:
+                tags.append("running")
+            if _kernel_version_key(p) == newest_key and p != running:
+                tags.append("newest — boots next")
+            print(f"    {p}{'  (' + ', '.join(tags) + ')' if tags else ''}")
         if not removable:
-            out.ok("no removable kernel images (only the running one is installed).")
+            out.ok("no kernel images to remove (running + newest are protected).")
             return Result()
         if ctx.dry_run:
             out.note("would prompt to purge old kernel images via apt-get")
             return Result()
-        out.note("old kernel images eligible for removal (the running one is protected):")
+        out.note("old kernel images eligible for removal "
+                 "(running + newest kernels are protected):")
         for p in removable:
             print(f"    {p}")
         chosen = ctx.select(removable, prompt="purge kernel")
