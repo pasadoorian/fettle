@@ -426,6 +426,12 @@ class ArchBackend(PackageBackend):
             ver = ctx.ask("kernel version (e.g. 612 for linux612): ")
             if ver:
                 ctx.execute(["mhwd-kernel", "-i", f"linux{ver}"])
+        # Audited against the Debian "purge the newer kernel before reboot" bug
+        # (Phase 7): Manjaro kernels are whole-series packages (linux612, linux71)
+        # updated in place, not ABI-bump siblings, and removal is DRIVEN BY THE
+        # USER typing an explicit version — fettle never auto-selects one. The
+        # running series is refused outright. So the auto-rollback bug can't occur
+        # here; the only removal is a deliberate, named one.
         if ctx.confirm("remove an old kernel?"):
             ver = ctx.ask("kernel version to remove (e.g. 66 for linux66): ")
             if ver and ver == self._running_kernel_digits():

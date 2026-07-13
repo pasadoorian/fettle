@@ -149,3 +149,20 @@ def test_running_kernel_digits_exact_match():
     responses = {("uname", "-r"): "6.12.1-2-MANJARO\n"}
     with patch("fettle.command.run", side_effect=_fake(responses, [])):
         assert ArchBackend()._running_kernel_digits() == "612"
+
+
+def test_kernels_refuses_to_remove_the_running_series(capsys):
+    # Phase 7 audit: Arch removal is user-driven, but the running series is
+    # refused outright (reboot into another first) — no auto-rollback possible.
+    responses = {
+        ("mhwd-kernel", "-li"): "Currently running: linux612\n",
+        ("mhwd-kernel", "-l"): "linux612\n",
+        ("uname", "-r"): "6.12.1-2-MANJARO\n",
+    }
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True), \
+         patch("builtins.input", side_effect=["n", "y", "612"]):  # remove the running one
+        ArchBackend().manage_kernels(_ctx())
+    assert not any(c[:2] == ["mhwd-kernel", "-r"] for c, _ in calls)  # never removed
+    assert "refusing to remove the running kernel" in capsys.readouterr().err
