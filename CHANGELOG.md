@@ -6,6 +6,9 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [0.4.5] — correctness & safety review fixes
 
+_All items below were flagged and fixed during a Claude Fable 5 review of the
+whole codebase._
+
 - **User config is honoured on elevated runs.** `--config` is now carried across
   the `sudo` re-exec. Previously `sudo` reset `HOME=/root`, so system-changing
   runs re-resolved the config path to `/root`'s (usually absent) and silently used
