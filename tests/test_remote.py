@@ -11,14 +11,17 @@ from fettle.secure import audit
 
 
 class _Rec:
-    """Records subprocess-style calls; returns a fixed rc per command head."""
-    def __init__(self, rcs=None):
+    """Records subprocess-style calls; returns a fixed rc (+ optional stdout) per
+    command head."""
+    def __init__(self, rcs=None, stdouts=None):
         self.calls = []
         self.rcs = rcs or {}
+        self.stdouts = stdouts or {}
 
     def __call__(self, cmd, *a, **k):
         self.calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, self.rcs.get(cmd[0], 0))
+        return subprocess.CompletedProcess(cmd, self.rcs.get(cmd[0], 0),
+                                           stdout=self.stdouts.get(cmd[0]))
 
 
 # -- the shared runner -------------------------------------------------------
@@ -73,6 +76,30 @@ def test_run_scp_failure_aborts(capsys):
 def test_run_propagates_remote_rc():
     rec = _Rec(rcs={"ssh": 3})
     assert remote.run("h", ["clean"], runner=rec) == 3
+
+
+def test_collect_returns_captured_stdout():
+    rec = _Rec(stdouts={"ssh": '{"distro": "Arch"}'})
+    out = remote.collect("h", ["upgrade-check", "--collect"], runner=rec)
+    assert out == '{"distro": "Arch"}'
+    scp = next(c for c in rec.calls if c[0] == "scp")
+    ssh = next(c for c in rec.calls if c[0] == "ssh")
+    assert scp[-1].startswith("h:.fettle-remote.")   # uploaded (shared helper)
+    assert "-t" not in ssh                            # no PTY for a captured run
+    assert "upgrade-check --collect" in ssh[-1]
+    assert "sudo " not in ssh[-1]                     # collect never elevates
+
+
+def test_collect_scp_failure_returns_none():
+    rec = _Rec(rcs={"scp": 1})
+    assert remote.collect("h", ["upgrade-check", "--collect"], runner=rec) is None
+    assert not any(c[0] == "ssh" for c in rec.calls)  # never runs ssh
+
+
+def test_collect_nonzero_remote_returns_none(capsys):
+    rec = _Rec(rcs={"ssh": 2}, stdouts={"ssh": ""})
+    assert remote.collect("h", ["upgrade-check", "--collect"], runner=rec) is None
+    assert "remote collect on h failed" in capsys.readouterr().err
 
 
 def test_run_no_tty_omits_dash_t():
