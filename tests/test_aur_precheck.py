@@ -153,3 +153,13 @@ def test_master_toggle_disables(env, monkeypatch):
         mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
         precheck.check(["evil-pkg"], emit=out.append)
     assert out == []
+
+
+def test_main_double_dash_takes_literal_package_names(env):
+    # B7: everything after `--` is a package name; stray flags before it drop, but
+    # names are never silently lost.
+    seen = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.precheck.check", lambda pkgs, **kw: seen.extend(pkgs))
+        precheck.main(["--no-color", "--", "good-pkg"])
+    assert seen == ["good-pkg"]

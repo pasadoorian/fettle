@@ -136,7 +136,15 @@ def main(argv) -> int:
     silent when clean, byte-for-byte as before. With NO arguments it scans every
     installed AUR/foreign package and prints a friendly summary.
     """
-    pkgs = [a for a in argv if not a.startswith("-")]  # tolerate stray display flags
+    # Split package names from any stray forwarded flags. Everything after a
+    # literal `--` is taken as a package name verbatim (standard convention),
+    # so a name is never silently dropped for looking like a flag.
+    argv = list(argv)
+    if "--" in argv:
+        sep = argv.index("--")
+        pkgs = [a for a in argv[:sep] if not a.startswith("-")] + argv[sep + 1:]
+    else:
+        pkgs = [a for a in argv if not a.startswith("-")]
     if pkgs:
         check(pkgs)
         return 0

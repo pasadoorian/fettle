@@ -4,7 +4,7 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-Correctness & safety review fixes (Phase 9):
+## [0.4.5] — correctness & safety review fixes
 
 - **User config is honoured on elevated runs.** `--config` is now carried across
   the `sudo` re-exec. Previously `sudo` reset `HOME=/root`, so system-changing
@@ -16,6 +16,15 @@ Correctness & safety review fixes (Phase 9):
 - **No spurious sudo prompt in read-only/dry-run queries.** `sudo -u <user>` is
   only used when actually running as root (it can't drop privileges you don't
   hold), so unprivileged queries like the `yay -Qua` preview run directly.
+- **Vanilla Arch / EndeavourOS `update` no longer fails** on the Manjaro-only
+  `pacman-mirrors` — it's now skipped when absent.
+- **Root-owned cache/state no longer crashes a later user run.** The AUR IOC cache
+  and maintainer snapshots degrade gracefully if unreadable, and are chowned back
+  to the invoking user after a root run writes them.
+- **Security: the remote zipapp** is uploaded to the remote user's `$HOME` under a
+  random name (was a predictable world-writable `/tmp` path run under `sudo`).
+- **`aur-precheck` never silently drops a package name** — everything after `--`
+  is taken literally.
 
 ## [0.4.4] — Python rebuild check no longer flags Python itself
 
