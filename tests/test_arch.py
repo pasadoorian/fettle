@@ -47,6 +47,18 @@ def test_update_default_pacman_then_yay():
     assert any(c[0] == "yay" and u == "paul" for c, u in calls)
 
 
+def test_update_skips_pacman_mirrors_when_absent():
+    # vanilla Arch / EndeavourOS lack pacman-mirrors (Manjaro-only) -> guarded,
+    # the pacman upgrade still runs.
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", side_effect=lambda n: n != "pacman-mirrors"):
+        ArchBackend().update_system(_ctx())
+    argvs = [c for c, _ in calls]
+    assert ["pacman-mirrors", "-f"] not in argvs   # not attempted
+    assert ["pacman", "-Syuu"] in argvs            # upgrade still runs
+
+
 def test_update_extras_hint_uses_current_aur_flags():
     # v0.4.0: AUR IoC scan is -I (-S is now sys-audit). The post-update hint must
     # point at `-A -I`, not the old `-A -S`.

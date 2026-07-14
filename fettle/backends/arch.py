@@ -143,7 +143,10 @@ class ArchBackend(PackageBackend):
     def update_system(self, ctx: Context) -> Result:
         out = ctx.output
         system, aur = self._updaters(ctx)
-        ctx.execute(["pacman-mirrors", "-f"], quiet=True, msg="mirrors refreshed")
+        # `pacman-mirrors` is Manjaro-only; vanilla Arch / EndeavourOS map to this
+        # backend and don't have it, so guard rather than fail the whole update.
+        if command.which("pacman-mirrors"):
+            ctx.execute(["pacman-mirrors", "-f"], quiet=True, msg="mirrors refreshed")
         if aur == "pamac":
             if system != "pamac":
                 out.note("AUR updater is pamac, which manages repos too — using pamac for both.")
@@ -314,7 +317,7 @@ class ArchBackend(PackageBackend):
                 chown_to_user(alien, ctx.sudo_user)
             except OSError as exc:
                 out.warn(f"could not write {alien}: {exc}")
-        out.note(f"foreign (AUR/manual) packages saved to {alien} for review (vet with -A/-S)")
+        out.note(f"foreign (AUR/manual) packages saved to {alien} for review (vet with -A/-I)")
         suppressed = len(foreign) - len(kept)
         if suppressed:
             out.note(f"{suppressed} foreign package(s) suppressed by exclude_foreign")
