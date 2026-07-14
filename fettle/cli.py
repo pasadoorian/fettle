@@ -312,13 +312,17 @@ def _run_remote_maintenance(argv: list[str]) -> int:
         print("fettle remote: missing HOST. Try 'fettle remote -h'.", file=sys.stderr)
         return 2
 
+    # upgrade-check is special: collect a snapshot on the remote, analyse it here
+    # with the local key (the key never leaves this machine). Route it out of the
+    # generic forward-and-run path.
+    uc_tokens = {"-U", "--upgrade-check", "upgrade-check"}
+    if any(t in uc_tokens for t in forwarded):
+        return _remote_upgrade_check(host, ssh_args, [t for t in forwarded
+                                                      if t not in uc_tokens])
+
     # No action named -> run the SAFE set (never destructive unless asked for).
     if not _remote_has_action(forwarded):
         forwarded = [a.replace("_", "-") for a in REMOTE_DEFAULT_ACTIONS] + forwarded
-
-    if any(t in ("-U", "--upgrade-check", "upgrade-check") for t in forwarded):
-        print("note: upgrade-check runs on the remote host and needs ANTHROPIC_API_KEY "
-              "set there — the local key is not forwarded.", file=sys.stderr)
 
     # dry-run needs neither sudo nor a PTY; --yes is fully unattended (no PTY).
     dry_run = "--dry-run" in forwarded
@@ -406,7 +410,7 @@ def _run_upgrade_check(argv: list[str]) -> int:
         _print_pending(pending)
         return 0
 
-    _render_upgrade_check(out, result, ctx)
+    _render_upgrade_check(out, result, user_home=ctx.user_home, sudo_user=ctx.sudo_user)
     return 0
 
 
@@ -415,14 +419,17 @@ def _print_pending(pending) -> None:
         print(f"    {name}  {old} -> {new}")
 
 
-def _render_upgrade_check(out: Output, result, ctx) -> None:
+def _render_upgrade_check(out: Output, result, *, user_home: Path,
+                          sudo_user: str | None = None, host: str | None = None) -> None:
+    import re
+
     from .ai.upgrade_check import format_report
     from .util import chown_to_user
 
     verdict = {"safe": out.ok, "caution": out.warn, "risky": out.alert}.get(
         result.safety_verdict, out.note)
-    verdict(f"Verdict: {result.safety_verdict.upper()}  "
-            f"(failure likelihood: {result.failure_likelihood})")
+    verdict(f"Verdict{' for ' + host if host else ''}: {result.safety_verdict.upper()}"
+            f"  (failure likelihood: {result.failure_likelihood})")
     report = format_report(result)
     for line in report.splitlines()[1:]:  # verdict already printed (coloured)
         print(line)
@@ -430,13 +437,86 @@ def _render_upgrade_check(out: Output, result, ctx) -> None:
     out.note(f"[usage: {u.get('input_tokens', 0)} in / {u.get('output_tokens', 0)} out "
              f"tokens, {u.get('web_searches', 0)} web search(es)]")
 
-    path = ctx.user_home / "upgrade-check.txt"
+    if host:  # per-host filename so multiple hosts don't clobber each other
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", host)
+        path = user_home / f"upgrade-check-{safe}.txt"
+        report = f"Upgrade check — remote host: {host}\n\n{report}"
+    else:
+        path = user_home / "upgrade-check.txt"
     try:
         path.write_text(report + "\n")
-        chown_to_user(path, ctx.sudo_user)
+        chown_to_user(path, sudo_user)
         out.note(f"saved to {path}")
     except OSError as exc:
         out.warn(f"could not write {path}: {exc}")
+
+
+def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -> int:
+    """Collect a snapshot from ``host`` (rootless, no key), then analyse it LOCALLY
+    with the local key — so the key never leaves this machine and only this machine
+    needs Anthropic access. Analyse-side flags (--effort/--no-web/--model) apply here.
+    """
+    from . import remote
+    from .ai import upgrade_check as uc
+    from .ai.client import resolve_auth, set_debug
+    from .ai.snapshot import Snapshot
+
+    p = argparse.ArgumentParser(prog=f"fettle remote {host} upgrade-check", add_help=False)
+    p.add_argument("--no-web", action="store_true")
+    p.add_argument("--model", metavar="ID")
+    p.add_argument("--effort", choices=["low", "medium", "high"])
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--no-color", action="store_true")
+    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--no-config", action="store_true")
+    args, _unknown = p.parse_known_args(uc_flags)
+
+    out = Output(color=(False if args.no_color else None), quiet=args.quiet)
+    cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
+    for w in warnings:
+        out.warn(w)
+    if args.model:
+        cfg.ai_model = args.model
+    if args.effort:
+        cfg.ai_effort = args.effort
+    if args.verbose:
+        set_debug(True)
+
+    out.section(f"Upgrade check (remote: {host})")
+    out.warn("experimental feature — verify its advice before acting on it.")
+    out.note(f"collecting a system snapshot from {host} (read-only, no sudo)...")
+    payload = remote.collect(host, ["upgrade-check", "--collect"], ssh_args=ssh_args)
+    if payload is None:
+        out.err(f"could not collect a snapshot from {host}.")
+        return 1
+    try:
+        snap = Snapshot.from_json(payload)
+    except (ValueError, KeyError, TypeError):
+        out.err(f"{host} returned an unreadable snapshot (fettle version mismatch?).")
+        return 1
+
+    if not snap.pending:
+        out.ok(f"{host} is up to date — nothing to upgrade.")
+        return 0
+    if resolve_auth(cfg) is None:
+        out.warn("no local API key (ANTHROPIC_API_KEY or config ai_api_key) — "
+                 f"showing {host}'s pending packages only:")
+        _print_pending(snap.pending)
+        return 0
+
+    out.note(f"{len(snap.pending)} package(s) pending on {host}; asking "
+             f"{cfg.ai_model} locally (your key stays here)...")
+    result = uc.analyze(snap, config=cfg, allow_web=not args.no_web)
+    if result is None:
+        out.warn("AI analysis unavailable (offline / declined / error) — package list:")
+        if not args.verbose:
+            out.note("re-run with -v to see why the AI step failed.")
+        _print_pending(snap.pending)
+        return 0
+
+    _render_upgrade_check(out, result, user_home=Path.home(), host=host)
+    return 0
 
 
 # Single-flag aliases -> subcommand runner. Handled before the pipeline parser.

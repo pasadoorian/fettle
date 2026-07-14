@@ -191,10 +191,45 @@ def test_remote_forwards_dispatch_shortcut():
     assert fettle_args == ["-S"]  # sys-audit runs on the remote
 
 
-def test_remote_upgrade_check_warns_about_remote_key(capsys):
-    with patch("fettle.remote.run", return_value=0):
-        cli_main(["remote", "host", "-U"])
-    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+def test_remote_upgrade_check_collects_remote_analyses_local(capsys, monkeypatch, tmp_path):
+    # `fettle remote HOST upgrade-check` collects a snapshot on the remote (never
+    # remote.run) and analyses it LOCALLY with the local key.
+    from fettle.ai.snapshot import Snapshot
+    from fettle.ai.upgrade_check import Result
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    snap = Snapshot("Ubuntu", "6.8", "sys", [("bash", "5.1", "5.2")])
+    result = Result(safety_verdict="safe", failure_likelihood="low", summary="fine",
+                    recommendation="proceed", usage={"input_tokens": 1, "output_tokens": 1})
+    with patch("fettle.remote.collect", return_value=snap.to_json()) as coll, \
+         patch("fettle.remote.run") as run_fwd, \
+         patch("fettle.ai.upgrade_check.analyze", return_value=result) as analyze:
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    run_fwd.assert_not_called()                          # NOT the forward path
+    coll.assert_called_once()
+    assert coll.call_args[0][1] == ["upgrade-check", "--collect"]  # collect on remote
+    analyze.assert_called_once()                         # analysed locally
+    assert "remote: ec3" in out and "Verdict for ec3" in out
+    assert (tmp_path / "upgrade-check-ec3.txt").is_file()  # per-host report
+
+
+def test_remote_upgrade_check_no_local_key_lists_packages(capsys, monkeypatch):
+    from fettle.ai.snapshot import Snapshot
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    snap = Snapshot("Ubuntu", "6.8", "", [("bash", "5.1", "5.2")])
+    with patch("fettle.remote.collect", return_value=snap.to_json()):
+        rc = cli_main(["remote", "ec3", "-U", "--no-config"])
+    cap = capsys.readouterr()
+    assert rc == 0 and "no local API key" in cap.err
+    assert "bash  5.1 -> 5.2" in cap.out
+
+
+def test_remote_upgrade_check_collect_failure(capsys):
+    with patch("fettle.remote.collect", return_value=None):
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    assert rc == 1 and "could not collect a snapshot from ec3" in capsys.readouterr().err
 
 
 def test_remote_option_before_host_errors(capsys):
