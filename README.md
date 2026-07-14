@@ -41,6 +41,7 @@ real unit-test coverage the bash originals never had.
 - [How elevation works](#how-elevation-works)
 - [Architecture](#architecture)
 - [Development](#development)
+- [fettle vs. topgrade](#fettle-vs-topgrade)
 - [Changelog](#changelog)
 - [License](#license)
 
@@ -549,6 +550,55 @@ Tests mock external commands via `unittest.mock.patch("subprocess.run", …)` an
 fake `/sys`·`/proc` trees with a `tmp_path` root, so they need neither root nor
 special hardware. Runtime code never imports pytest — the shipped tool is
 pure standard library.
+
+## fettle vs. topgrade
+
+[topgrade](https://github.com/topgrade-rs/topgrade) is the closest widely-used
+tool, and fettle's design was informed by it — so here's an honest comparison.
+**They aim at different problems.** topgrade is a broad, cross-platform *upgrade
+orchestrator*: it detects the tools you use and runs all of them. fettle is a
+focused Arch/Debian *maintenance **and** supply-chain-security* tool with a small,
+curated command set.
+
+| | topgrade | fettle |
+|---|---|---|
+| Platforms | Linux, macOS, Windows, BSD | Arch/Manjaro + Debian/Ubuntu families only |
+| Integrations | ~60+ across many ecosystems | curated: pacman/apt (+ yay/pamac/nala), flatpak, snap, fwupd, kernels, AUR |
+| Language toolchains (pip/npm/cargo/gem…), editors, dotfiles, git repos | ✅ updates them | ❌ deliberately out of scope |
+| Tool selection | auto-detects installed tools | explicit per-distro allowlist — config tunes behaviour, never *discovers* commands |
+| Self-update | ✅ | ❌ by design (your package manager owns fettle) |
+| Skip / run-only specific steps | ✅ | ✅ (`--skip` / `--only`) |
+| Dry-run | ✅ | ✅ — plus a full **resolved transaction preview** (upgrades + new deps + removals) |
+| Asks before upgrading | mostly unattended | ✅ by default (`--yes` for unattended) |
+| Remote over SSH | ✅ run topgrade on remote hosts | ✅ any action over ssh, **plus** remote security scan and remote AI upgrade-check |
+| Config | TOML | one flat TOML + a safety gate (refuses world-writable / wrong-owner) |
+| Firmware updates (fwupd) | ✅ | ✅ |
+| End-of-run summary | ✅ | ✅ (+ next steps) |
+| Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.5.0, beta), two distro families |
+| **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
+| **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
+| **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
+| **Package-file integrity verification** | ❌ | ✅ via `sys-audit` (paccheck / debsums) |
+| **AI pre-upgrade advisor** | ❌ | ✅ `upgrade-check` (local **and** remote) |
+
+**Which should you use?**
+
+- **topgrade** if you want one command to update *everything, everywhere* — system
+  packages, language toolchains, editors, containers, dotfiles — with a huge,
+  battle-tested integration set across every major OS.
+- **fettle** if you're on Arch or Debian and want maintenance **with a security
+  lens**: know where your packages came from and whether they've been tampered
+  with, scan your firmware/boot posture, and get an AI second opinion before a big
+  upgrade — through a small, curated, auditable command set with no runtime deps.
+
+They're **complementary** — it's reasonable to run topgrade for breadth and fettle
+for the Linux provenance / security / firmware angle. Several of fettle's
+deliberate *non-goals* (no self-update, no auto-discovery of commands, no
+cascading config) are lessons taken from topgrade's rough edges — not a knock on a
+tool that does far more, on far more platforms, than fettle aims to.
+
+<sub>topgrade details summarized from its README and `config.example.toml`, July 2026.</sub>
 
 ## Changelog
 
