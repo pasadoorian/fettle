@@ -214,7 +214,22 @@ def _in_test() -> bool:
     return os.environ.get("FETTLE_TEST") == "1"
 
 
-def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
+def _reexec_argv(args: argparse.Namespace | None, pythonpath: str) -> list[str]:
+    """The `sudo env … -m fettle …` argv to re-exec, carrying config + PYTHONPATH.
+
+    ``args`` is the maintenance namespace (None for sys-audit, which reads no TOML
+    config). sudo's env_reset also sets HOME=/root, so without pinning, the
+    elevated process would re-resolve DEFAULT_CONFIG to /root's config (usually
+    absent) and silently fall back to built-in defaults — dropping the user's
+    keep_orphans / exclude_foreign / [updaters]. So pin the resolved path.
+    (--no-config is honoured: it's already in sys.argv and we add nothing.)
+    """
+    extra = [] if (args is None or args.no_config) else ["--config", str(args.config)]
+    return ["sudo", "env", f"PYTHONPATH={pythonpath}",
+            sys.executable, "-m", "fettle", *sys.argv[1:], *extra]
+
+
+def _reexec_with_sudo(args: argparse.Namespace | None = None) -> None:  # pragma: no cover - exec replaces the process
     # sudo's env_reset drops PYTHONPATH, so root's `python -m fettle` would fail to
     # find the package when fettle runs from a checkout (via bin/fettle) rather than
     # an installed location. Carry the package's parent dir across with `env` so the
@@ -222,8 +237,7 @@ def _reexec_with_sudo() -> None:  # pragma: no cover - exec replaces the process
     pkg_parent = str(Path(__file__).resolve().parent.parent)
     existing = os.environ.get("PYTHONPATH")
     pythonpath = pkg_parent + (os.pathsep + existing if existing else "")
-    os.execvp("sudo", ["sudo", "env", f"PYTHONPATH={pythonpath}",
-                       sys.executable, "-m", "fettle", *sys.argv[1:]])
+    os.execvp("sudo", _reexec_argv(args, pythonpath))
 
 
 _REMOTE_EPILOG = """\
@@ -523,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
     # Elevate only when a selected action will actually change the system.
     needs_root = any(a not in READ_ONLY_ACTIONS for a in runnable)
     if needs_root and not args.dry_run and not _is_root() and not _in_test():
-        _reexec_with_sudo()
+        _reexec_with_sudo(args)
 
     sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
     user_home = Path.home()

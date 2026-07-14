@@ -13,16 +13,36 @@ def test_reexec_carries_pythonpath_across_sudo():
     when running from a checkout (regression: 'fettle is a package and cannot be
     directly executed' when sudo stripped PYTHONPATH)."""
     captured = {}
+    args = cli.build_parser().parse_args(["-c"])
     with patch("os.execvp", side_effect=lambda f, a: captured.update(file=f, argv=a)):
         with patch.object(sys, "argv", ["fettle", "-c"]):
-            cli._reexec_with_sudo()
+            cli._reexec_with_sudo(args)
     argv = captured["argv"]
     assert argv[:3] == ["sudo", "env", argv[2]]
     assert argv[2].startswith("PYTHONPATH=")
     # the package's parent dir (repo root) must be on the carried PYTHONPATH
     repo_root = str(Path(cli.__file__).resolve().parent.parent)
     assert repo_root in argv[2]
-    assert argv[3:] == [sys.executable, "-m", "fettle", "-c"]
+    assert argv[3:6] == [sys.executable, "-m", "fettle"]
+
+
+def test_reexec_pins_config_across_home_reset():
+    # B1: sudo sets HOME=/root, so the config path must be carried explicitly or
+    # the elevated run silently uses /root's config (defaults).
+    args = cli.build_parser().parse_args(["-o"])  # no --config given
+    argv = cli._reexec_argv(args, "PP")
+    assert "--config" in argv
+    assert argv[argv.index("--config") + 1] == str(cli.DEFAULT_CONFIG)
+
+
+def test_reexec_respects_no_config():
+    args = cli.build_parser().parse_args(["-o", "--no-config"])
+    assert "--config" not in cli._reexec_argv(args, "PP")
+
+
+def test_reexec_without_args_omits_config():
+    # sys-audit's self-elevation path passes no namespace.
+    assert "--config" not in cli._reexec_argv(None, "PP")
 
 
 def _actions_for(argv):
