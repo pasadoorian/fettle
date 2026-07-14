@@ -254,7 +254,11 @@ firmware-check (never orphan/kernel removal unless you name it).
 
 --dry-run (change nothing; no sudo) and --yes (unattended: auto-confirm +
 non-interactive) are forwarded and interpreted on the remote. NOTE: --yes also
-SKIPS AUR PKGBUILD review. `-U`/upgrade-check needs ANTHROPIC_API_KEY on the host.
+SKIPS AUR PKGBUILD review.
+
+`upgrade-check` (`-U`) is special: fettle collects a snapshot on the remote (read-
+only, no sudo, no key) and runs the AI analysis LOCALLY with your key — the key
+never leaves this machine. Report saved to ~/upgrade-check-<host>.txt.
 
 examples:
   fettle remote server1                     safe set (clean + update + firmware)
@@ -262,6 +266,7 @@ examples:
   fettle remote server1 update --dry-run    preview an update; change nothing
   fettle remote server1 -a --yes            the full default set, unattended
   fettle remote server1 -S                  security scan on the host
+  fettle remote server1 upgrade-check       AI pre-upgrade check (analysed locally)
   fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 """
 

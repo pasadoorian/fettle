@@ -321,6 +321,7 @@ fettle remote server1 -c -u            # clean, then upgrade packages
 fettle remote server1 update --dry-run # preview an update; changes nothing
 fettle remote server1 -a --yes         # the full default set, unattended
 fettle remote server1 -S               # security scan on the host (sys-audit --all)
+fettle remote server1 upgrade-check    # AI pre-upgrade check (analysed on YOUR box)
 fettle remote server1 orphans kernel   # destructive actions run only when named
 fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 ```
@@ -329,8 +330,13 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
   `clean update firmware-check` — even with `--yes`. Destructive/interactive
   actions (**orphan** and **kernel** removal) run **only when you name them**; `-a`
   forwards through and runs the remote's full default set.
-- **`-U`/upgrade-check** runs on the *remote* and needs `ANTHROPIC_API_KEY` set
-  there (your local key is not forwarded) — fettle warns you when you use it.
+- **`upgrade-check` (`-U`) analyses locally.** `fettle remote <host> upgrade-check`
+  is special: fettle collects a (redacted) snapshot on the remote — **read-only, no
+  sudo, no API key** — and runs the AI analysis **on your machine** with your local
+  key. Your key never leaves your machine, only your machine needs internet to
+  Anthropic, and the report is saved locally as `~/upgrade-check-<host>.txt`. (On
+  Debian the remote's pending list is read from cached apt data, so it may be stale
+  if the host hasn't `apt update`d recently; Arch uses a fresh rootless sync.)
 - **Asks before upgrading.** By default the run is interactive over an `ssh -t`
   TTY: the remote package manager shows its plan and prompts before upgrading (and
   sudo prompts for a password if needed). This is the same locally — `fettle -u`
@@ -366,7 +372,12 @@ export ANTHROPIC_API_KEY=sk-ant-…
 fettle upgrade-check                 # verdict + steps -> ~/upgrade-check.txt
 fettle upgrade-check --effort high   # deeper analysis for a big/risky upgrade
 fettle upgrade-check --no-web        # skip forum search (faster, cheaper)
+fettle remote HOST upgrade-check     # check a remote host — key stays on YOUR box
 ```
+
+For a remote host, fettle gathers the snapshot **on the host** (read-only, no key)
+and runs the AI analysis **locally** with your key, saving `~/upgrade-check-<host>.txt`
+— see [Remote maintenance](#remote-maintenance).
 
 - **API key** (first found wins): `ANTHROPIC_API_KEY` env → `ai_api_key` in the
   config. Prefer the env var. If you put the key in the config, **`chmod 600` it

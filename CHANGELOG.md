@@ -4,6 +4,18 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.5.0] — remote AI upgrade-check
+
+- **`fettle remote HOST upgrade-check`** — the experimental AI pre-upgrade advisor
+  now works against a remote host. fettle collects a redacted snapshot **on the
+  host** (read-only, no sudo, no API key) and runs the Claude analysis **on your
+  machine** with your local key. Your key never leaves your machine, only your
+  machine needs internet to Anthropic, and the report is saved locally as
+  `~/upgrade-check-<host>.txt`. (Replaces the old behaviour, which ran the whole
+  thing on the remote and wanted your key set there.) Missing `inxi` on the host
+  degrades gracefully; on Debian the pending list reflects the host's cached apt
+  data (Arch uses a fresh rootless sync).
+
 ## [0.4.5] — correctness & safety review fixes
 
 _All items below were flagged and fixed during a Claude Fable 5 review of the
