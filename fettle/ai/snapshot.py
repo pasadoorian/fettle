@@ -9,6 +9,7 @@ recall — is the primary anti-hallucination lever (see PLAN §Phase 4).
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,26 @@ class Snapshot:
         lines += ["", "System info (inxi -SCGaxxa, redacted):",
                   self.inxi or "  (inxi not installed)"]
         return "\n".join(lines)
+
+    def to_json(self) -> str:
+        """Serialize for transport (already redacted). Used by ``--collect`` so a
+        remote host can hand its snapshot back for local analysis."""
+        return json.dumps({
+            "distro": self.distro,
+            "kernel": self.kernel,
+            "inxi": self.inxi,
+            "pending": [list(p) for p in self.pending],
+        })
+
+    @classmethod
+    def from_json(cls, text: str) -> "Snapshot":
+        data = json.loads(text)
+        return cls(
+            distro=data.get("distro") or "unknown",
+            kernel=data.get("kernel") or "",
+            inxi=data.get("inxi") or "",
+            pending=[tuple(p) for p in (data.get("pending") or [])],
+        )
 
 
 def gather(ctx, backend, *, root: Path = Path("/")) -> Snapshot:

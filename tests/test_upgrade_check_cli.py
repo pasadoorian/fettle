@@ -26,6 +26,27 @@ def test_up_to_date(capsys):
     assert "up to date" in capsys.readouterr().out
 
 
+def test_snapshot_json_round_trip():
+    snap = Snapshot("Arch", "6.14", "inxi text", [("linux", "6.13", "6.14"),
+                                                  ("mesa", "1", "2")])
+    back = Snapshot.from_json(snap.to_json())
+    assert back.distro == "Arch" and back.kernel == "6.14" and back.inxi == "inxi text"
+    assert back.pending == [("linux", "6.13", "6.14"), ("mesa", "1", "2")]  # tuples
+
+
+def test_collect_emits_only_json_no_api_call(capsys):
+    with patch("fettle.cli.detect", return_value=_Backend([("linux", "6.12", "6.18")])), \
+         patch("fettle.ai.snapshot.gather", return_value=_snap()), \
+         patch("fettle.ai.upgrade_check.analyze") as analyze:
+        rc = cli_main(["upgrade-check", "--collect", "--no-config"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    analyze.assert_not_called()               # collection never contacts the API
+    parsed = Snapshot.from_json(out)          # stdout is exactly one JSON object
+    assert parsed.distro == "Manjaro"
+    assert parsed.pending == [("linux", "6.12", "6.18")]
+
+
 def test_no_key_shows_package_list(capsys, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with patch("fettle.cli.detect", return_value=_Backend([("linux", "6.12", "6.18")])), \

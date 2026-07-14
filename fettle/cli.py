@@ -349,6 +349,10 @@ def _run_upgrade_check(argv: list[str]) -> int:
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
+    # Internal transport flag: emit the (redacted) snapshot as JSON and exit — no
+    # API call, no UI. `fettle remote HOST upgrade-check` runs this on the remote,
+    # then analyses locally with the local key.
+    p.add_argument("--collect", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args(argv)
 
     out = Output(color=(False if args.no_color else None), quiet=args.quiet)
@@ -369,6 +373,12 @@ def _run_upgrade_check(argv: list[str]) -> int:
         out.err(str(exc))
         return 1
     ctx = Context(output=out, config=cfg, user_home=Path.home())
+
+    if args.collect:
+        # Gather + emit JSON ONLY (stdout stays clean for the caller to parse);
+        # rootless, no Anthropic call. Warnings/errors above went to stderr.
+        print(ai_snapshot.gather(ctx, backend).to_json())
+        return 0
 
     out.section("Upgrade check")
     out.warn("experimental feature — still under testing; verify its advice before "
