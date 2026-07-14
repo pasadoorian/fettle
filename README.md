@@ -345,7 +345,8 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 > `.dpkg-dist`; pacman leaves a `.pacnew`).
 
 A standalone binary (for hosts with no `python3` at all) is a planned option; the
-zipapp is the current transport.
+zipapp is the current transport. It's uploaded to the remote user's home under a
+random name (not a predictable world-writable `/tmp` path) and removed after the run.
 
 ## Upgrade Checker (AI) — experimental
 
@@ -496,6 +497,11 @@ Because elevation re-execs the full `python3 -m fettle` path (not the `fettle`
 name), it works even though the launcher in `~/.local/bin` isn't on root's `PATH`
 — which is why `sudo fettle …` is unnecessary (and fails with *command not found*
 unless you also install to a system path).
+
+Your config path is carried across the re-exec, so your `keep_orphans`,
+`exclude_foreign`, and `[updaters]` settings are honored on elevated runs too
+(`sudo` resets `HOME` to `/root`, so without this the elevated process would
+quietly fall back to built-in defaults).
 
 ## Architecture
 
