@@ -1,4 +1,6 @@
-# fettle
+<p align="center">
+  <img src="assets/fettle-logo-800w.png" alt="fettle" width="440">
+</p>
 
 > # **⚠️ NOTE: THIS IS BETA CODE — USE AT YOUR OWN RISK.**
 
