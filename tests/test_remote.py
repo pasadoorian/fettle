@@ -232,6 +232,49 @@ def test_remote_upgrade_check_collect_failure(capsys):
     assert rc == 1 and "could not collect a snapshot from ec3" in capsys.readouterr().err
 
 
+def test_remote_upgrade_check_up_to_date(capsys, monkeypatch):
+    from fettle.ai.snapshot import Snapshot
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    snap = Snapshot("Ubuntu", "6.8", "sys", [])  # nothing pending
+    with patch("fettle.remote.collect", return_value=snap.to_json()), \
+         patch("fettle.ai.upgrade_check.analyze") as analyze:
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    assert rc == 0 and "ec3 is up to date" in capsys.readouterr().out
+    analyze.assert_not_called()                  # no API call when nothing to do
+
+
+def test_remote_upgrade_check_unreadable_snapshot(capsys):
+    with patch("fettle.remote.collect", return_value="not json at all"):
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    assert rc == 1 and "unreadable snapshot" in capsys.readouterr().err
+
+
+def test_remote_upgrade_check_analysis_unavailable_lists_packages(capsys, monkeypatch):
+    from fettle.ai.snapshot import Snapshot
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    snap = Snapshot("Ubuntu", "6.8", "sys", [("bash", "5.1", "5.2")])
+    with patch("fettle.remote.collect", return_value=snap.to_json()), \
+         patch("fettle.ai.upgrade_check.analyze", return_value=None):
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    cap = capsys.readouterr()
+    assert rc == 0 and "AI analysis unavailable" in cap.err
+    assert "bash  5.1 -> 5.2" in cap.out
+
+
+def test_remote_upgrade_check_notes_missing_inxi(capsys, monkeypatch, tmp_path):
+    from fettle.ai.snapshot import Snapshot
+    from fettle.ai.upgrade_check import Result
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    snap = Snapshot("Ubuntu", "6.8", "", [("bash", "5.1", "5.2")])  # inxi empty
+    result = Result(safety_verdict="safe", failure_likelihood="low", summary="ok",
+                    recommendation="proceed")
+    with patch("fettle.remote.collect", return_value=snap.to_json()), \
+         patch("fettle.ai.upgrade_check.analyze", return_value=result):
+        rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
+    assert rc == 0 and "inxi wasn't available on ec3" in capsys.readouterr().out
+
+
 def test_remote_option_before_host_errors(capsys):
     rc = cli_main(["remote", "-c", "host"])
     assert rc == 2 and "before HOST" in capsys.readouterr().err

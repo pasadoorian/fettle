@@ -505,6 +505,8 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         _print_pending(snap.pending)
         return 0
 
+    if not snap.inxi:  # inxi absent on the remote — analysis still runs, less context
+        out.note(f"(inxi wasn't available on {host}; analysis has less hardware context)")
     out.note(f"{len(snap.pending)} package(s) pending on {host}; asking "
              f"{cfg.ai_model} locally (your key stays here)...")
     result = uc.analyze(snap, config=cfg, allow_web=not args.no_web)
