@@ -13,6 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from ..util import chown_to_user
+
 DEFAULT_BASE = "https://raw.githubusercontent.com/lenucksi/aur-malware-check/HEAD/data"
 DEFAULT_CAMPAIGNS = ("aur-infected", "chaos-rat", "russian-spam")
 DEFAULT_TTL = 21600  # 6 hours
@@ -42,27 +44,40 @@ class IOC:
     """Fetches and caches the campaign IOC lists."""
 
     def __init__(self, *, cache_dir: Path, base: str = DEFAULT_BASE,
-                 campaigns=DEFAULT_CAMPAIGNS, ttl: int = DEFAULT_TTL) -> None:
+                 campaigns=DEFAULT_CAMPAIGNS, ttl: int = DEFAULT_TTL,
+                 owner: str | None = None) -> None:
         self.cache_dir = cache_dir
         self.base = base
         self.campaigns = list(campaigns)
         self.ttl = ttl
+        self.owner = owner  # chown cache files back to this user (root-run safety)
+
+    @staticmethod
+    def _read(fp: Path) -> str:
+        # OSError-safe: an earlier elevated run may have left the cache root-owned;
+        # a later unprivileged read must degrade to "no cache", not crash.
+        try:
+            return fp.read_text()
+        except OSError:
+            return ""
 
     def _cached(self, url: str) -> str:
         key = url.replace("://", "_").replace("/", "_")
         fp = self.cache_dir / key
         if fp.is_file() and (time.time() - fp.stat().st_mtime) < self.ttl:
-            return fp.read_text()
+            return self._read(fp)
         text = _fetch(url)
         if text:
             try:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
                 fp.write_text(text)
+                chown_to_user(self.cache_dir, self.owner)  # don't leave root-owned
+                chown_to_user(fp, self.owner)
             except OSError:
                 pass
             return text
         # Fetch failed — fall back to a stale cache if we have one.
-        return fp.read_text() if fp.is_file() else ""
+        return self._read(fp) if fp.is_file() else ""
 
     def bad_accounts(self) -> set[str]:
         out: set[str] = set()

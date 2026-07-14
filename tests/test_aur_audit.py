@@ -78,3 +78,14 @@ def test_audit_has_no_ioc_findings(tmp_path, capsys):
 def test_offline_rpc_reports_no_data(tmp_path, capsys):
     _run(tmp_path, foreign=["pkg"], results=None)  # fetch_info None => offline
     assert "AUR RPC returned no data" in capsys.readouterr().err
+
+
+def test_maintainer_snapshot_unreadable_does_not_crash(tmp_path):
+    # B6: a root-owned aur-maintainers.json must not crash a later user run.
+    by_name = {"pkg": {"Name": "pkg", "Maintainer": "alice"}}
+    snap = tmp_path / ".cache/fettle/aur-maintainers.json"
+    snap.parent.mkdir(parents=True)
+    snap.write_text('{"pkg": "bob"}')  # a real prior snapshot
+    with patch("pathlib.Path.read_text", side_effect=PermissionError):
+        changes = audit._maintainer_changes(by_name, _ctx(tmp_path))
+    assert changes == []  # degraded (couldn't read baseline) rather than raised

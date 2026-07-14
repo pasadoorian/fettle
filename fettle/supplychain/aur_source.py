@@ -85,13 +85,17 @@ class AURSource(SourceProvider):
         return out
 
     def _maintainer_changes(self, by_name, ctx) -> list[Finding]:
+        from ..util import chown_to_user
+
         snap_path = ctx.user_home / ".cache/fettle/aur-maintainers.json"
         current = {n: (r.get("Maintainer") or "ORPHAN") for n, r in by_name.items()}
         previous: dict[str, str] = {}
         if snap_path.is_file():
+            # OSError too: an earlier elevated run may have left this root-owned,
+            # so a later unprivileged read must degrade, not crash.
             try:
                 previous = json.loads(snap_path.read_text())
-            except ValueError:
+            except (OSError, ValueError):
                 previous = {}
         changes = []
         for name, maint in current.items():
@@ -103,6 +107,9 @@ class AURSource(SourceProvider):
             try:
                 snap_path.parent.mkdir(parents=True, exist_ok=True)
                 snap_path.write_text(json.dumps(current))
+                # Chown back so a root run doesn't leave a file the user can't read.
+                chown_to_user(snap_path.parent, ctx.sudo_user)
+                chown_to_user(snap_path, ctx.sudo_user)
             except OSError:
                 pass
         return changes

@@ -93,9 +93,10 @@ def _maintainer_changes(by_name, ctx) -> list[str]:
     current = {n: (r.get("Maintainer") or "ORPHAN") for n, r in by_name.items()}
     previous: dict[str, str] = {}
     if snap_path.is_file():
+        # OSError too: a prior elevated run may have left this root-owned.
         try:
             previous = json.loads(snap_path.read_text())
-        except ValueError:
+        except (OSError, ValueError):
             previous = {}
     changes = [f"{n}: {previous[n]} -> {m}"
                for n, m in current.items()
@@ -104,6 +105,8 @@ def _maintainer_changes(by_name, ctx) -> list[str]:
         try:
             snap_path.parent.mkdir(parents=True, exist_ok=True)
             snap_path.write_text(json.dumps(current))
+            chown_to_user(snap_path.parent, ctx.sudo_user)  # don't leave root-owned
+            chown_to_user(snap_path, ctx.sudo_user)
         except OSError:
             pass
     return changes

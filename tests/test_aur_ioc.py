@@ -60,3 +60,14 @@ def test_failed_fetch_falls_back_to_stale(tmp_path):
     with patch("fettle.aur.ioc._fetch", return_value=""):  # network down
         pkgs = _ioc(tmp_path).bad_npm()
     assert pkgs == {"pkg-a"}  # stale cache used rather than "clean"
+
+
+def test_unreadable_cache_degrades_not_crashes(tmp_path):
+    # B6: an earlier elevated run can leave the cache root-owned; a later
+    # unprivileged read must return empty, not raise PermissionError.
+    ioc = _ioc(tmp_path)
+    with patch("fettle.aur.ioc._fetch", return_value="evil-pkg\n"):
+        assert "evil-pkg" in ioc.bad_packages()          # prime a fresh cache
+    with patch("pathlib.Path.read_text", side_effect=PermissionError), \
+         patch("fettle.aur.ioc._fetch", return_value=""):   # offline + unreadable
+        assert ioc.bad_packages() == set()                # no crash

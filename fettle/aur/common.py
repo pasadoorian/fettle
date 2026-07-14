@@ -31,6 +31,7 @@ def ioc_feed(ctx) -> aur_ioc.IOC:
         cache_dir=ctx.user_home / ".cache/fettle/ioc",
         campaigns=ctx.config.aur_ioc_campaigns,
         ttl=ctx.config.aur_ioc_cache_ttl,
+        owner=getattr(ctx, "sudo_user", None),
     )
 
 
