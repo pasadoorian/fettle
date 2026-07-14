@@ -12,7 +12,7 @@ Phase-3 plan; the zipapp is the current transport.
 
 from __future__ import annotations
 
-import os
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -45,21 +45,27 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     unattended run. ``runner`` is the subprocess entry point (injected for tests).
     Returns the remote exit code (or 1 if the upload fails).
     """
-    remote_path = f"/tmp/fettle-remote.{os.getpid()}.pyz"
+    # Land the zipapp in the remote user's $HOME (not world-writable /tmp) under a
+    # random, unpredictable name, so another local user can't pre-place or swap the
+    # file we then run under sudo. The relative scp target resolves to $HOME; the
+    # remote command expands $HOME in the ssh user's shell before sudo runs.
+    remote_name = f".fettle-remote.{secrets.token_hex(16)}.pyz"
+    remote_file = f'"$HOME/{remote_name}"'
     print(f"Remote target: {host}  (sudo={'on' if sudo else 'off'})")
     with tempfile.TemporaryDirectory() as td:
         pyz = Path(td) / "fettle.pyz"
         build_zipapp(pyz)
-        print(f"Uploading fettle to {host}:{remote_path} ...")
-        scp = runner(["scp", "-q", str(pyz), f"{host}:{remote_path}"])
+        print(f"Uploading fettle to {host}:~/{remote_name} ...")
+        scp = runner(["scp", "-q", str(pyz), f"{host}:{remote_name}"])
         if scp.returncode != 0:
             print(f"Error: scp to {host} failed", file=sys.stderr)
             return 1
 
     argv = " ".join(shlex.quote(a) for a in fettle_args)
     prefix = "sudo " if sudo else ""
-    remote_cmd = (f"{prefix}python3 {remote_path} {argv}; "
-                  f"rc=$?; rm -f {remote_path}; exit $rc")
+    remote_cmd = (f"chmod 600 {remote_file} 2>/dev/null; "
+                  f"{prefix}python3 {remote_file} {argv}; "
+                  f"rc=$?; rm -f {remote_file}; exit $rc")
     # -t allocates a PTY for interactive sudo/prompts + ANSI; skip it for
     # unattended runs (a non-TTY stdin would otherwise warn, and automation
     # shouldn't depend on a terminal).
