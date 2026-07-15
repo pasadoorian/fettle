@@ -52,8 +52,8 @@ real unit-test coverage the bash originals never had.
 fettle has three feature families:
 
 1. **Maintenance** — update packages, clean caches, prune orphans, check for
-   rebuilds/service-restarts, review config-file drift, apply firmware updates,
-   and manage kernels.
+   rebuilds/service-restarts, review config-file drift, report whether automatic
+   updates are enabled, apply firmware updates, and manage kernels.
 2. **Package Supply Chain** — *where software came from and whether it's tampered*:
    third-party repos/PPAs, publishers, staleness, sandbox permissions, installed-
    file integrity, and (for the AUR) live malware-IOC feeds. Exposed as
@@ -200,6 +200,7 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` |
+| `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/aur-audit.txt` | — |
@@ -215,11 +216,18 @@ advisor), `-p` → `aur-precheck` (AUR pre-flight; bare = scan all installed). U
 the subcommand form for their own options.
 
 **Default set** (run when you pass no action, or `-a`/`--all`): clean, orphans,
-update, rebuild-check, python-rebuild-check, config-drift, firmware-check, and —
-last, read-only — the security audits **pkg-audit** (`-P`) and **aur-ioc-scan**
-(`-I`), so a full run also reports where your packages came from and whether any
-installed AUR package matches a known-compromise feed. Excluded from the default
-set — request explicitly: `-O`, `-k`, `-A`.
+update, rebuild-check, python-rebuild-check, config-drift, auto-updates,
+firmware-check, and — last, read-only — the security audits **pkg-audit** (`-P`)
+and **aur-ioc-scan** (`-I`), so a full run also reports where your packages came
+from and whether any installed AUR package matches a known-compromise feed.
+Excluded from the default set — request explicitly: `-O`, `-k`, `-A`.
+
+`auto-updates` (`-x`) is a **read-only, informational** report of whether the
+system is set up to update itself unattended — on Debian/Ubuntu whether
+`unattended-upgrades` is installed and its `apt-daily-upgrade.timer` /
+`APT::Periodic` knobs are on; on Arch whether a known auto-updater systemd timer
+(e.g. `arch-update.timer`, `pacman-auto-update.timer`) is enabled. It states the
+fact and offers no opinion; a custom-named Arch timer won't be recognized.
 
 `-R` / `--auto-rebuild` turns the `-r` / `-y` checks from "list" into "offer to
 rebuild". Destructive steps (orphan/kernel removal, disabled-snap pruning) always
@@ -604,7 +612,7 @@ curated command set.
 | Firmware updates (fwupd) | ✅ | ✅ |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.7.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.8.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |

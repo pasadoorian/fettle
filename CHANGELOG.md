@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.8.0] — auto-updates posture check
+
+- **New `auto-updates` check (`-x` / `--auto-updates`).** A read-only,
+  informational report of whether the system is configured to update itself
+  unattended. Runs by default in `-a`; needs no root; cross-distro.
+  - **Debian/Ubuntu:** reads `apt-config dump` (the authoritative
+    `APT::Periodic::Unattended-Upgrade` / `Update-Package-Lists` values, honoring
+    the full `apt.conf.d/` layering), whether `unattended-upgrades` is installed,
+    and `systemctl is-enabled apt-daily-upgrade.timer`.
+  - **Arch/Manjaro:** checks a curated list of known community auto-updater
+    systemd timers (`arch-update.timer`, `pacman-auto-update.timer`,
+    `yay-auto-update.timer`, `topgrade.timer`, …) via `systemctl is-enabled`;
+    none enabled = "manual updates — the Arch default". A custom-named timer
+    isn't recognized (the tradeoff of name-matching).
+  - It only reports the fact and offers no opinion either way.
+
 ## [0.7.0] — AUR pre-upgrade IoC gate
 
 - **Flagged AUR packages are caught *before* they're built.** Before `yay -Sua`,

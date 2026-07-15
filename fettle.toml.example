@@ -8,7 +8,7 @@
 # var and leave the key out of the file entirely.
 
 # Actions to run when you invoke `fettle` with no action flags / words.
-#default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "firmware-check", "pkg-audit", "aur-ioc-scan"]
+#default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "auto-updates", "firmware-check", "pkg-audit", "aur-ioc-scan"]
 
 # Offer to rebuild packages with outdated deps (instead of only listing them).
 #auto_rebuild = false
