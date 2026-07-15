@@ -270,6 +270,22 @@ hook); `aur-audit` is the detailed health *report*; `aur-ioc-scan` is the pure
 threat/IoC sweep; `pkg-audit` is the cross-ecosystem umbrella that folds AUR
 health+IoC in alongside APT/Flatpak/Snap.
 
+### Pre-upgrade gate
+
+**Before `yay -Sua` builds anything**, `fettle -u` / `-a` pre-checks the AUR
+packages it's about to upgrade against the IoC feeds — so a flagged package is
+caught *before* it's built/installed, not after. On any finding it shows it (a
+known-compromised name or malicious maintainer is **loud**; orphan/out-of-date/
+stale are warnings) and **prompts to continue or abort** (default: abort). A clean
+set just prints a one-line "no indicators" and proceeds.
+
+Because it runs in the update path, it applies to **`fettle remote <host> -u/-a`**
+too (the prompt comes over the `ssh -t` session). Under `--yes` a **CRITICAL**
+finding still aborts unattended — pass `--force-aur` to override; `--no-aur-precheck`
+(or `aur_precheck_on_update = false` in config) turns the gate off. It covers the
+`yay -Qua` upgrade set; `--devel`/`-git` rebuilds that don't bump a version stay
+covered by the yay hook and the post-update `aur-ioc-scan`.
+
 ## System supply-chain — `sys-audit`
 
 A port of the Eclypsium firmware/boot-chain cheat-sheet. Most checks need root, so
@@ -442,6 +458,7 @@ aur_max_age_days  = 365    # PKGBUILD older than this is "stale" (pkg-audit)
 aur_recent_days   = 21     # -A flags packages changed within this window
 aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
 aur_ioc_cache_ttl = 21600  # seconds to cache IOC feeds on disk
+aur_precheck_on_update = true  # IoC-check AUR pkgs before yay builds them (--no-aur-precheck skips)
 
 # Upgrade Checker (fettle upgrade-check) [experimental] — prefer ANTHROPIC_API_KEY env var
 ai_model            = "claude-sonnet-5"
@@ -504,6 +521,8 @@ them — noted in the output.
 | `--no-sync` | dry-run preview: use cached repo data instead of a fresh sync |
 | `--only ACTION` / `--skip ACTION` | restrict / exclude actions (repeatable) |
 | `--yes` | assume yes to all prompts (non-interactive) |
+| `--no-aur-precheck` | skip the pre-upgrade AUR IoC gate *(arch)* |
+| `--force-aur` | with `--yes`, install AUR pkgs despite a CRITICAL pre-check finding *(arch)* |
 | `-R`, `--auto-rebuild` | offer to rebuild instead of only listing (with `-r`/`-y`) |
 | `-v` / `-q` / `--no-color` | verbose / quiet / disable color (also honors `NO_COLOR`) |
 | `--distro NAME` | override distro detection |
@@ -585,7 +604,7 @@ curated command set.
 | Firmware updates (fwupd) | ✅ | ✅ |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.6.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.7.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |

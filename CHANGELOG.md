@@ -4,6 +4,21 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.7.0] — AUR pre-upgrade IoC gate
+
+- **Flagged AUR packages are caught *before* they're built.** Before `yay -Sua`,
+  `fettle -u` / `-a` now pre-checks the AUR packages it's about to upgrade against
+  the IoC feeds (known-compromise names, malicious maintainers, orphan/out-of-date/
+  stale) and **prompts to continue or abort** on any finding (default abort). A
+  clean set just prints a one-line "no indicators". Previously the only AUR
+  security check ran *after* the update.
+- Applies to **`fettle remote <host> -u/-a`** too (same code runs on the host; the
+  prompt comes over `ssh -t`). Under `--yes`, a **CRITICAL** finding aborts
+  unattended unless you pass `--force-aur`. `--no-aur-precheck` (or
+  `aur_precheck_on_update = false`) disables the gate.
+- Covers the `yay -Qua` upgrade set; `--devel`/`-git` rebuilds that don't bump a
+  version stay covered by the yay hook and the post-update `aur-ioc-scan`.
+
 ## [0.6.0] — clearer output; security audits in the default run
 
 - **External-tool output is now framed.** When fettle hands off to yay/pacman/apt,

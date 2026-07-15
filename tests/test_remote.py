@@ -184,6 +184,14 @@ def test_remote_forwards_arbitrary_flags_and_dry_run_skips_sudo():
     assert fettle_args == ["-c", "--dry-run"] and kw["sudo"] is False
 
 
+def test_remote_forwards_aur_gate_flags():
+    # The pre-check gate runs on the remote (same code); its overrides must forward.
+    with patch("fettle.remote.run", return_value=0) as run:
+        cli_main(["remote", "ec3", "-a", "--force-aur", "--no-aur-precheck"])
+    (_, fettle_args), _ = run.call_args
+    assert fettle_args == ["-a", "--force-aur", "--no-aur-precheck"]
+
+
 def test_remote_forwards_dispatch_shortcut():
     with patch("fettle.remote.run", return_value=0) as run:
         cli_main(["remote", "host", "-S"])
