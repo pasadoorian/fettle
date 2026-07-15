@@ -198,6 +198,65 @@ def test_aur_upgrade_names_from_yay_qua():
     assert names == ["foo", "bar-git"]
 
 
+# -- AUR pre-upgrade IoC gate (AP2) ------------------------------------------
+def test_aur_gate_proceeds_silently_when_clean(capsys):
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["foo"]), \
+         patch("fettle.aur.precheck.scan", return_value=([], [])):
+        assert b._aur_precheck_gate(_ctx()) is True
+    assert "no indicators" in capsys.readouterr().out
+
+
+def test_aur_gate_aborts_on_findings_when_declined(capsys):
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["evil"]), \
+         patch("fettle.aur.precheck.scan", return_value=(["evil is compromised"], [])), \
+         patch("builtins.input", return_value="n"):
+        assert b._aur_precheck_gate(_ctx()) is False
+    assert "evil is compromised" in capsys.readouterr().err   # CRIT shown (stderr)
+
+
+def test_aur_gate_proceeds_when_confirmed():
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["evil"]), \
+         patch("fettle.aur.precheck.scan", return_value=(["bad"], [])), \
+         patch("builtins.input", return_value="y"):
+        assert b._aur_precheck_gate(_ctx()) is True
+
+
+def test_aur_gate_crit_aborts_under_yes_without_force(capsys):
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["evil"]), \
+         patch("fettle.aur.precheck.scan", return_value=(["evil bad"], [])):
+        assert b._aur_precheck_gate(_ctx(assume_yes=True)) is False
+    assert "refusing to install unattended" in capsys.readouterr().err
+
+
+def test_aur_gate_warn_only_proceeds_under_yes():
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["stale"]), \
+         patch("fettle.aur.precheck.scan", return_value=([], ["stale is old"])):
+        assert b._aur_precheck_gate(_ctx(assume_yes=True)) is True
+
+
+def test_aur_gate_dry_run_is_preview_only(capsys):
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["evil"]), \
+         patch("fettle.aur.precheck.scan", return_value=(["bad"], [])):
+        assert b._aur_precheck_gate(_ctx(dry_run=True)) is True  # no gate in dry-run
+    assert "dry-run" in capsys.readouterr().out
+
+
+def test_update_extras_skips_yay_when_gate_aborts():
+    b = ArchBackend()
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True), \
+         patch.object(b, "_aur_precheck_gate", return_value=False):
+        b.update_extras(_ctx())
+    assert not any(c[:2] == ["yay", "-Sua"] for c, _ in calls)  # AUR update skipped
+
+
 def test_refresh_metadata_never_syncs_system_db(capsys):
     calls, fake = _recorder()
     with patch("fettle.command.run", side_effect=fake), \
@@ -223,7 +282,7 @@ def test_update_yes_makes_yay_noninteractive():
          patch("fettle.command.which", return_value=True):
         b, ctx = ArchBackend(), _ctx(assume_yes=True)
         b.update_extras(ctx)
-    yay = next(c for c, _ in calls if c[0] == "yay")
+    yay = next(c for c, _ in calls if c[:2] == ["yay", "-Sua"])  # the upgrade, not the gate's -Qua
     assert "--noconfirm" in yay and "--diffmenu=false" in yay  # review skipped, no menus
     assert "--diffmenu=true" not in yay
 
@@ -233,7 +292,7 @@ def test_update_interactive_keeps_yay_review():
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True):
         ArchBackend().update_extras(_ctx())  # no assume_yes
-    yay = next(c for c, _ in calls if c[0] == "yay")
+    yay = next(c for c, _ in calls if c[:2] == ["yay", "-Sua"])  # the upgrade, not the gate's -Qua
     assert "--diffmenu=true" in yay and "--noconfirm" not in yay
 
 

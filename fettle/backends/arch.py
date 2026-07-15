@@ -185,6 +185,10 @@ class ArchBackend(PackageBackend):
         if not command.which("yay"):
             out.err("yay not found (aur_updater=yay). Install it, or set aur_updater to pamac/none.")
             return Result(ok=False)
+        if not self._aur_precheck_gate(ctx):
+            out.warn("AUR update skipped by the pre-check gate.")
+            out.summary_add("AUR update SKIPPED (pre-check gate)")
+            return Result()
         yay_cmd = ["yay", "-Sua", "--devel", "--cleanafter",
                    "--answerdiff", "None", "--answeredit", "None"]
         if ctx.assume_yes:
@@ -268,6 +272,44 @@ class ArchBackend(PackageBackend):
             return []
         out = command.run(["yay", "-Qua"], as_user=ctx.sudo_user, capture=True).stdout
         return [n for n, _o, _new in _parse_arrow_upgrades(out)]
+
+    def _aur_precheck_gate(self, ctx: Context) -> bool:
+        """Pre-check the AUR packages `yay -Sua` would build against the IoC feeds
+        (RPC health + known-compromise), before it builds them. Returns True to
+        proceed, False if the user aborts. On by default; ``aur_precheck_on_update
+        = false`` disables it."""
+        from ..aur import precheck
+
+        out = ctx.output
+        if not getattr(ctx.config, "aur_precheck_on_update", True):
+            return True
+        names = self._aur_upgrade_names(ctx)
+        if not names:
+            return True  # nothing to build -> nothing to gate
+        out.note(f"pre-checking {len(names)} AUR package(s) against IoC feeds...")
+        crit, warn = precheck.scan(names, home=ctx.user_home, owner=ctx.sudo_user)
+        if not crit and not warn:
+            out.ok(f"AUR pre-check: {len(names)} package(s), no indicators.")
+            return True
+
+        for c in crit:
+            out.alert(f"AUR: {c}")
+        for w in warn:
+            out.warn(f"AUR: {w}")
+        if ctx.dry_run:  # informational preview only; the real gate runs live
+            out.note("(dry-run: pre-check is informational; the gate would prompt here)")
+            return True
+        # A CRIT under --yes never installs unattended — an explicit --force-aur
+        # is required. WARN-only under --yes proceeds (assume_yes -> confirm True).
+        if crit and ctx.assume_yes and not getattr(ctx, "force_aur", False):
+            out.alert(f"refusing to install unattended: {len(crit)} CRITICAL AUR "
+                      "indicator(s). Re-run with --force-aur to override.")
+            return False
+        label = "CRITICAL" if crit else "advisory"
+        if ctx.confirm(f"{label} AUR indicator(s) found — build/install anyway?",
+                       default=False):
+            return True
+        return False
 
     def _aur_transaction(self, ctx: Context) -> tuple[list[TxItem], str]:
         """AUR upgrades via `yay -Qua` (run as the invoking user). Returns items
