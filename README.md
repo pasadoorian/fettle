@@ -610,6 +610,7 @@ curated command set.
 | Remote over SSH | ✅ run topgrade on remote hosts | ✅ any action over ssh, **plus** remote security scan and remote AI upgrade-check |
 | Config | TOML | one flat TOML + a safety gate (refuses world-writable / wrong-owner) |
 | Firmware updates (fwupd) | ✅ | ✅ |
+| Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
 | Maturity / ecosystem | established, widely packaged, large community | young (v0.8.0, beta), two distro families |
