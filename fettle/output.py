@@ -88,6 +88,34 @@ class Output:
                 print(text, file=sys.stderr)
         return proc
 
+    # -- run an interactive command, framed so its output isn't mistaken for ours --
+    @staticmethod
+    def _tool_name(argv) -> str:
+        """The real tool being run, skipping `env`/`VAR=val` wrappers (so a
+        `env DEBIAN_FRONTEND=… apt-get …` reads as `apt-get`, not `env`)."""
+        for tok in argv:
+            if tok == "env" or "=" in tok:
+                continue
+            return tok
+        return argv[0] if argv else "?"
+
+    def run_streamed(self, cmd, *, as_user: str | None = None):
+        """Run ``cmd`` streaming its output live (no capture — interactive prompts
+        like PKGBUILD review / sudo still work), bracketed by a labeled banner so
+        it's unmistakable that the enclosed output is the tool's, not fettle's."""
+        from . import command
+
+        tool = self._tool_name([str(c) for c in cmd])
+        rule = "─" * 12
+        if not self.quiet:
+            print(f"  {self.DIM}{rule} {self.NC}{self.B}{tool}{self.NC}"
+                  f"{self.DIM} {rule} output below is {tool}'s, not fettle's {rule}{self.NC}")
+            sys.stdout.flush()  # emit the banner BEFORE the tool writes to the fd
+        proc = command.run(cmd, as_user=as_user)
+        if not self.quiet:
+            print(f"  {self.DIM}{rule} end {tool} {rule}{rule}{self.NC}")
+        return proc
+
     # -- end-of-run summary --------------------------------------------------
     def summary_add(self, line: str) -> None:
         self._summary.append(line)

@@ -55,3 +55,30 @@ def test_empty_summary_reports_nothing(capsys):
     out = Output(color=False)
     out.print_summary()
     assert "nothing to report" in capsys.readouterr().out
+
+
+def test_tool_name_skips_env_and_var_wrappers():
+    assert Output._tool_name(["env", "FOO=bar", "apt-get", "-y"]) == "apt-get"
+    assert Output._tool_name(["yay", "-Sua"]) == "yay"
+    assert Output._tool_name(["pacman", "-Syuu"]) == "pacman"
+
+
+def test_run_streamed_frames_tool_output(capfd):
+    # capfd (not capsys): run_streamed doesn't capture the tool — its output goes
+    # to the fd directly (so interactive prompts still work).
+    Output(color=False).run_streamed(["echo", "hi from the tool"])
+    out = capfd.readouterr().out
+    assert "output below is echo's, not fettle's" in out  # opening banner names the tool
+    assert "hi from the tool" in out                       # the tool's own output streamed
+    assert "end echo" in out                               # closing banner
+
+
+def test_run_streamed_labels_real_tool_not_env(capsys):
+    from unittest.mock import patch
+
+    from fettle import command
+    with patch("fettle.command.run", return_value=command.Proc(0)):
+        Output(color=False).run_streamed(["env", "DEBIAN_FRONTEND=noninteractive",
+                                          "apt-get", "full-upgrade"])
+    out = capsys.readouterr().out
+    assert "apt-get" in out and "output below is apt-get's" in out

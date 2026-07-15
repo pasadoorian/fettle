@@ -57,7 +57,7 @@ class Context:
             return command.Proc(0)
         if quiet:
             return self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
-        return command.run(argv, as_user=as_user)
+        return self.output.run_streamed(argv, as_user=as_user)
 
     # -- interaction (all honor dry-run / assume_yes) ------------------------
     def confirm(self, question: str, *, default: bool = False) -> bool:
