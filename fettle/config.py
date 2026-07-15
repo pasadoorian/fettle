@@ -45,6 +45,9 @@ class Config:
         default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
     )
     aur_ioc_cache_ttl: int = 21600
+    # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
+    # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
+    aur_precheck_on_update: bool = True
     # Upgrade Checker (fettle upgrade-check). ai_api_key is optional — prefer the
     # ANTHROPIC_API_KEY env var; never printed in full (see --print-config).
     ai_model: str = "claude-sonnet-5"

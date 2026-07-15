@@ -24,6 +24,7 @@
 #aur_recent_days = 21     # -A audit flags packages changed within this window RECENTLY-CHANGED
 #aur_ioc_campaigns = ["aur-infected", "chaos-rat", "russian-spam"]
 #aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
+#aur_precheck_on_update = true   # IoC-check AUR pkgs before yay builds them; --no-aur-precheck skips
 
 # Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
 # STRONGLY prefer the ANTHROPIC_API_KEY env var. If you put the key here instead,

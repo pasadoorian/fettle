@@ -36,6 +36,7 @@ class Context:
     assume_yes: bool = False
     auto_rebuild: bool = False
     sync: bool = True  # refresh repo data for the dry-run preview (--no-sync opts out)
+    force_aur: bool = False  # --force-aur: override the AUR pre-check gate under --yes
     root: Path = Path("/")  # injected so filesystem reads are testable
     sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
     user_home: Path = Path.home()

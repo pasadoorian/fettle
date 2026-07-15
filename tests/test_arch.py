@@ -247,6 +247,23 @@ def test_aur_gate_dry_run_is_preview_only(capsys):
     assert "dry-run" in capsys.readouterr().out
 
 
+def test_aur_gate_disabled_by_config():
+    b = ArchBackend()
+    cfg = Config()
+    cfg.aur_precheck_on_update = False
+    with patch.object(b, "_aur_upgrade_names") as names:
+        assert b._aur_precheck_gate(_ctx(cfg=cfg)) is True
+    names.assert_not_called()  # disabled -> doesn't even enumerate
+
+
+def test_aur_gate_force_aur_overrides_crit_under_yes():
+    # --yes + CRIT normally aborts; force_aur=True lets it proceed unattended.
+    b = ArchBackend()
+    with patch.object(b, "_aur_upgrade_names", return_value=["evil"]), \
+         patch("fettle.aur.precheck.scan", return_value=(["evil bad"], [])):
+        assert b._aur_precheck_gate(_ctx(assume_yes=True, force_aur=True)) is True
+
+
 def test_update_extras_skips_yay_when_gate_aborts():
     b = ArchBackend()
     calls, fake = _recorder()

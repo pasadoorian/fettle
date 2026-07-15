@@ -195,6 +195,15 @@ def test_default_set_includes_security_audits():
     assert "pkg_audit" in DEFAULT_ACTIONS and "aur_ioc_scan" in DEFAULT_ACTIONS
 
 
+def test_aur_gate_flags_wire_into_context():
+    captured = {}
+    with patch("fettle.actions.run", side_effect=lambda a, b, ctx: captured.update(ctx=ctx)):
+        main(["--distro", "arch", "--dry-run", "-c", "--force-aur", "--no-aur-precheck"])
+    ctx = captured["ctx"]
+    assert ctx.force_aur is True                          # --force-aur -> Context
+    assert ctx.config.aur_precheck_on_update is False     # --no-aur-precheck -> config off
+
+
 def test_default_set_silently_skips_unsupported(capsys):
     # bare run on Debian: aur-ioc-scan is Arch-only and now in the default set,
     # but it must NOT print a skip note (that would be default-set noise).

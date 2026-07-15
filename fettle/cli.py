@@ -139,6 +139,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="offer to rebuild (with -r / -y) instead of only listing")
     p.add_argument("--yes", action="store_true",
                    help="assume yes to all prompts incl. the upgrade confirmation (non-interactive)")
+    p.add_argument("--no-aur-precheck", action="store_true",
+                   help="skip the pre-upgrade AUR IoC check before yay builds [arch]")
+    p.add_argument("--force-aur", action="store_true",
+                   help="with --yes, install AUR pkgs despite a CRITICAL pre-check finding [arch]")
     p.add_argument("actions", nargs="*", help="action names (same as the flags above)")
     p.add_argument("--distro", metavar="NAME", help="override distro detection")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -651,9 +655,11 @@ def main(argv: list[str] | None = None) -> int:
         except KeyError:
             pass
 
+    if args.no_aur_precheck:
+        cfg.aur_precheck_on_update = False
     ctx = Context(output=out, config=cfg, dry_run=args.dry_run,
                   assume_yes=args.yes, auto_rebuild=args.auto_rebuild or cfg.auto_rebuild,
-                  sync=not args.no_sync,
+                  sync=not args.no_sync, force_aur=args.force_aur,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
     return 0
