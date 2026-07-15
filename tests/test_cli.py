@@ -184,10 +184,27 @@ def test_dry_run_update_reports_nothing_to_install(capsys):
 
 
 def test_unsupported_action_is_skipped(capsys):
-    # python_rebuild is Arch-only; the Debian backend should skip it (a note on stdout).
+    # python_rebuild is Arch-only; NAMED explicitly on Debian -> a skip note.
     main(["--distro", "debian", "--dry-run", "-y"])
     cap = capsys.readouterr()
     assert "not supported by the debian backend" in cap.out
+
+
+def test_default_set_includes_security_audits():
+    from fettle.config import DEFAULT_ACTIONS
+    assert "pkg_audit" in DEFAULT_ACTIONS and "aur_ioc_scan" in DEFAULT_ACTIONS
+
+
+def test_default_set_silently_skips_unsupported(capsys):
+    # bare run on Debian: aur-ioc-scan is Arch-only and now in the default set,
+    # but it must NOT print a skip note (that would be default-set noise).
+    main(["--distro", "debian", "--dry-run"])
+    assert "skipping 'aur_ioc_scan'" not in capsys.readouterr().out
+
+
+def test_explicitly_named_unsupported_still_warns(capsys):
+    main(["--distro", "debian", "--dry-run", "aur-ioc-scan"])
+    assert "skipping 'aur_ioc_scan'" in capsys.readouterr().out
 
 
 def test_bare_action_words_work(capsys):

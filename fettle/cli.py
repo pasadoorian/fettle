@@ -623,9 +623,16 @@ def main(argv: list[str] | None = None) -> int:
 
     requested = _requested_actions(args, cfg)
     runnable = [a for a in requested if backend.supports(a)]
-    for a in requested:
-        if not backend.supports(a):
-            out.note(f"skipping '{a}' — not supported by the {backend.name} backend")
+    # Only flag unsupported actions the user NAMED. When the list is the default
+    # set (bare `fettle` / `-a`), silently skip ones this distro can't do (e.g.
+    # aur-ioc-scan on Debian) — otherwise every Debian default run is noisy.
+    explicit = bool(args.actions) or any(
+        getattr(args, f"do_{a}") for *_, a in FLAG_ACTIONS)
+    from_default = args.all or not explicit
+    if not from_default:
+        for a in requested:
+            if not backend.supports(a):
+                out.note(f"skipping '{a}' — not supported by the {backend.name} backend")
 
     if not runnable:
         out.warn("nothing to do (no supported actions selected).")
