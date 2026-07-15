@@ -215,12 +215,19 @@ advisor), `-p` → `aur-precheck` (AUR pre-flight; bare = scan all installed). U
 the subcommand form for their own options.
 
 **Default set** (run when you pass no action, or `-a`/`--all`): clean, orphans,
-update, rebuild-check, python-rebuild-check, config-drift, firmware-check.
-Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-I`, `-P`.
+update, rebuild-check, python-rebuild-check, config-drift, firmware-check, and —
+last, read-only — the security audits **pkg-audit** (`-P`) and **aur-ioc-scan**
+(`-I`), so a full run also reports where your packages came from and whether any
+installed AUR package matches a known-compromise feed. Excluded from the default
+set — request explicitly: `-O`, `-k`, `-A`.
 
 `-R` / `--auto-rebuild` turns the `-r` / `-y` checks from "list" into "offer to
 rebuild". Destructive steps (orphan/kernel removal, disabled-snap pruning) always
 prompt per item unless you pass `--yes`.
+
+When fettle hands off to a package manager (yay/pacman/apt), it **brackets that
+tool's live output in a labeled banner** (`──── yay ──── output below is yay's,
+not fettle's ────`) so you can always tell fettle's messages from the tool's.
 
 ## Package supply-chain
 
@@ -248,11 +255,14 @@ normalized `Finding` format with one severity language:
 Each provider prints a **coverage line** so uneven depth is explicit — a real
 malware/IOC feed exists only for the AUR, and fettle never pretends otherwise.
 
-`fettle aur-precheck <pkg>…` is the install-time helper (used by the yay hook): it
-prints machine-readable `CRIT`/`WARN` lines for the named packages and always exits
-0. **With no package named** (`fettle aur-precheck` or `fettle -p`) it scans *every*
-installed AUR package instead — a quick safety sweep. Tunable via env vars
-(`AUR_PRECHECK=false` to disable, `AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …).
+`fettle aur-precheck <pkg>…` is the install-time helper: it prints machine-readable
+`CRIT`/`WARN` lines for the named packages and always exits 0. **With no package
+named** (`fettle aur-precheck` or `fettle -p`) it scans *every* installed AUR
+package instead — a quick safety sweep. Tunable via env vars (`AUR_PRECHECK=false`
+to disable, `AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …). The bundled yay
+hook (`~/.config/yay/init.lua`) calls it per package before a build — point its
+helper at `fettle aur-precheck` (it prefers `fettle` on `PATH`, falling back to the
+legacy `aur-precheck.sh`).
 
 How it differs from the others: `aur-precheck` is the fast, self-contained,
 env-driven per-package gate (no config/TOML load, silent when clean — built for the
@@ -422,7 +432,7 @@ holds a secret. Action names accept hyphens or underscores.
 ```toml
 # ~/.config/fettle/config.toml  (all keys optional; values shown are the defaults)
 
-default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "firmware-check"]
+default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "firmware-check", "pkg-audit", "aur-ioc-scan"]
 auto_rebuild    = false
 exclude_foreign = ["brave-bin", "google-chrome"]   # names or globs; skip in reports
 keep_orphans    = ["downgrade", "nvchecker"]        # never offer these for removal
@@ -575,7 +585,7 @@ curated command set.
 | Firmware updates (fwupd) | ✅ | ✅ |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.5.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.6.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |

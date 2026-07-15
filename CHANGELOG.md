@@ -4,6 +4,23 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.6.0] — clearer output; security audits in the default run
+
+- **External-tool output is now framed.** When fettle hands off to yay/pacman/apt,
+  it brackets that tool's live output in a labeled banner (`──── yay ──── output
+  below is yay's, not fettle's ────`) so fettle's own messages are never mistaken
+  for the package manager's. No capture, so PKGBUILD-review and sudo prompts still
+  work.
+- **`fettle` / `-a` now runs the security audits too.** The default set gained
+  `pkg-audit` and `aur-ioc-scan` (appended, read-only), so a full run also reports
+  package provenance and checks installed AUR packages against known-compromise
+  feeds. Previously neither ran under `-a`.
+- **Quieter cross-distro default runs.** A "skipping <action>" note now only prints
+  for actions you *named* — default-set actions a distro can't do (e.g.
+  `aur-ioc-scan` on Debian) are skipped silently.
+- The bundled yay hook (`~/.config/yay/init.lua`) now prefers `fettle aur-precheck`
+  over the legacy `aur-precheck.sh` when fettle is on `PATH`.
+
 ## [0.5.0] — remote AI upgrade-check
 
 - **`fettle remote HOST upgrade-check`** — the experimental AI pre-upgrade advisor
