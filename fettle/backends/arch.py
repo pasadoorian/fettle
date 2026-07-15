@@ -18,6 +18,22 @@ from .base import Context, PackageBackend, Result, Transaction, TxItem
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
 _AUR_UPDATERS = {"yay", "pamac", "none"}
 
+# Arch ships no official auto-updater (deliberate: partial-upgrade risk, the news
+# needs reading first). "Auto-updates enabled" therefore means a user wired up a
+# systemd timer. We match a curated list of known community updater units; a
+# custom-named timer won't be detected (the documented tradeoff of name-matching).
+# Keyring-sync / cache-clean timers are intentionally absent (not updaters).
+KNOWN_UPDATE_TIMERS = (
+    "arch-update.timer",          # Antiz96/arch-update
+    "auto-update.timer",
+    "autoupdate.timer",           # common guide name
+    "pacman-auto-update.timer",   # cmuench/pacman-auto-update
+    "pacupdate.timer",
+    "system-update.timer",
+    "topgrade.timer",             # topgrade scheduled run
+    "yay-auto-update.timer",      # CoreSec-xyz/yay-auto-update
+)
+
 # `checkupdates` / `pacman -Qu` line: "pkgname oldver -> newver" (optional trailing
 # "[ignored]"). Capture the three fields; ignore anything that doesn't match.
 _ARROW_RE = re.compile(r"^(\S+)\s+(\S+)\s+->\s+(\S+)")
@@ -55,8 +71,8 @@ class ArchBackend(PackageBackend):
     name = "arch"
     supported = {
         "clean", "orphans", "update", "only_update", "rebuild_check",
-        "python_rebuild_check", "config_drift", "firmware_check", "kernel",
-        "aur_audit", "aur_ioc_scan", "pkg_audit",
+        "python_rebuild_check", "config_drift", "auto_updates", "firmware_check",
+        "kernel", "aur_audit", "aur_ioc_scan", "pkg_audit",
     }
 
     def supply_chain_sources(self):
@@ -487,6 +503,27 @@ class ArchBackend(PackageBackend):
             print(f"    {f}")
         out.summary_add(f"{len(files)} .pacnew file(s) to merge")
         out.next_step("merge them: pacdiff")
+        return Result()
+
+    def check_auto_updates(self, ctx: Context) -> Result:
+        """Report whether an automatic-update systemd timer is enabled.
+
+        Matches the curated KNOWN_UPDATE_TIMERS list (Arch has no official
+        auto-updater). Read-only and rootless; informational only.
+        """
+        out = ctx.output
+        if not command.which("systemctl"):
+            out.note("systemctl not found; cannot determine auto-update state.")
+            return Result()
+        enabled = [t for t in KNOWN_UPDATE_TIMERS
+                   if self._query(["systemctl", "is-enabled", t]).strip() == "enabled"]
+        if enabled:
+            out.note("automatic-update timer(s) enabled: " + ", ".join(enabled) + ".")
+            out.summary_add("auto-updates: ON (" + ", ".join(enabled) + ")")
+        else:
+            out.note("automatic updates: none detected "
+                     "(manual updates — the Arch default).")
+            out.summary_add("auto-updates: OFF")
         return Result()
 
     def manage_kernels(self, ctx: Context) -> Result:

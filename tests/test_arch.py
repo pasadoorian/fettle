@@ -350,3 +350,43 @@ def test_dry_run_executes_no_commands():
     with patch("fettle.command.run", side_effect=fake):
         ArchBackend().clean_caches(_ctx(dry_run=True))
     assert calls == []  # dry-run never touches command.run
+
+
+# -- automatic updates -------------------------------------------------------
+def _timer_fake(enabled_units):
+    """systemctl is-enabled <unit> -> 'enabled' for units in enabled_units,
+    'disabled' otherwise. Everything else returns empty stdout."""
+    enabled = set(enabled_units)
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        if cmd[:2] == ["systemctl", "is-enabled"]:
+            state = "enabled" if cmd[2] in enabled else "disabled"
+            return command.Proc(0, state + "\n", "")
+        return command.Proc(0, "", "")
+    return run
+
+
+def test_auto_updates_reports_enabled_timer(capsys):
+    with patch("fettle.command.run", side_effect=_timer_fake({"pacman-auto-update.timer"})), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_auto_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "enabled" in out and "pacman-auto-update.timer" in out
+
+
+def test_auto_updates_none_enabled_is_manual(capsys):
+    with patch("fettle.command.run", side_effect=_timer_fake(set())), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_auto_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "none detected" in out and "Arch default" in out
+
+
+def test_auto_updates_no_systemctl(capsys):
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=False):
+        ArchBackend().check_auto_updates(_ctx())
+    assert "cannot determine auto-update state" in capsys.readouterr().out
+    assert calls == []  # short-circuits before any query
