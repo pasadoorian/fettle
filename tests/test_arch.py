@@ -186,6 +186,18 @@ def test_base_pending_transaction_derives_from_pending_upgrades():
         [("bash", "5.2-1", "5.3-1", "upgrade")]
 
 
+def test_aur_upgrade_names_from_yay_qua():
+    # AP1: the pre-upgrade gate's input — names yay -Sua would upgrade.
+    def fake(cmd, *, as_user=None, capture=False):
+        if cmd[:2] == ["yay", "-Qua"]:
+            return command.Proc(0, "foo 1-1 -> 1-2\nbar-git 2 -> 3\n", "")
+        return command.Proc(0, "", "")
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        names = ArchBackend()._aur_upgrade_names(_ctx())
+    assert names == ["foo", "bar-git"]
+
+
 def test_refresh_metadata_never_syncs_system_db(capsys):
     calls, fake = _recorder()
     with patch("fettle.command.run", side_effect=fake), \

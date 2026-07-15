@@ -260,6 +260,15 @@ class ArchBackend(PackageBackend):
             notes.append(aur_note)
         return Transaction(items=items, ok=True, notes=notes)
 
+    def _aur_upgrade_names(self, ctx: Context) -> list[str]:
+        """Names of AUR packages `yay -Sua` would upgrade (from `yay -Qua`) — the
+        set the pre-upgrade IoC gate checks. `--devel`/-git rebuilds that don't
+        bump a version aren't listed here (covered by the yay hook + post-scan)."""
+        if not command.which("yay"):
+            return []
+        out = command.run(["yay", "-Qua"], as_user=ctx.sudo_user, capture=True).stdout
+        return [n for n, _o, _new in _parse_arrow_upgrades(out)]
+
     def _aur_transaction(self, ctx: Context) -> tuple[list[TxItem], str]:
         """AUR upgrades via `yay -Qua` (run as the invoking user). Returns items
         plus a caveat, since `--devel` git rebuilds may not report a version bump

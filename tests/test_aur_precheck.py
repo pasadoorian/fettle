@@ -57,6 +57,17 @@ def _run(pkg, *, records=None):
     return out
 
 
+def test_scan_splits_crit_and_warn(env):
+    # AP1: scan() returns (crit, warn) with the prefixes stripped — the gate's input.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        crit, warn = precheck.scan(["evil-pkg", "orphan-pkg", "good-pkg"])
+    assert any("evil-pkg" in c for c in crit)              # known-compromised -> CRIT
+    assert any("orphan-pkg" in w for w in warn)            # orphaned -> WARN
+    assert not any("good-pkg" in x for x in crit + warn)   # clean -> nothing
+    assert not any(c.startswith("CRIT ") for c in crit)    # prefix stripped
+
+
 def test_flags_orphaned(env):
     assert any("WARN orphan-pkg is ORPHANED" in ln for ln in _run("orphan-pkg"))
 

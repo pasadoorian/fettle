@@ -53,8 +53,13 @@ def _campaigns() -> list[str]:
     return [c for c in raw.replace(",", " ").split() if c]
 
 
-def check(pkgs, *, home: Path | None = None, emit=print) -> None:
-    """Emit CRIT/WARN advisory lines for each package name in ``pkgs``."""
+def check(pkgs, *, home: Path | None = None, emit=print,
+          owner: str | None = None) -> None:
+    """Emit CRIT/WARN advisory lines for each package name in ``pkgs``.
+
+    ``owner`` chowns the IoC cache back to that user — pass ``ctx.sudo_user`` when
+    calling this from an elevated run so it doesn't leave a root-owned cache.
+    """
     home = home or Path(os.environ.get("HOME") or Path.home())
 
     # Master toggle (default on). Off => skip the network-backed checks entirely;
@@ -73,7 +78,8 @@ def check(pkgs, *, home: Path | None = None, emit=print) -> None:
     ttl = int(os.environ.get("AUR_IOC_CACHE_TTL") or aur_ioc.DEFAULT_TTL)
     cache_dir = Path(os.environ.get("AUR_PRECHECK_CACHE_DIR")
                      or home / ".cache/fettle/ioc")
-    ioc = aur_ioc.IOC(cache_dir=cache_dir, campaigns=_campaigns(), ttl=ttl)
+    ioc = aur_ioc.IOC(cache_dir=cache_dir, campaigns=_campaigns(), ttl=ttl,
+                      owner=owner)
 
     # Fetch the IOC lists (served from cache offline) and RPC metadata once for the
     # whole batch, so a bulk upgrade doesn't refetch per package.
@@ -117,6 +123,18 @@ def check(pkgs, *, home: Path | None = None, emit=print) -> None:
         if maint and maint in bad_accounts:
             emit(f"CRIT {pkg} is maintained by KNOWN-MALICIOUS account "
                  f"'{maint}' -- do NOT install")
+
+
+def scan(pkgs, *, home: Path | None = None,
+         owner: str | None = None) -> tuple[list[str], list[str]]:
+    """Run the precheck over ``pkgs`` and return ``(crit_msgs, warn_msgs)`` — the
+    findings split by severity, with the ``CRIT ``/``WARN `` prefix stripped. The
+    pre-upgrade gate uses this to decide whether to pause before ``yay -Sua``."""
+    lines: list[str] = []
+    check(pkgs, home=home, owner=owner, emit=lines.append)
+    crit = [ln[5:] for ln in lines if ln.startswith("CRIT ")]
+    warn = [ln[5:] for ln in lines if ln.startswith("WARN ")]
+    return crit, warn
 
 
 def _installed_foreign() -> list[str]:
