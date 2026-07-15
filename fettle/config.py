@@ -25,7 +25,8 @@ except ModuleNotFoundError:  # < 3.11
         tomllib = None  # type: ignore[assignment]
 
 DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuild_check",
-                   "python_rebuild_check", "config_drift", "firmware_check",
+                   "python_rebuild_check", "config_drift", "auto_updates",
+                   "firmware_check",
                    "pkg_audit", "aur_ioc_scan"]  # security audits last (read-only)
 
 

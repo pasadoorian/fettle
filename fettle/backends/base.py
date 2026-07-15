@@ -22,7 +22,7 @@ if TYPE_CHECKING:  # imported only for type hints — keeps runtime import-free
 ALL_ACTIONS = (
     "clean", "orphans", "update", "rebuild_check", "python_rebuild_check",
     "config_drift", "firmware_check", "kernel", "aur_audit", "aur_ioc_scan",
-    "pkg_audit",
+    "pkg_audit", "auto_updates",
 )
 
 
@@ -177,6 +177,11 @@ class PackageBackend(abc.ABC):
         raise NotImplementedError
 
     def check_config_drift(self, ctx: Context) -> Result:
+        raise NotImplementedError
+
+    def check_auto_updates(self, ctx: Context) -> Result:
+        """Report whether the system is configured to update itself
+        automatically (read-only, informational)."""
         raise NotImplementedError
 
     def manage_kernels(self, ctx: Context) -> Result:

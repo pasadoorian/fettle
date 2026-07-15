@@ -34,6 +34,7 @@ FLAG_ACTIONS = [
     (("-r", "--rebuild-check"), "rebuild_check"),
     (("-y", "--python-rebuild-check"), "python_rebuild_check"),
     (("-d", "--config-drift"), "config_drift"),
+    (("-x", "--auto-updates"), "auto_updates"),
     (("-f", "--firmware"), "firmware_check"),
     (("-k", "--kernel"), "kernel"),
     (("-A", "--aur-audit"), "aur_audit"),
@@ -47,7 +48,8 @@ ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 WORD_ALIASES = {"upgrade": "update"}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
-READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift"}
+READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
+                     "auto_updates"}
 
 # The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
 # (orphan removal, kernel management) are NOT here — they must be named explicitly.
@@ -62,6 +64,7 @@ ACTION_HELP = {
     "rebuild_check": "find packages/services needing a rebuild or restart",
     "python_rebuild_check": "rebuild packages stranded on an old Python",
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
+    "auto_updates": "report whether automatic/unattended updates are enabled",
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/aur-audit.txt",

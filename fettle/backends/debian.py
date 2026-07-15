@@ -58,7 +58,7 @@ class DebianBackend(PackageBackend):
     name = "debian"
     supported = {
         "clean", "orphans", "update", "only_update", "rebuild_check",
-        "config_drift", "firmware_check", "kernel", "pkg_audit",
+        "config_drift", "auto_updates", "firmware_check", "kernel", "pkg_audit",
         # No python_rebuild_check / aur_* (Arch-only). Integrity lives in sys-audit.
     }
 
@@ -372,6 +372,50 @@ class DebianBackend(PackageBackend):
                 out.warn("dpkg --audit reports problems:")
                 print(audit)
                 out.summary_add("dpkg --audit found package problems")
+        return Result()
+
+    # -- automatic-update posture (Phase 13) ---------------------------------
+    def check_auto_updates(self, ctx: Context) -> Result:
+        """Report whether unattended (automatic) upgrades are configured.
+
+        Read-only and rootless; informational only. `apt-config dump` is the
+        authoritative source — it honors the full `apt.conf.d/` layering, so it
+        beats reading `20auto-upgrades` directly. Auto-*install* requires the
+        `Unattended-Upgrade` periodic knob on, the `unattended-upgrades` package
+        installed, and `apt-daily-upgrade.timer` enabled.
+        """
+        out = ctx.output
+        if not command.which("apt-config"):
+            out.note("apt-config not found; cannot determine auto-update state.")
+            return Result()
+        periodic: dict[str, str] = {}
+        for line in self._query(["apt-config", "dump"]).splitlines():
+            m = re.match(r'APT::Periodic::(\S+)\s+"([^"]*)"\s*;', line.strip())
+            if m:
+                periodic[m.group(1)] = m.group(2)
+        upgrade = periodic.get("Unattended-Upgrade", "0")
+        lists = periodic.get("Update-Package-Lists", "0")
+        installed = "install ok installed" in self._query(
+            ["dpkg-query", "-W", "-f=${Status}", "unattended-upgrades"])
+        timer = self._query(["systemctl", "is-enabled", "apt-daily-upgrade.timer"]).strip()
+        timer_on = timer == "enabled"
+        if upgrade != "0" and installed and timer_on:
+            out.note("automatic updates: ENABLED — unattended-upgrades installs "
+                     f"upgrades (Unattended-Upgrade={upgrade}, "
+                     "apt-daily-upgrade.timer enabled).")
+            out.summary_add("auto-updates: ON (unattended-upgrades)")
+        else:
+            reasons = []
+            if not installed:
+                reasons.append("unattended-upgrades not installed")
+            if upgrade == "0":
+                reasons.append("Unattended-Upgrade=0")
+            if not timer_on:
+                reasons.append(f"apt-daily-upgrade.timer {timer or 'not-enabled'}")
+            out.note("automatic updates: DISABLED (" + "; ".join(reasons) + ").")
+            out.summary_add("auto-updates: OFF")
+        if lists != "0":
+            out.note(f"package lists auto-refresh is on (Update-Package-Lists={lists}).")
         return Result()
 
     # -- kernels -------------------------------------------------------------

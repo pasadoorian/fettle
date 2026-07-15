@@ -323,6 +323,61 @@ def test_config_drift_clean_when_none(tmp_path, capsys):
     assert "no pending config-file merges" in capsys.readouterr().out
 
 
+# -- automatic updates -------------------------------------------------------
+_APT_DUMP_ON = ('APT::Periodic::Update-Package-Lists "1";\n'
+                'APT::Periodic::Unattended-Upgrade "1";\n')
+_APT_DUMP_OFF = ('APT::Periodic::Update-Package-Lists "1";\n'
+                 'APT::Periodic::Unattended-Upgrade "0";\n')
+
+
+def test_auto_updates_enabled(capsys):
+    responses = {
+        ("apt-config", "dump"): _APT_DUMP_ON,
+        ("dpkg-query",): "install ok installed",
+        ("systemctl", "is-enabled", "apt-daily-upgrade.timer"): "enabled\n",
+    }
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_auto_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "ENABLED" in out and "Unattended-Upgrade=1" in out
+
+
+def test_auto_updates_disabled_by_periodic_and_timer(capsys):
+    responses = {
+        ("apt-config", "dump"): _APT_DUMP_OFF,
+        ("dpkg-query",): "install ok installed",
+        ("systemctl", "is-enabled", "apt-daily-upgrade.timer"): "disabled\n",
+    }
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_auto_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "DISABLED" in out
+    assert "Unattended-Upgrade=0" in out and "apt-daily-upgrade.timer disabled" in out
+
+
+def test_auto_updates_disabled_when_package_absent(capsys):
+    # periodic + timer are on, but the package isn't installed -> not automatic.
+    responses = {
+        ("apt-config", "dump"): _APT_DUMP_ON,
+        ("dpkg-query",): "unknown ok not-installed",
+        ("systemctl", "is-enabled", "apt-daily-upgrade.timer"): "enabled\n",
+    }
+    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_auto_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "DISABLED" in out and "unattended-upgrades not installed" in out
+
+
+def test_auto_updates_no_apt_config(capsys):
+    with patch("fettle.command.run", side_effect=_fake({}, [])), \
+         patch("fettle.command.which", return_value=False):
+        DebianBackend().check_auto_updates(_ctx())
+    assert "cannot determine auto-update state" in capsys.readouterr().out
+
+
 # -- kernels -----------------------------------------------------------------
 _DPKG_KERNELS = (
     "Desired=Unknown/Install/Remove/Purge/Hold\n"
