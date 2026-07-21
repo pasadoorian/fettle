@@ -13,6 +13,7 @@ swaps what goes in the body without touching any of this.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import os
 import re
 from pathlib import Path
@@ -23,6 +24,7 @@ DEFAULT_KEEP = 5
 _BASE = ".fettle"
 _TS_FMT = "%Y%m%d-%H%M%S"
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
+REPORT_SCHEMA = "fettle.report/1"
 
 
 def _settings(ctx) -> tuple[Path, int]:
@@ -87,14 +89,51 @@ def _timestamp(now) -> str:
     return (now or _dt.datetime.now()).strftime(_TS_FMT)
 
 
-def _unique(directory: Path, name: str, ts: str) -> Path:
-    """`<name>-<ts>.txt`, disambiguated if two writes land in the same second."""
-    path = directory / f"{name}-{ts}.txt"
+def _stem(directory: Path, name: str, ts: str) -> Path:
+    """`<name>-<ts>` path stem (no extension), disambiguated on the `.txt` sibling
+    if two writes land in the same second. The `.txt` and `.json` share this stem
+    so rotation treats them as one unit."""
+    base = directory / f"{name}-{ts}"
+    if not base.with_suffix(".txt").exists():
+        return base
     i = 1
-    while path.exists():
-        path = directory / f"{name}-{ts}-{i}.txt"
+    while (directory / f"{name}-{ts}-{i}.txt").exists():
         i += 1
-    return path
+    return directory / f"{name}-{ts}-{i}"
+
+
+def _json_enabled(ctx) -> bool:
+    """`[reports] json` — write a JSON sibling for each report (default on)."""
+    cfg = getattr(ctx, "config", None)
+    r = getattr(cfg, "reports", None)
+    r = r if isinstance(r, dict) else {}
+    val = r.get("json", True)
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() not in ("false", "0", "no", "off")
+
+
+def _secure(path: Path, ctx) -> None:
+    """0600 + chown to the invoking user (the whole ~/.fettle tree is owner-only)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    chown_to_user(path, getattr(ctx, "sudo_user", None))
+
+
+def envelope(name: str, host: str, ts: str, *, data=None, body: str = "") -> dict:
+    """The JSON document wrapping a report: metadata + structured ``data`` (or a
+    ``{"text": body}`` fallback so every file still has a machine-readable form)."""
+    from . import __version__
+    return {
+        "schema": REPORT_SCHEMA,
+        "tool": name,
+        "host": host_tag(host),
+        "timestamp": ts,
+        "fettle_version": __version__,
+        "data": data if data is not None else {"text": body},
+    }
 
 
 # report basenames that used to be written straight into $HOME (pre-0.11).
@@ -138,21 +177,27 @@ def maybe_legacy_note(ctx) -> None:
         pass
 
 
-def write_report(name: str, body: str, ctx, *, host: str = "local", now=None) -> Path:
-    """Write a report to ``~/.fettle/reports/<host>/<name>-<ts>.txt`` (0600),
-    chown to the invoking user, and rotate to keep the newest N of this type."""
+def write_report(name: str, body: str, ctx, *, host: str = "local", now=None,
+                 data=None) -> Path:
+    """Write ``~/.fettle/reports/<host>/<name>-<ts>.txt`` (0600, chowned, rotated),
+    plus a ``.json`` sibling (unless ``[reports] json = false``). ``data`` is the
+    structured payload for the JSON; when omitted it falls back to the text body.
+    Returns the ``.txt`` path."""
     maybe_legacy_note(ctx)
     directory = reports_dir(ctx, host)
-    path = _unique(directory, name, _timestamp(now))
-    path.write_text(body if body.endswith("\n") else body + "\n")
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
-    chown_to_user(path, getattr(ctx, "sudo_user", None))
+    ts = _timestamp(now)
+    stem = _stem(directory, name, ts)
+    txt = stem.with_suffix(".txt")
+    txt.write_text(body if body.endswith("\n") else body + "\n")
+    _secure(txt, ctx)
+    if _json_enabled(ctx):
+        js = stem.with_suffix(".json")
+        js.write_text(json.dumps(envelope(name, host, ts, data=data, body=body),
+                                 indent=2) + "\n")
+        _secure(js, ctx)
     _, keep = _settings(ctx)
     prune(directory, name, keep)
-    return path
+    return txt
 
 
 def prune_known(directory: Path, keep: int) -> None:
@@ -163,10 +208,11 @@ def prune_known(directory: Path, keep: int) -> None:
 
 
 def prune(directory: Path, name: str, keep: int) -> list[Path]:
-    """Delete all but the newest ``keep`` ``<name>-<timestamp>.txt`` files.
+    """Keep only the newest ``keep`` ``<name>-<ts>`` entries, removing each older
+    entry's ``.txt`` **and** its ``.json`` sibling together.
 
     Names sort chronologically (the timestamp is fixed-width), so the oldest are
-    simply the lexicographically-first. Returns the paths removed.
+    the lexicographically-first. Returns the ``.txt`` paths removed.
     """
     files = sorted(directory.glob(f"{name}-[0-9]*.txt"))
     doomed = files[:-keep] if keep > 0 else files
@@ -175,6 +221,10 @@ def prune(directory: Path, name: str, keep: int) -> list[Path]:
         try:
             old.unlink()
             removed.append(old)
+        except OSError:
+            pass
+        try:
+            old.with_suffix(".json").unlink()  # sibling (may not exist)
         except OSError:
             pass
     return removed

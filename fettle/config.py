@@ -54,8 +54,9 @@ class Config:
     hardening: dict = field(default_factory=dict)
     # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
     # type per host to retain, default 5), dir (base dir override, default
-    # ~/.fettle), log (bool, run-log on/off — used from RP3). Reports live under
-    # <dir>/reports/<host>/, run-logs under <dir>/logs/<host>/.
+    # ~/.fettle), log (bool, run-log on/off), json (bool, write a .json sibling for
+    # each report/log — default on; the `fettle report` HTML dashboard reads them).
+    # Reports live under <dir>/reports/<host>/, run-logs under <dir>/logs/<host>/.
     reports: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.

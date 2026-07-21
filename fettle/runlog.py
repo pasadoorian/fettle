@@ -144,6 +144,35 @@ def _new_log(ctxlike, host: str, now=None):
     return path, directory
 
 
+LOG_SCHEMA = "fettle.log/1"
+
+
+def _write_log_json(txt_path: Path, ctxlike, *, host: str, argv, exit_code) -> None:
+    """Write a ``run-<ts>.json`` sibling: metadata + the cleaned transcript. A log
+    has no per-line structure, so this is a wrapper. Best-effort (never raises)."""
+    import json
+
+    from . import __version__
+    try:
+        transcript = txt_path.read_text(errors="replace")
+    except OSError:
+        transcript = ""
+    ts = txt_path.stem[len("run-"):] if txt_path.stem.startswith("run-") else ""
+    env = {
+        "schema": LOG_SCHEMA, "tool": "run", "host": host, "timestamp": ts,
+        "fettle_version": __version__, "argv": list(argv),
+        "exit_code": exit_code, "transcript": transcript,
+    }
+    js = txt_path.with_suffix(".json")
+    try:
+        js.write_text(json.dumps(env, indent=2) + "\n")
+        os.chmod(js, 0o600)
+    except OSError:
+        return
+    from .util import chown_to_user
+    chown_to_user(js, getattr(ctxlike, "sudo_user", None))
+
+
 def _finalize(path: Path, directory: Path, ctxlike):
     try:
         os.chmod(path, 0o600)
@@ -198,10 +227,13 @@ def _run_pty(argv, path, directory, ctxlike) -> int:  # pragma: no cover - forks
     os.environ["PYTHONPATH"] = pkg_parent + (os.pathsep + existing if existing else "")
     os.environ[GUARD] = "1"
     child = [sys.executable, "-m", "fettle", *argv]
+    status = None
     try:
         status = pty.spawn(child, master_read)
     finally:
         logf.close()
+        code = os.waitstatus_to_exitcode(status) if status is not None else None
+        _write_log_json(path, ctxlike, host=log_host(argv), argv=argv, exit_code=code)
         _finalize(path, directory, ctxlike)
     return os.waitstatus_to_exitcode(status)
 
@@ -232,8 +264,9 @@ class _NonTtyLog:
     """Best-effort log for a non-interactive run: tees fettle's own stdout/stderr
     (subprocess output isn't captured — there's no tty to record)."""
 
-    def __init__(self, path, directory, ctxlike):
+    def __init__(self, path, directory, ctxlike, argv=()):
         self._path, self._dir, self._ctx = path, directory, ctxlike
+        self._argv = list(argv)
         self._logf = open(path, "wb")
         self._saved = (sys.stdout, sys.stderr)
         sys.stdout = _Tee(sys.stdout, self._logf)
@@ -245,6 +278,8 @@ class _NonTtyLog:
             self._logf.close()
         except OSError:
             pass
+        _write_log_json(self._path, self._ctx, host=log_host(self._argv),
+                        argv=self._argv, exit_code=None)
         _finalize(self._path, self._dir, self._ctx)
 
 
@@ -259,6 +294,6 @@ def start_nontty_log(argv):
         user_home, sudo_user = _invoker()
         ctxlike = _ctxlike(user_home, sudo_user, config)
         path, directory = _new_log(ctxlike, log_host(argv))
-        return _NonTtyLog(path, directory, ctxlike)
+        return _NonTtyLog(path, directory, ctxlike, argv)
     except Exception:  # pragma: no cover - never block a run
         return None
