@@ -69,18 +69,41 @@ def test_render_screen_columns_and_sort():
 
 
 def test_render_screen_missing_is_weight_ordered():
+    # setuid -> High, so it's shown on screen; check the MISSING column order
     reports = _reports([_dev("/usr/bin/x", "runpath"), _dev("/usr/bin/x", "canary")],
-                       {"/usr/bin/x": "p"})
+                       {"/usr/bin/x": "p"}, setuid=True)
     row = report.render_screen(reports)[2]
     # canary (weight 3) must appear before runpath (weight 0.5)
     assert row.index("canary") < row.index("runpath")
 
 
 def test_render_screen_privilege_marker_only_when_privileged():
-    reports = _reports([_dev("/usr/bin/x", "canary")], {"/usr/bin/x": "p"},
-                       setuid=False)
+    # canary+relro+pie = 8 -> High (shown), not privileged -> no '!'
+    reports = _reports([_dev("/usr/bin/x", c) for c in ("canary", "relro", "pie")],
+                       {"/usr/bin/x": "p"}, setuid=False)
     row = report.render_screen(reports)[2]
     assert "!" not in row
+
+
+def test_render_screen_only_shows_critical_and_high():
+    # only Xorg.wrap is setuid -> Critical (shown); netpbm's canary = Medium (hidden)
+    only_xorg = lambda p: p == "/usr/lib/Xorg.wrap"   # noqa: E731
+    with patch("fettle.hardening.score.is_setuid", side_effect=only_xorg):
+        reports = report.apply(DEVS, PKGMAP, report.Exclusions())[0]
+    lines = report.render_screen(reports)
+    body = "\n".join(lines)
+    assert "xorg-server" in body            # Critical shown
+    assert "netpbm" not in body             # Medium not shown on screen
+    assert lines[-1].startswith("… plus") and "Medium" in lines[-1]
+
+
+def test_render_screen_none_severe_collapses_to_one_line():
+    # only a Medium package -> no table, just a summary pointing at the file
+    reports = _reports([_dev("/usr/bin/x", "canary")], {"/usr/bin/x": "p"},
+                       setuid=False)
+    lines = report.render_screen(reports)
+    assert len(lines) == 1
+    assert lines[0].startswith("no Critical or High packages") and "Medium" in lines[0]
 
 
 def test_render_screen_empty():

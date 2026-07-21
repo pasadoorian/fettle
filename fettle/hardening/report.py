@@ -186,16 +186,38 @@ def _missing_by_weight(rep) -> str:
                      for k in keys)
 
 
-def render_screen(reports) -> list[str]:
-    """Compact, scored, on-screen table (worst first). Narrow enough for a
-    terminal; the full per-criterion matrix lives in the saved report."""
+# On screen we show only the bands worth acting on; Medium/Low go to the file.
+SCREEN_BANDS = ("Critical", "High")
+
+
+def render_screen(reports, show_bands=SCREEN_BANDS) -> list[str]:
+    """Compact, scored, on-screen table (worst first) — only the severe bands.
+
+    Medium/Low packages are summarized in a trailing line and left to the full
+    saved matrix, so the terminal shows only what's worth acting on.
+    """
+    from .score import BAND_ORDER
     if not reports:
         return ["no hardening deviations from the distro baseline."]
+    shown = [r for r in reports if r.band in show_bands]
+    hidden = [r for r in reports if r.band not in show_bands]
+
+    def _hidden_tail() -> str:
+        tally = collections.Counter(r.band for r in hidden)
+        parts = [f"{tally[b]} {b}" for b in BAND_ORDER if tally.get(b)]
+        return f"… plus {', '.join(parts)} package(s) — full list in the saved matrix"
+
+    if not shown:
+        return [f"no Critical or High packages ({_hidden_tail()[6:]})" if hidden
+                else "no Critical or High packages."]
     headers = ["BAND", "SCORE", "P", "PACKAGE", "BINS",
                "MISSING (worst-weighted first)"]
     rows = [[r.band, f"{r.score:g}", "!" if r.has_privileged else "",
-             r.package, r.binaries, _missing_by_weight(r)] for r in reports]
-    return _tabulate(headers, rows, aligns=["l", "r", "l", "l", "r", "l"])
+             r.package, r.binaries, _missing_by_weight(r)] for r in shown]
+    lines = _tabulate(headers, rows, aligns=["l", "r", "l", "l", "r", "l"])
+    if hidden:
+        lines.append(_hidden_tail())
+    return lines
 
 
 def render(reports, stats, baseline, scan_stats) -> list[str]:
