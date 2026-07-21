@@ -170,6 +170,8 @@ strong{color:var(--fg)}
 pre{background:#070a0e;border:1px solid var(--border);padding:.6rem;border-radius:4px;
   overflow-x:auto;font-size:.78rem;max-height:26rem;color:#a9bccf}
 .muted{color:var(--dim)}
+h4.cat{margin:.6rem 0 .2rem;color:var(--cyan);font-size:.85rem;font-weight:600}
+h4.cat::before{content:"» ";color:var(--dim)}
 .hidden{display:none}
 ::selection{background:rgba(74,222,128,.25)}
 """
@@ -313,6 +315,27 @@ def _render_aur_audit(data: dict) -> str:
     return f'{table}{extra}' or '<div class=muted>no packages</div>'
 
 
+_LEVEL_PILL = {"error": "sev-CRIT", "warn": "sev-WARN", "ok": "v-safe",
+               "info": "sev-INFO"}
+
+
+def _render_sysaudit(data: dict) -> str:
+    cats = data.get("categories") or []
+    if not cats:
+        return '<div class="muted">no results</div>'
+    out = []
+    for c in cats:
+        out.append(f'<h4 class="cat">{_esc(str(c.get("name", "")))}</h4>')
+        rows = "".join(
+            f'<tr><td><span class="pill {_LEVEL_PILL.get(it.get("level"), "sev-INFO")}">'
+            f'{_esc(str(it.get("level", "")))}</span></td>'
+            f'<td>{_esc(str(it.get("label", "")))}</td>'
+            f'<td>{_esc(str(it.get("value", "")))}</td></tr>'
+            for it in c.get("items", []))
+        out.append(f"<table>{rows}</table>")
+    return "".join(out)
+
+
 def _render_log(entry: dict) -> str:
     ec = entry.get("exit_code")
     meta = (f'<div class=muted>argv: {_esc(str(entry.get("argv")))} · '
@@ -325,6 +348,7 @@ _RENDERERS = {
     "pkg-audit": _render_findings, "aur-ioc-scan": _render_findings,
     "upgrade-check": _render_upgrade, "aur-audit": _render_aur_audit,
     "alien-pkgs": _render_pkglist, "obsolete-pkgs": _render_pkglist,
+    "sys-audit": _render_sysaudit,
 }
 
 
@@ -364,6 +388,8 @@ def _is_empty(entry: dict) -> bool:
     if tool == "aur-audit":
         return not (data.get("packages") or data.get("not_found_in_aur")
                     or data.get("maintainer_changes"))
+    if tool == "sys-audit":
+        return not data.get("categories")
     return False                                    # upgrade-check / unknown: keep
 
 

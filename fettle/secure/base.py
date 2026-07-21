@@ -10,7 +10,7 @@ the checks with no root and no real hardware). Presentation routes through
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import command
@@ -21,6 +21,11 @@ class Scan:
     output: "object"           # fettle.output.Output
     root: Path = Path("/")     # injected so /sys, /proc, /dev reads are testable
     verbose: bool = False
+    # accumulated for the persisted report (in addition to live terminal output)
+    records: list = field(default_factory=list)   # [{category, sub, label, value, level}]
+    lines: list = field(default_factory=list)      # plain-text report body
+    _cat: str = ""
+    _sub: str = ""
 
     # -- capability probes ---------------------------------------------------
     def which(self, name: str) -> bool:
@@ -60,19 +65,29 @@ class Scan:
 
     # -- presentation (mirrors the bash print_* helpers via output.py) -------
     def section(self, title: str) -> None:
+        self._cat, self._sub = title, ""
+        self.lines.append(f"\n== {title} ==")
         self.output.section(title)
 
     def sub(self, title: str) -> None:
+        self._sub = title
+        self.lines.append(f"-- {title} --")
         if not self.output.quiet:
             print(f"  {self.output.CYN}── {title} ──{self.output.NC}")
 
     def status(self, label: str, value: str, level: str = "info") -> None:
+        self.records.append({"category": self._cat, "sub": self._sub,
+                             "label": label, "value": value, "level": level})
+        self.lines.append(f"[{level}] {label}: {value}")
         line = f"{label}: {value}"
         {"ok": self.output.ok, "warn": self.output.warn,
          "error": self.output.err}.get(level, self.output.note)(line)
 
     def result(self, text: str) -> None:
         """Raw command output, indented 4 spaces (bash ``print_result``)."""
+        if text and text.strip():
+            for ln in text.splitlines():
+                self.lines.append(f"    {ln}")
         if self.output.quiet:
             return
         if text and text.strip():
@@ -83,5 +98,27 @@ class Scan:
 
     def dim(self, text: str) -> None:
         """An indented dim hint line (bash ``echo -e "    ${DIM}..${NC}"``)."""
+        self.lines.append(f"    {text}")
         if not self.output.quiet:
             print(f"    {self.output.DIM}{text}{self.output.NC}")
+
+    # -- persisted report ----------------------------------------------------
+    def report_text(self) -> str:
+        return "\n".join(self.lines).strip()
+
+    def report_data(self) -> dict:
+        """Structured payload grouped by category (for the JSON + HTML report)."""
+        cats: dict[str, list] = {}
+        order: list[str] = []
+        for r in self.records:
+            c = r["category"] or "general"
+            if c not in cats:
+                cats[c] = []
+                order.append(c)
+            cats[c].append({k: r[k] for k in ("sub", "label", "value", "level")})
+        levels = ("error", "warn", "ok", "info")
+        return {
+            "categories": [{"name": c, "items": cats[c]} for c in order],
+            "level_counts": {lvl: sum(1 for r in self.records if r["level"] == lvl)
+                             for lvl in levels},
+        }

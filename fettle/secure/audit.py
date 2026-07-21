@@ -190,5 +190,39 @@ def main(argv: list[str]) -> int:
     if not args.user and not cli._is_root() and not cli._in_test():
         cli._reexec_with_sudo()  # replaces the process (carries PYTHONPATH via env)
 
-    run(chosen, Scan(output=out, root=Path("/"), verbose=args.verbose))
+    scan = Scan(output=out, root=Path("/"), verbose=args.verbose)
+    run(chosen, scan)
+    _write_report(scan, out)
     return 0
+
+
+def _write_report(scan: Scan, out: Output) -> None:
+    """Persist the sys-audit result under ~/.fettle/reports/<host>/ so it shows in
+    `fettle report`. Best-effort; owned by the invoking user even under sudo."""
+    import os
+    import pwd
+    from types import SimpleNamespace
+
+    from .. import reports
+    from ..cli import DEFAULT_CONFIG
+    from ..config import load
+    if not scan.records:
+        return
+    try:
+        cfg, _ = load(DEFAULT_CONFIG)
+    except Exception:
+        cfg = None
+    sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    home = Path.home()
+    if sudo_user:
+        try:
+            home = Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+    ctx = SimpleNamespace(config=cfg, user_home=home, sudo_user=sudo_user, output=out)
+    try:
+        path = reports.write_report("sys-audit", scan.report_text(), ctx,
+                                    data=scan.report_data())
+        out.note(f"report saved to {path}")
+    except OSError as exc:
+        out.warn(f"could not write sys-audit report: {exc}")
