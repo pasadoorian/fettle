@@ -64,12 +64,14 @@ def test_build_writes_0600_html_with_hosts(tmp_path):
 
 
 def test_build_escapes_untrusted_content(tmp_path):
-    # a package name with HTML must be escaped, never injected
+    # a package name with HTML must be escaped, never injected into the page
     _write_report_json(tmp_path, "local", "pkg-audit", "20260721-010101",
-                       {"note": "<script>alert(1)</script>"})
+                       {"findings": [{"severity": "CRIT", "source": "aur",
+                                      "package": "<script>alert(1)</script>",
+                                      "detail": "evil"}]})
     text = htmlreport.build(_ctx(tmp_path)).read_text()
-    assert "<script>alert(1)</script>" not in text
-    assert "&lt;script&gt;" in text
+    assert "<script>alert(1)</script>" not in text     # never raw
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
 
 
 def test_build_empty_tree_still_valid_html(tmp_path):
@@ -108,3 +110,66 @@ def test_backfill_is_idempotent_and_nondestructive(tmp_path):
     assert json.loads((d / "aur-audit-20260721-010101.json").read_text()) == \
         {"existing": True}                                 # not overwritten
     assert txt.read_text() == "original"                   # txt untouched
+
+
+# -- RH2: dashboard + per-type rendering -------------------------------------
+def test_dashboard_and_controls_present(tmp_path):
+    _write_report_json(tmp_path, "local", "hardening-audit", "20260721-010101",
+                       {"band_tally": {"Critical": 1, "High": 2},
+                        "scan": {"analyzed": 4000}, "packages": []})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert 'class="dashboard"' in text and 'class="card"' in text
+    assert 'id="q"' in text and 'id="hostf"' in text and 'id="typef"' in text
+    assert "b-Critical" in text and "1 Critical" in text     # band chip
+
+
+def test_hardening_renders_scored_table(tmp_path):
+    _write_report_json(tmp_path, "web", "hardening-audit", "20260721-010101", {
+        "band_tally": {"Critical": 1, "Low": 40},
+        "scan": {"analyzed": 100},
+        "packages": [{"package": "xorg-server", "band": "Critical", "score": 18.0,
+                      "binaries": 2, "has_privileged": True,
+                      "checks": {"relro": 2, "canary": 2}},
+                     {"package": "quiet", "band": "Low", "score": 1.0,
+                      "binaries": 1, "has_privileged": False, "checks": {}}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "xorg-server" in text and "relro=2, canary=2" in text
+    assert "quiet" not in text                    # Low not tabled
+    assert "40 Medium/Low package(s)" in text
+
+
+def test_findings_render_with_severity_pills(tmp_path):
+    _write_report_json(tmp_path, "local", "aur-ioc-scan", "20260721-010101",
+                       {"findings": [{"severity": "CRIT", "source": "aur",
+                                      "package": "evil", "detail": "bad feed"}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "sev-CRIT" in text and "evil" in text and "bad feed" in text
+
+
+def test_upgrade_check_renders_verdict(tmp_path):
+    _write_report_json(tmp_path, "ec3", "upgrade-check", "20260721-010101",
+                       {"safety_verdict": "caution", "failure_likelihood": "medium",
+                        "summary": "kernel bump", "must_do_before": ["snapshot"],
+                        "recommendation": "proceed-with-care"})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "v-caution" in text and "CAUTION" in text
+    assert "snapshot" in text and "proceed-with-care" in text
+
+
+def test_log_transcript_renders(tmp_path):
+    d = tmp_path / ".fettle/logs/ec1"
+    d.mkdir(parents=True)
+    (d / "run-20260721-010101.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": "ec1",
+         "timestamp": "20260721-010101", "argv": ["-a"], "exit_code": 0,
+         "transcript": "clean + update done"}))
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "run logs" in text and "clean + update done" in text
+
+
+def test_bad_payload_never_breaks_the_page(tmp_path):
+    # a structurally-wrong hardening payload falls back to a <pre> dump, no crash
+    _write_report_json(tmp_path, "local", "hardening-audit", "20260721-010101",
+                       {"packages": "not-a-list"})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert text.startswith("<!doctype html>")     # rendered fine anyway
