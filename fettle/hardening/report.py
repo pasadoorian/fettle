@@ -9,8 +9,14 @@ engine.py are separate: they fix wrong data, not preference.)
 
 from __future__ import annotations
 
+import collections
 import fnmatch
 from dataclasses import dataclass, field
+
+# short column headers for the per-criterion matrix (fortify_source is wide)
+_ABBR = {"relro": "relro", "pie": "pie", "canary": "canary",
+         "fortify_source": "fortify", "cfi": "cfi", "nx": "nx",
+         "rpath": "rpath", "runpath": "runpath"}
 
 # what the user may exclude, and a stable order for the per-check summary
 _CRITERION_ORDER = ["relro", "pie", "canary", "fortify_source", "cfi", "nx",
@@ -132,12 +138,64 @@ def apply(deviations, pkgmap, excl: Exclusions, scorer=None):
     return reports, stats
 
 
-def summary_line(reports, stats) -> str:
+def _tabulate(headers, rows, aligns=None) -> list[str]:
+    """Pad ``rows`` into aligned columns. ``aligns`` is per-column 'l'/'r'."""
+    cols = len(headers)
+    aligns = aligns or ["l"] * cols
+    widths = [len(str(h)) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+
+    def fmt(cells):
+        out = []
+        for i, cell in enumerate(cells):
+            text = str(cell)
+            out.append(text.rjust(widths[i]) if aligns[i] == "r"
+                       else text.ljust(widths[i]))
+        return "  ".join(out).rstrip()
+
+    return [fmt(headers), fmt(["-" * w for w in widths]), *[fmt(r) for r in rows]]
+
+
+def band_tally(reports) -> "collections.Counter":
+    return collections.Counter(r.band for r in reports)
+
+
+def band_summary(reports) -> str:
+    """Lead with the band counts — what a reader wants first."""
+    from .score import BAND_ORDER
     if not reports:
         return "no hardening deviations from the distro baseline."
+    tally = band_tally(reports)
+    parts = [f"{tally[b]} {b}" for b in BAND_ORDER if tally.get(b)]
     devs = sum(r.total for r in reports)
-    return (f"{devs} hardening deviation(s) across {len(reports)} package(s) "
-            f"(vs the distro's declared build baseline)")
+    return (f"{', '.join(parts)}  ({devs} deviations across "
+            f"{len(reports)} packages, worst first)")
+
+
+def summary_line(reports, stats) -> str:
+    return band_summary(reports)
+
+
+def _missing_by_weight(rep) -> str:
+    """The package's missing criteria, heaviest-weighted first, with counts."""
+    from .score import DEFAULT_WEIGHTS
+    keys = sorted(rep.checks, key=lambda k: (-DEFAULT_WEIGHTS.get(k, 1.0), k))
+    return ", ".join(f"{k}={rep.checks[k]}" if rep.checks[k] > 1 else k
+                     for k in keys)
+
+
+def render_screen(reports) -> list[str]:
+    """Compact, scored, on-screen table (worst first). Narrow enough for a
+    terminal; the full per-criterion matrix lives in the saved report."""
+    if not reports:
+        return ["no hardening deviations from the distro baseline."]
+    headers = ["BAND", "SCORE", "P", "PACKAGE", "BINS",
+               "MISSING (worst-weighted first)"]
+    rows = [[r.band, f"{r.score:g}", "!" if r.has_privileged else "",
+             r.package, r.binaries, _missing_by_weight(r)] for r in reports]
+    return _tabulate(headers, rows, aligns=["l", "r", "l", "l", "r", "l"])
 
 
 def render(reports, stats, baseline, scan_stats) -> list[str]:
@@ -167,7 +225,12 @@ def render(reports, stats, baseline, scan_stats) -> list[str]:
         lines.append("No deviations. Every scanned binary matches the baseline.")
         return lines
 
-    lines.append(summary_line(reports, stats))
+    lines.append(band_summary(reports))
+    lines.append("")
+    lines.append("score = Σ weight(missing protection) × 3 if setuid/setgid or "
+                 "sensitive; bands: Critical≥14, High≥8, Medium≥3, Low<3")
+    lines.append("P = ! marks a setuid/setgid or sensitive-package binary; "
+                 "a matrix cell is the count of binaries missing that protection")
     lines.append("")
     lines.append("legend:")
     seen = {k for r in reports for k in r.checks}
@@ -175,8 +238,15 @@ def render(reports, stats, baseline, scan_stats) -> list[str]:
         if key in seen:
             lines.append(f"  {key:14s} {_CRITERION_HELP.get(key, '')}")
     lines.append("")
+    # full per-criterion matrix — every column, one row per package (worst first)
+    headers = ["PACKAGE", "SCORE", "BAND", "P", "BINS"] + \
+        [_ABBR[k] for k in _CRITERION_ORDER]
+    rows = []
     for r in reports:
-        kinds = ", ".join(f"{k}={r.checks[k]}" for k in _CRITERION_ORDER
-                          if k in r.checks)
-        lines.append(f"{r.package}  ({r.binaries} binary/-ies)  {kinds}")
+        cells = [r.package, f"{r.score:g}", r.band,
+                 "!" if r.has_privileged else "", r.binaries]
+        cells += [str(r.checks[k]) if r.checks.get(k) else "." for k in _CRITERION_ORDER]
+        rows.append(cells)
+    aligns = ["l", "r", "l", "l", "r"] + ["r"] * len(_CRITERION_ORDER)
+    lines += _tabulate(headers, rows, aligns)
     return lines

@@ -40,10 +40,9 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     if not reports:
         out.ok("no hardening deviations from the distro baseline.")
     else:
-        for r in reports:
-            kinds = ", ".join(f"{k}={v}" for k, v in sorted(r.checks.items()))
-            print(f"    {r.package}  ({r.binaries})  {kinds}")
-        out.summary_add(report.summary_line(reports, filt_stats))
+        for line in report.render_screen(reports):
+            print(f"  {line}")
+        out.summary_add(report.band_summary(reports))
         dropped = (filt_stats["excluded_check"] + filt_stats["excluded_package"]
                    + filt_stats["excluded_path"])
         if dropped:
@@ -58,7 +57,7 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
             body = report.render(reports, filt_stats, base, scan_stats)
             report_path.write_text("\n".join(body) + "\n")
             chown_to_user(report_path, ctx.sudo_user)
-            out.note(f"full report saved to {report_path}")
+            out.note(f"full per-criterion matrix saved to {report_path}")
         except OSError as exc:
             out.warn(f"could not write {report_path}: {exc}")
     return Result()
