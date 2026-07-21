@@ -193,6 +193,15 @@ class PackageBackend(abc.ABC):
         specific sys-audit check; see PLAN §3.7)."""
         raise NotImplementedError
 
+    def map_files_to_packages(self, paths) -> dict[str, str]:
+        """Map each installed file path to the package that owns it.
+
+        Read-only and rootless; used by the hardening audit to attribute a
+        binary's shortcomings to a package. Paths with no owner are omitted.
+        Default is empty (a backend without a package DB can't attribute).
+        """
+        return {}
+
     def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
         """Packages that ``update`` would upgrade, as ``(name, old_ver, new_ver)``.
 

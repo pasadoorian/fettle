@@ -46,6 +46,12 @@ class Config:
         default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
     )
     aur_ioc_cache_ttl: int = 21600
+    # Binary hardening audit (fettle hardening-audit). Exclude lists to prune the
+    # report — all ship EMPTY, so the first run shows everything and the user
+    # narrows to taste. Keys: exclude_checks (criterion names, e.g. "runpath"),
+    # exclude_packages (name globs), exclude_paths (path globs). The always-on
+    # accuracy corrections are NOT tunable here (they fix wrong data, not taste).
+    hardening: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True

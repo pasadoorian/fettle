@@ -1,0 +1,63 @@
+"""The `hardening-audit` action: scan → attribute → exclude → report.
+
+Read-only and rootless. Reports a *long* list by default (every real deviation
+from the distro's declared build baseline); the user prunes via ``[hardening]``
+exclude lists in the config.
+"""
+
+from __future__ import annotations
+
+from .. import command
+from ..backends.base import Context, PackageBackend, Result
+from ..util import chown_to_user
+from . import baseline as bl
+from . import engine, report
+
+
+def run(backend: PackageBackend, ctx: Context) -> Result:
+    out = ctx.output
+    if not command.which("checksec"):
+        out.note("checksec not found (install it: pacman -S checksec / "
+                 "apt install checksec); skipping hardening audit.")
+        return Result()
+
+    base = bl.resolve(backend.name, root=ctx.root)
+    for note in base.notes:
+        out.note(note)
+
+    targets = engine.default_targets(ctx.root)
+    if not targets:
+        out.note("no ELF binaries found to scan.")
+        return Result()
+    out.note(f"scanning {len(targets)} ELF binaries with checksec...")
+    deviations, scan_stats = engine.scan(targets, baseline=base, root=ctx.root)
+
+    pkgmap = backend.map_files_to_packages({d.path for d in deviations})
+    excl = report.exclusions(ctx.config)
+    reports, filt_stats = report.apply(deviations, pkgmap, excl)
+
+    if not reports:
+        out.ok("no hardening deviations from the distro baseline.")
+    else:
+        for r in reports:
+            kinds = ", ".join(f"{k}={v}" for k, v in sorted(r.checks.items()))
+            print(f"    {r.package}  ({r.binaries})  {kinds}")
+        out.summary_add(report.summary_line(reports, filt_stats))
+        dropped = (filt_stats["excluded_check"] + filt_stats["excluded_package"]
+                   + filt_stats["excluded_path"])
+        if dropped:
+            out.note(f"{dropped} deviation(s) hidden by your [hardening] exclude lists.")
+        elif excl.is_empty():
+            out.note("tip: prune this list via [hardening] exclude_checks/"
+                     "exclude_packages/exclude_paths in your config.")
+
+    if not ctx.dry_run:
+        report_path = ctx.user_home / "hardening-audit.txt"
+        try:
+            body = report.render(reports, filt_stats, base, scan_stats)
+            report_path.write_text("\n".join(body) + "\n")
+            chown_to_user(report_path, ctx.sudo_user)
+            out.note(f"full report saved to {report_path}")
+        except OSError as exc:
+            out.warn(f"could not write {report_path}: {exc}")
+    return Result()

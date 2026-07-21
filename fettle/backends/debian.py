@@ -113,6 +113,18 @@ class DebianBackend(PackageBackend):
         """Run a read-only query and return stdout (runs even under dry-run)."""
         return command.run(cmd, capture=True).stdout
 
+    def map_files_to_packages(self, paths) -> dict[str, str]:
+        paths = list(paths)
+        if not paths or not command.which("dpkg-query"):
+            return {}
+        # `dpkg-query -S <files...>` -> "<pkg>[, <pkg>...]: <path>" per owned file.
+        out: dict[str, str] = {}
+        for line in self._query(["dpkg-query", "-S", *paths]).splitlines():
+            pkgs, sep, path = line.partition(": ")
+            if sep and path:
+                out[path.strip()] = pkgs.split(",")[0].split(":")[0].strip()
+        return out
+
     # -- pending upgrades (UC1) ----------------------------------------------
     def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
         if not command.which("apt"):

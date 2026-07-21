@@ -70,13 +70,18 @@ def is_elf(path: str) -> bool:
 
 def default_targets(root: Path = Path("/")) -> list[str]:
     """Scope: every executable in the standard bin dirs, plus every setuid/setgid
-    file (privilege boundaries) under the standard lib/sbin dirs."""
-    targets: set[str] = set()
-    for d in ("usr/bin", "usr/sbin"):
+    file (privilege boundaries) under the standard lib dirs.
+
+    Paths are canonicalized with ``realpath`` and de-duplicated, so a merged-usr
+    layout (``/usr/sbin -> bin``, ``/bin -> usr/bin``) doesn't scan every binary
+    twice — and the canonical spelling is the one the package DB records
+    (``pacman -Qo /usr/sbin/x`` fails; ``/usr/bin/x`` succeeds)."""
+    candidates: set[str] = set()
+    for d in ("usr/bin", "usr/sbin", "bin", "sbin"):
         base = root / d
         if base.is_dir():
             try:
-                targets.update(str(p) for p in base.iterdir())
+                candidates.update(str(p) for p in base.iterdir())
             except OSError:
                 pass
     for d in ("usr/lib", "usr/libexec"):
@@ -88,10 +93,11 @@ def default_targets(root: Path = Path("/")) -> list[str]:
                 p = os.path.join(dirpath, fn)
                 try:
                     if os.stat(p).st_mode & 0o6000:
-                        targets.add(p)
+                        candidates.add(p)
                 except OSError:
                     continue
-    return sorted(t for t in targets if is_elf(t))
+    targets = {os.path.realpath(t) for t in candidates if is_elf(t)}
+    return sorted(targets)
 
 
 def run_checksec(paths, *, runner=None) -> list[dict]:

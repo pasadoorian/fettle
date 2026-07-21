@@ -122,6 +122,19 @@ class ArchBackend(PackageBackend):
         """Run a read-only query and return stdout (runs even under dry-run)."""
         return command.run(cmd, capture=True).stdout
 
+    def map_files_to_packages(self, paths) -> dict[str, str]:
+        paths = list(paths)
+        if not paths or not command.which("pacman"):
+            return {}
+        # `pacman -Qo <files...>` -> "<path> is owned by <pkg> <ver>" per owned
+        # file (unowned ones go to stderr and are simply absent from stdout).
+        out: dict[str, str] = {}
+        for line in self._query(["pacman", "-Qo", *paths]).splitlines():
+            m = re.match(r"^(.*) is owned by (\S+) ", line)
+            if m:
+                out[m.group(1)] = m.group(2)
+        return out
+
     def _rebuild(self, pkgs: list[str], ctx: Context) -> None:
         """Rebuild via the configured AUR backend, so hooks/review still fire."""
         _, aur = self._updaters(ctx)
