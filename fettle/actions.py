@@ -111,7 +111,7 @@ def _emit(out, finding) -> None:
 
 def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
     """Run every present Package Supply Chain provider and report normalized findings."""
-    from .util import chown_to_user
+    from . import reports
     from .supplychain.base import Severity
 
     out = ctx.output
@@ -137,18 +137,16 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
             msg += f", {crit} CRITICAL — INVESTIGATE"
         out.summary_add(msg)
 
-    # Persist a plain-text report (parity with update.sh's ~/aur-audit.txt).
+    # Persist a plain-text report under ~/.fettle/reports/<host>/.
     if not ctx.dry_run:
-        report = ctx.user_home / "pkg-audit.txt"
         try:
             lines = ["pkg-audit report", ""]
             lines += [f"[{f.severity.name}] [{f.source}] {f.package}: {f.detail}"
                       for f in findings] or ["no findings"]
-            report.write_text("\n".join(lines) + "\n")
-            chown_to_user(report, ctx.sudo_user)
+            report = reports.write_report("pkg-audit", "\n".join(lines), ctx)
             out.note(f"full report saved to {report}")
         except OSError as exc:
-            out.warn(f"could not write {report}: {exc}")
+            out.warn(f"could not write pkg-audit report: {exc}")
 
 
 # action name -> callable(backend, ctx). Only implemented actions appear here.

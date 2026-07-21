@@ -40,7 +40,7 @@ def test_flags_known_malicious_package(tmp_path, capsys):
     cap = _run(tmp_path, foreign=["evil-pkg", "good"], ioc=FakeIOC(packages={"evil-pkg"}),
                capsys=capsys)
     assert "evil-pkg" in cap.err and "known-malicious package list" in cap.err
-    report = (tmp_path / "aur-ioc-scan.txt").read_text()
+    report = list((tmp_path / ".fettle/reports/local").glob("aur-ioc-scan-*.txt"))[0].read_text()
     assert "evil-pkg" in report
 
 
@@ -61,11 +61,11 @@ def test_flags_js_cache_trace(tmp_path, capsys):
 def test_clean_system_no_indicators(tmp_path, capsys):
     cap = _run(tmp_path, foreign=["good"], ioc=FakeIOC(packages={"other"}), capsys=capsys)
     assert "no indicators matched" in cap.out
-    report = (tmp_path / "aur-ioc-scan.txt").read_text()
+    report = list((tmp_path / ".fettle/reports/local").glob("aur-ioc-scan-*.txt"))[0].read_text()
     assert "no indicators matched" in report
 
 
 def test_no_foreign_packages(tmp_path, capsys):
     cap = _run(tmp_path, foreign=[], ioc=FakeIOC(), capsys=capsys)
     assert "no foreign (AUR) packages" in cap.out
-    assert not (tmp_path / "aur-ioc-scan.txt").exists()  # nothing written when none installed
+    assert not list((tmp_path / ".fettle/reports/local").glob("aur-ioc-scan-*.txt"))  # nothing written

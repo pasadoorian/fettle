@@ -53,7 +53,7 @@ def test_not_found_and_report_written(tmp_path, capsys):
     results = [{"Name": "present", "Maintainer": "bob", "LastModified": time.time(), "NumVotes": 3}]
     out = _run(tmp_path, foreign=["present", "ghost"], results=results, capsys=capsys)
     assert "NOT FOUND IN AUR" in out and "ghost" in out
-    report = (tmp_path / "aur-audit.txt").read_text()
+    report = list((tmp_path / ".fettle/reports/local").glob("aur-audit-*.txt"))[0].read_text()
     assert "AUR audit" in report and "present" in report
 
 

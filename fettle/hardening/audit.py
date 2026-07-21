@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .. import command
 from ..backends.base import Context, PackageBackend, Result
-from ..util import chown_to_user
+from .. import reports as freports
 from . import baseline as bl
 from . import engine, report, score
 
@@ -52,12 +52,10 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
                      "exclude_packages/exclude_paths in your config.")
 
     if not ctx.dry_run:
-        report_path = ctx.user_home / "hardening-audit.txt"
         try:
             body = report.render(reports, filt_stats, base, scan_stats)
-            report_path.write_text("\n".join(body) + "\n")
-            chown_to_user(report_path, ctx.sudo_user)
-            out.note(f"full per-criterion matrix saved to {report_path}")
+            path = freports.write_report("hardening-audit", "\n".join(body), ctx)
+            out.note(f"full per-criterion matrix saved to {path}")
         except OSError as exc:
-            out.warn(f"could not write {report_path}: {exc}")
+            out.warn(f"could not write hardening-audit report: {exc}")
     return Result()

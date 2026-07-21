@@ -68,10 +68,10 @@ ACTION_HELP = {
     "auto_updates": "report whether automatic/unattended updates are enabled",
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",
-    "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/aur-audit.txt",
-    "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/aur-ioc-scan.txt",
-    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/pkg-audit.txt",
-    "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/hardening-audit.txt",
+    "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",
+    "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/.fettle/reports/",
+    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/.fettle/reports/",
+    "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
 }
 
 _EPILOG = """\
@@ -424,7 +424,8 @@ def _run_upgrade_check(argv: list[str]) -> int:
         _print_pending(pending)
         return 0
 
-    _render_upgrade_check(out, result, user_home=ctx.user_home, sudo_user=ctx.sudo_user)
+    _render_upgrade_check(out, result, user_home=ctx.user_home,
+                          sudo_user=ctx.sudo_user, config=ctx.config)
     return 0
 
 
@@ -434,11 +435,12 @@ def _print_pending(pending) -> None:
 
 
 def _render_upgrade_check(out: Output, result, *, user_home: Path,
-                          sudo_user: str | None = None, host: str | None = None) -> None:
-    import re
+                          sudo_user: str | None = None, host: str | None = None,
+                          config=None) -> None:
+    from types import SimpleNamespace
 
+    from . import reports
     from .ai.upgrade_check import format_report
-    from .util import chown_to_user
 
     verdict = {"safe": out.ok, "caution": out.warn, "risky": out.alert}.get(
         result.safety_verdict, out.note)
@@ -451,18 +453,15 @@ def _render_upgrade_check(out: Output, result, *, user_home: Path,
     out.note(f"[usage: {u.get('input_tokens', 0)} in / {u.get('output_tokens', 0)} out "
              f"tokens, {u.get('web_searches', 0)} web search(es)]")
 
-    if host:  # per-host filename so multiple hosts don't clobber each other
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", host)
-        path = user_home / f"upgrade-check-{safe}.txt"
+    if host:  # the analysed host becomes the report subdir (~/.fettle/reports/<host>/)
         report = f"Upgrade check — remote host: {host}\n\n{report}"
-    else:
-        path = user_home / "upgrade-check.txt"
+    ctx = SimpleNamespace(user_home=user_home, sudo_user=sudo_user,
+                          config=config, output=out)
     try:
-        path.write_text(report + "\n")
-        chown_to_user(path, sudo_user)
+        path = reports.write_report("upgrade-check", report, ctx, host=host or "local")
         out.note(f"saved to {path}")
     except OSError as exc:
-        out.warn(f"could not write {path}: {exc}")
+        out.warn(f"could not write upgrade-check report: {exc}")
 
 
 def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -> int:
@@ -531,7 +530,7 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         _print_pending(snap.pending)
         return 0
 
-    _render_upgrade_check(out, result, user_home=Path.home(), host=host)
+    _render_upgrade_check(out, result, user_home=Path.home(), host=host, config=cfg)
     return 0
 
 

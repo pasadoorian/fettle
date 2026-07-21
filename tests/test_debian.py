@@ -224,7 +224,7 @@ def test_orphans_writes_obsolete_and_purges(tmp_path):
     with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
          patch("fettle.command.which", return_value=True):
         DebianBackend().check_foreign_orphans(ctx)
-    obsolete = (tmp_path / "obsolete-pkgs.txt").read_text()
+    obsolete = list((tmp_path / ".fettle/reports/local").glob("obsolete-pkgs-*.txt"))[0].read_text()
     assert "libold" in obsolete and "goodpkg" not in obsolete
     argvs = [c for c, _ in calls]
     assert any(c[:3] == ["apt-get", "purge", "-y"] and "liborphan1" in c for c in argvs)

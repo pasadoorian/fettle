@@ -220,7 +220,7 @@ def test_remote_upgrade_check_collects_remote_analyses_local(capsys, monkeypatch
     assert coll.call_args[0][1] == ["upgrade-check", "--collect"]  # collect on remote
     analyze.assert_called_once()                         # analysed locally
     assert "remote: ec3" in out and "Verdict for ec3" in out
-    assert (tmp_path / "upgrade-check-ec3.txt").is_file()  # per-host report
+    assert list((tmp_path / ".fettle/reports/ec3").glob("upgrade-check-*.txt"))  # per-host subdir
 
 
 def test_remote_upgrade_check_no_local_key_lists_packages(capsys, monkeypatch):

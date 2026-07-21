@@ -127,3 +127,30 @@ def test_logs_dir_mirrors_reports_layout(tmp_path):
     d = reports.logs_dir(_ctx(tmp_path), host="foo")
     assert d == tmp_path / ".fettle/logs/foo"
     assert oct(os.stat(d).st_mode & 0o777) == "0o700"
+
+
+# -- RP2: legacy-note behavior ----------------------------------------------
+class _Out:
+    def __init__(self):
+        self.notes = []
+
+    def note(self, m):
+        self.notes.append(m)
+
+
+def test_legacy_note_fires_once_when_old_reports_present(tmp_path):
+    (tmp_path / "hardening-audit.txt").write_text("old")   # pre-0.11 report in $HOME
+    out = _Out()
+    ctx = SimpleNamespace(user_home=tmp_path, sudo_user=None, config=Config(), output=out)
+    reports.write_report("hardening-audit", "new", ctx, now=_at())
+    reports.write_report("hardening-audit", "new2", ctx, now=_at(s=31))
+    hits = [n for n in out.notes if "reports now live under" in n]
+    assert len(hits) == 1                                  # exactly once, not per write
+    assert (tmp_path / ".fettle/.reports-migrated").exists()
+
+
+def test_no_legacy_note_without_old_reports(tmp_path):
+    out = _Out()
+    ctx = SimpleNamespace(user_home=tmp_path, sudo_user=None, config=Config(), output=out)
+    reports.write_report("pkg-audit", "x", ctx, now=_at())
+    assert not any("reports now live" in n for n in out.notes)

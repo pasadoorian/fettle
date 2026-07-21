@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import re
 
-from .. import command
-from ..util import chown_to_user, matches_any
+from .. import command, reports
+from ..util import matches_any
 from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _SYSTEM_UPDATERS = {"apt", "nala", "none"}
@@ -270,15 +270,15 @@ class DebianBackend(PackageBackend):
         # Obsolete packages (installed, no longer in any archive) -> review file
         # (the Debian analogue of Arch's alien-pkgs.txt).
         obsolete = self._obsolete_packages(ctx)
-        review = ctx.user_home / "obsolete-pkgs.txt"
         if not ctx.dry_run:
             try:
-                review.write_text("".join(f"{p}\n" for p in obsolete))
-                chown_to_user(review, ctx.sudo_user)
+                review = reports.write_report("obsolete-pkgs", "\n".join(obsolete), ctx)
+                out.note(f"obsolete/foreign packages saved to {review} for review "
+                         f"({len(obsolete)} found)")
             except OSError as exc:
-                out.warn(f"could not write {review}: {exc}")
-        out.note(f"obsolete/foreign packages saved to {review} for review "
-                 f"({len(obsolete)} found)")
+                out.warn(f"could not write obsolete-pkgs report: {exc}")
+        else:
+            out.note(f"{len(obsolete)} obsolete/foreign package(s) would be saved for review")
 
         # Orphaned libraries via deborphan -> offer purge.
         if command.which("deborphan"):

@@ -10,8 +10,8 @@ metrics table lives in ``aur-audit`` (-A).
 
 from __future__ import annotations
 
+from .. import reports
 from ..supplychain.base import KNOWN_BAD, Finding, Severity
-from ..util import chown_to_user
 from . import common as aur_common
 from . import meta as aur_meta
 
@@ -61,14 +61,12 @@ def _report(ctx, foreign, findings) -> None:
             out.alert(f"[{f.source}] {f.package}: {f.detail}")
         out.summary_add(f"{len(findings)} IoC indicator(s) flagged — INVESTIGATE")
 
-    report = ctx.user_home / "aur-ioc-scan.txt"
     if not ctx.dry_run:
         try:
             lines = ["aur-ioc-scan report", ""]
             lines += ([f"[{f.severity.name}] [{f.source}] {f.package}: {f.detail}"
                        for f in findings] or ["no indicators matched"])
-            report.write_text("\n".join(lines) + "\n")
-            chown_to_user(report, ctx.sudo_user)
+            report = reports.write_report("aur-ioc-scan", "\n".join(lines), ctx)
             out.note(f"report saved to {report}")
         except OSError as exc:
-            out.warn(f"could not write {report}: {exc}")
+            out.warn(f"could not write aur-ioc-scan report: {exc}")

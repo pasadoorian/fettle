@@ -11,8 +11,8 @@ import os
 import re
 from pathlib import Path
 
-from .. import command
-from ..util import chown_to_user, matches_any
+from .. import command, reports
+from ..util import matches_any
 from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
@@ -390,14 +390,13 @@ class ArchBackend(PackageBackend):
         # on the package name (first field) but keep the version column in the file.
         foreign = [ln for ln in self._query(["pacman", "-Qm"]).splitlines() if ln.strip()]
         kept = [ln for ln in foreign if not matches_any(ln.split()[0], cfg.exclude_foreign)]
-        alien = ctx.user_home / "alien-pkgs.txt"
         if not ctx.dry_run:
             try:
-                alien.write_text("".join(f"{ln}\n" for ln in kept))
-                chown_to_user(alien, ctx.sudo_user)
+                alien = reports.write_report("alien-pkgs", "\n".join(kept), ctx)
+                out.note(f"foreign (AUR/manual) packages saved to {alien} "
+                         "for review (vet with -A/-I)")
             except OSError as exc:
-                out.warn(f"could not write {alien}: {exc}")
-        out.note(f"foreign (AUR/manual) packages saved to {alien} for review (vet with -A/-I)")
+                out.warn(f"could not write alien-pkgs report: {exc}")
         suppressed = len(foreign) - len(kept)
         if suppressed:
             out.note(f"{suppressed} foreign package(s) suppressed by exclude_foreign")

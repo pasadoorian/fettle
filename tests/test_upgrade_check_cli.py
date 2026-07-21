@@ -80,7 +80,7 @@ def test_happy_path_renders_and_saves(capsys, monkeypatch, tmp_path):
     assert "linux: kernel" in out
     assert "forum.manjaro.org" in out
     assert "web search(es)" in out
-    saved = (tmp_path / "upgrade-check.txt").read_text()
+    saved = list((tmp_path / ".fettle/reports/local").glob("upgrade-check-*.txt"))[0].read_text()
     assert "Verdict: CAUTION" in saved and "Recommendation: proceed-with-care" in saved
 
 

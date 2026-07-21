@@ -12,6 +12,7 @@ import json
 import time
 from datetime import datetime
 
+from .. import reports
 from ..util import chown_to_user
 from . import common as aur_common
 from . import meta as aur_meta
@@ -75,14 +76,12 @@ def run(ctx) -> None:
     for ln in lines:
         print(ln)
 
-    report = ctx.user_home / "aur-audit.txt"
     if not ctx.dry_run:
         try:
-            report.write_text("\n".join(lines) + "\n")
-            chown_to_user(report, ctx.sudo_user)
+            report = reports.write_report("aur-audit", "\n".join(lines), ctx)
             out.note(f"full report saved to {report}")
         except OSError as exc:
-            out.warn(f"could not write {report}: {exc}")
+            out.warn(f"could not write aur-audit report: {exc}")
     out.summary_add(f"AUR audit of {len(foreign)} package(s) written to {report}")
 
 

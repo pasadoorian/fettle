@@ -97,9 +97,50 @@ def _unique(directory: Path, name: str, ts: str) -> Path:
     return path
 
 
+# report basenames that used to be written straight into $HOME (pre-0.11).
+_LEGACY_NAMES = ("aur-audit", "aur-ioc-scan", "pkg-audit", "hardening-audit",
+                 "upgrade-check", "alien-pkgs", "obsolete-pkgs")
+
+
+def maybe_legacy_note(ctx) -> None:
+    """Once ever, if pre-0.11 ``~/<name>.txt`` reports are lying around, tell the
+    user reports moved (and leave the old files untouched). A marker under the
+    base dir suppresses the note on subsequent runs."""
+    out = getattr(ctx, "output", None)
+    if out is None:
+        return
+    home = _user_home(ctx)
+    try:
+        legacy = [f"~/{n}.txt" for n in _LEGACY_NAMES if (home / f"{n}.txt").exists()]
+        legacy += [f"~/{f.name}" for f in home.glob("upgrade-check-*.txt")]
+    except OSError:
+        return
+    if not legacy:
+        return
+    base, _ = _settings(ctx)
+    marker = base / ".reports-migrated"
+    try:
+        if marker.exists():
+            return
+    except OSError:
+        return
+    sample = legacy[0] + (f" (and {len(legacy) - 1} more)" if len(legacy) > 1 else "")
+    out.note(f"reports now live under {base}/reports/<host>/ — your old "
+             f"{sample} is left as-is; delete it when you're ready")
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        os.chmod(base, 0o700)
+        marker.write_text("")
+        chown_to_user(base, getattr(ctx, "sudo_user", None))
+        chown_to_user(marker, getattr(ctx, "sudo_user", None))
+    except OSError:
+        pass
+
+
 def write_report(name: str, body: str, ctx, *, host: str = "local", now=None) -> Path:
     """Write a report to ``~/.fettle/reports/<host>/<name>-<ts>.txt`` (0600),
     chown to the invoking user, and rotate to keep the newest N of this type."""
+    maybe_legacy_note(ctx)
     directory = reports_dir(ctx, host)
     path = _unique(directory, name, _timestamp(now))
     path.write_text(body if body.endswith("\n") else body + "\n")

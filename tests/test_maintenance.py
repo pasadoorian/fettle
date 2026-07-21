@@ -38,7 +38,7 @@ def test_orphans_writes_alien_file_and_removes(tmp_path):
                   user_home=tmp_path, assume_yes=True)
     with patch("fettle.command.run", side_effect=_fake(responses, calls)):
         ArchBackend().check_foreign_orphans(ctx)
-    alien = (tmp_path / "alien-pkgs.txt").read_text()
+    alien = list((tmp_path / ".fettle/reports/local").glob("alien-pkgs-*.txt"))[0].read_text()
     assert "my-aur-pkg 2.3-4" in alien  # name AND version preserved (parity with -Qm)
     assert "brave-bin" not in alien     # excluded by name
     # assume_yes -> both orphans removed in one pacman -Rsn
