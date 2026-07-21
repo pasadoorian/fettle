@@ -42,6 +42,12 @@ class Finding:
     detail: str
 
 
+def finding_to_dict(f: "Finding") -> dict:
+    """JSON-serializable form of a Finding (severity as its name string)."""
+    return {"severity": f.severity.name, "source": f.source, "package": f.package,
+            "question": f.question, "detail": f.detail}
+
+
 class SourceProvider(abc.ABC):
     source: str = "base"
     coverage: str = ""

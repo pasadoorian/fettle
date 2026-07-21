@@ -143,7 +143,9 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
             lines = ["pkg-audit report", ""]
             lines += [f"[{f.severity.name}] [{f.source}] {f.package}: {f.detail}"
                       for f in findings] or ["no findings"]
-            report = reports.write_report("pkg-audit", "\n".join(lines), ctx)
+            from .supplychain.base import finding_to_dict
+            data = {"findings": [finding_to_dict(f) for f in findings]}
+            report = reports.write_report("pkg-audit", "\n".join(lines), ctx, data=data)
             out.note(f"full report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write pkg-audit report: {exc}")

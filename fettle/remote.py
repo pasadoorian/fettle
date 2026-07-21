@@ -103,7 +103,7 @@ def fetch_reports(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) ->
     from pathlib import Path
 
     remote_cmd = (f"cd {_REMOTE_REPORT_DIR} 2>/dev/null && "
-                  "tar cf - -- *.txt 2>/dev/null || true")
+                  "tar cf - -- *.txt *.json 2>/dev/null || true")
     try:
         proc = runner(["ssh", *ssh_args, host, remote_cmd], capture_output=True)
     except OSError:
@@ -119,7 +119,7 @@ def fetch_reports(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) ->
                 if not member.isfile():
                     continue
                 name = Path(member.name).name        # basename only
-                if not name.endswith(".txt") or name != member.name:
+                if not name.endswith((".txt", ".json")) or name != member.name:
                     continue                          # skip anything with a path
                 src = tf.extractfile(member)
                 if src is None:

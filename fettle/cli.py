@@ -486,10 +486,13 @@ def _render_upgrade_check(out: Output, result, *, user_home: Path,
 
     if host:  # the analysed host becomes the report subdir (~/.fettle/reports/<host>/)
         report = f"Upgrade check — remote host: {host}\n\n{report}"
+    import dataclasses
+    data = {**dataclasses.asdict(result), "analysed_host": host}
     ctx = SimpleNamespace(user_home=user_home, sudo_user=sudo_user,
                           config=config, output=out)
     try:
-        path = reports.write_report("upgrade-check", report, ctx, host=host or "local")
+        path = reports.write_report("upgrade-check", report, ctx,
+                                    host=host or "local", data=data)
         out.note(f"saved to {path}")
     except OSError as exc:
         out.warn(f"could not write upgrade-check report: {exc}")

@@ -392,7 +392,11 @@ class ArchBackend(PackageBackend):
         kept = [ln for ln in foreign if not matches_any(ln.split()[0], cfg.exclude_foreign)]
         if not ctx.dry_run:
             try:
-                alien = reports.write_report("alien-pkgs", "\n".join(kept), ctx)
+                data = {"packages": [{"name": p.split()[0],
+                                      "version": (p.split() + [""])[1]}
+                                     for p in kept]}
+                alien = reports.write_report("alien-pkgs", "\n".join(kept), ctx,
+                                             data=data)
                 out.note(f"foreign (AUR/manual) packages saved to {alien} "
                          "for review (vet with -A/-I)")
             except OSError as exc:

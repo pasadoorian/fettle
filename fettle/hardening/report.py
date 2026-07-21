@@ -162,6 +162,31 @@ def band_tally(reports) -> "collections.Counter":
     return collections.Counter(r.band for r in reports)
 
 
+def to_dict(reports, filt_stats, baseline, scan_stats) -> dict:
+    """Structured payload for the JSON report — the same data render() formats,
+    so the HTML dashboard can rebuild the scored table natively."""
+    from .score import BAND_ORDER
+    tally = band_tally(reports)
+    return {
+        "baseline": {
+            "name": baseline.name,
+            "notes": list(baseline.notes),
+            "criteria": {k: list(v) for k, v in baseline.criteria.items()},
+        },
+        "scan": {k: scan_stats.get(k, 0)
+                 for k in ("total", "analyzed", "static", "unreadable")},
+        "excluded": {k: filt_stats.get(k, 0)
+                     for k in ("excluded_check", "excluded_package", "excluded_path")},
+        "band_tally": {b: tally.get(b, 0) for b in BAND_ORDER},
+        "packages": [
+            {"package": r.package, "score": r.score, "band": r.band,
+             "binaries": r.binaries, "has_privileged": r.has_privileged,
+             "worst_binary": r.worst_binary, "checks": dict(r.checks)}
+            for r in reports
+        ],
+    }
+
+
 def band_summary(reports) -> str:
     """Lead with the band counts — what a reader wants first."""
     from .score import BAND_ORDER

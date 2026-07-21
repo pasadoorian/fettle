@@ -78,7 +78,14 @@ def run(ctx) -> None:
 
     if not ctx.dry_run:
         try:
-            report = reports.write_report("aur-audit", "\n".join(lines), ctx)
+            data = {
+                "packages": [{"age_days": age, "name": name, "maintainer": maint,
+                              "out_of_date": ood, "votes": votes, "flags": flags}
+                             for age, name, maint, ood, votes, flags in rows],
+                "not_found_in_aur": list(missing),
+                "maintainer_changes": list(changes),
+            }
+            report = reports.write_report("aur-audit", "\n".join(lines), ctx, data=data)
             out.note(f"full report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write aur-audit report: {exc}")

@@ -147,3 +147,20 @@ def test_render_clean_report_unchanged():
     text = "\n".join(report.render([], {"excluded_check": 0, "excluded_package": 0,
                                         "excluded_path": 0}, _BASE, _SCAN))
     assert "No deviations" in text
+
+
+# -- RJ2: structured JSON payload -------------------------------------------
+def test_to_dict_serializes_scored_packages():
+    reports = _reports(DEVS, PKGMAP, setuid=True)
+    d = report.to_dict(reports, {"excluded_check": 1, "excluded_package": 0,
+                                 "excluded_path": 0}, _BASE, _SCAN)
+    assert d["baseline"]["name"] == "arch (test)"
+    assert d["scan"]["analyzed"] == 4371
+    assert d["excluded"]["excluded_check"] == 1
+    assert d["band_tally"]["Critical"] == 1                 # xorg-server
+    pkgs = {p["package"]: p for p in d["packages"]}
+    assert pkgs["xorg-server"]["band"] == "Critical"
+    assert pkgs["xorg-server"]["has_privileged"] is True
+    assert pkgs["xorg-server"]["checks"] == {"relro": 1, "canary": 1}
+    import json
+    json.dumps(d)                                           # must be serializable

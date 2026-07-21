@@ -80,8 +80,13 @@ def test_happy_path_renders_and_saves(capsys, monkeypatch, tmp_path):
     assert "linux: kernel" in out
     assert "forum.manjaro.org" in out
     assert "web search(es)" in out
-    saved = list((tmp_path / ".fettle/reports/local").glob("upgrade-check-*.txt"))[0].read_text()
+    d = tmp_path / ".fettle/reports/local"
+    saved = list(d.glob("upgrade-check-*.txt"))[0].read_text()
     assert "Verdict: CAUTION" in saved and "Recommendation: proceed-with-care" in saved
+    import json
+    data = json.loads(list(d.glob("upgrade-check-*.json"))[0].read_text())["data"]
+    assert data["safety_verdict"] == "caution"       # Result serialized to JSON
+    assert data["recommendation"] == "proceed-with-care"
 
 
 def test_analysis_unavailable_falls_back(capsys, monkeypatch):

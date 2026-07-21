@@ -272,7 +272,9 @@ class DebianBackend(PackageBackend):
         obsolete = self._obsolete_packages(ctx)
         if not ctx.dry_run:
             try:
-                review = reports.write_report("obsolete-pkgs", "\n".join(obsolete), ctx)
+                data = {"packages": list(obsolete)}
+                review = reports.write_report("obsolete-pkgs", "\n".join(obsolete),
+                                              ctx, data=data)
                 out.note(f"obsolete/foreign packages saved to {review} for review "
                          f"({len(obsolete)} found)")
             except OSError as exc:

@@ -53,8 +53,13 @@ def test_not_found_and_report_written(tmp_path, capsys):
     results = [{"Name": "present", "Maintainer": "bob", "LastModified": time.time(), "NumVotes": 3}]
     out = _run(tmp_path, foreign=["present", "ghost"], results=results, capsys=capsys)
     assert "NOT FOUND IN AUR" in out and "ghost" in out
-    report = list((tmp_path / ".fettle/reports/local").glob("aur-audit-*.txt"))[0].read_text()
+    d = tmp_path / ".fettle/reports/local"
+    report = list(d.glob("aur-audit-*.txt"))[0].read_text()
     assert "AUR audit" in report and "present" in report
+    import json
+    data = json.loads(list(d.glob("aur-audit-*.json"))[0].read_text())["data"]
+    assert "present" in [p["name"] for p in data["packages"]]   # structured rows
+    assert "ghost" in data["not_found_in_aur"]                   # keeps the missing set
 
 
 def test_maintainer_change_section(tmp_path, capsys):

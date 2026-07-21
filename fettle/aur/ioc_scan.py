@@ -66,7 +66,11 @@ def _report(ctx, foreign, findings) -> None:
             lines = ["aur-ioc-scan report", ""]
             lines += ([f"[{f.severity.name}] [{f.source}] {f.package}: {f.detail}"
                        for f in findings] or ["no indicators matched"])
-            report = reports.write_report("aur-ioc-scan", "\n".join(lines), ctx)
+            from ..supplychain.base import finding_to_dict
+            data = {"findings": [finding_to_dict(f) for f in findings],
+                    "foreign_count": len(foreign)}
+            report = reports.write_report("aur-ioc-scan", "\n".join(lines), ctx,
+                                          data=data)
             out.note(f"report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write aur-ioc-scan report: {exc}")

@@ -54,7 +54,9 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     if not ctx.dry_run:
         try:
             body = report.render(reports, filt_stats, base, scan_stats)
-            path = freports.write_report("hardening-audit", "\n".join(body), ctx)
+            data = report.to_dict(reports, filt_stats, base, scan_stats)
+            path = freports.write_report("hardening-audit", "\n".join(body), ctx,
+                                         data=data)
             out.note(f"full per-criterion matrix saved to {path}")
         except OSError as exc:
             out.warn(f"could not write hardening-audit report: {exc}")

@@ -102,3 +102,11 @@ def test_log_json_envelope(tmp_path):
     assert env["argv"] == ["-H"] and env["exit_code"] == 0
     assert "done" in env["transcript"]
     assert oct(os.stat(d / "run-20260721-064530.json").st_mode & 0o777) == "0o600"
+
+
+def test_finding_to_dict():
+    from fettle.supplychain.base import KNOWN_BAD, Finding, Severity, finding_to_dict
+    f = Finding(Severity.CRIT, "aur", "evil-pkg", KNOWN_BAD, "matches feed X")
+    assert finding_to_dict(f) == {"severity": "CRIT", "source": "aur",
+                                  "package": "evil-pkg", "question": KNOWN_BAD,
+                                  "detail": "matches feed X"}
