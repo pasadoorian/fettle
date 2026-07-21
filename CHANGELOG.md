@@ -4,6 +4,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.9.0] — binary hardening audit
+
+- **New `hardening-audit` check (`-H` / `--hardening-audit`).** Runs `checksec`
+  over your installed executables and flags packages whose binaries were **not**
+  built with the hardening the distro says it uses — an upstream Makefile
+  clobbering `CFLAGS`, a vendored prebuilt binary, or a sloppy AUR build. It's a
+  supply-chain question, not a generic lint. Read-only, rootless, cross-distro,
+  and **opt-in** (not in the default `-a` set). Findings roll up per package and
+  save to `~/hardening-audit.txt`.
+  - The baseline is **derived from the distro's own build policy** — Arch's
+    `makepkg.conf` *plus* GCC's compiled-in `--enable-default-pie/ssp` (where PIE
+    and the stack canary actually come from), or Debian's `dpkg-buildflags` — so
+    a deviation means the package genuinely departed from how everything else was
+    built.
+  - Four always-on accuracy corrections keep it honest: non-ELF files are skipped
+    (checksec otherwise "fails" every check on a script), static Go/Rust binaries
+    are skipped, `_FORTIFY_SOURCE=No` is ignored when nothing was fortifiable, and
+    `stack_clash` is never treated as pass/fail. Detectable vs. not is documented
+    in the README.
+  - Prune the (deliberately long) default list with `[hardening]`
+    `exclude_checks` / `exclude_packages` / `exclude_paths` globs in your config;
+    fettle reports how many findings your exclude lists hid. Needs `checksec`
+    (skipped with a note if absent).
+
 ## [0.8.0] — auto-updates posture check
 
 - **New `auto-updates` check (`-x` / `--auto-updates`).** A read-only,

@@ -96,6 +96,7 @@ with a note**, so you install only what the commands you actually use need.
 | firmware | `fwupd` | `fwupd` |
 | kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
 | flatpak / snap | — | `flatpak`, `snapd` |
+| hardening audit (`-H`) | `checksec` | `checksec` |
 
 ### `pkg-audit` (package supply-chain)
 
@@ -206,6 +207,7 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/aur-audit.txt` | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/aur-ioc-scan.txt` | — |
 | `-P` | `pkg-audit` | package supply-chain audit → `~/pkg-audit.txt` | apt/flatpak/snap provenance |
+| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/hardening-audit.txt` | same, via `dpkg-buildflags` baseline |
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
@@ -220,7 +222,7 @@ update, rebuild-check, python-rebuild-check, config-drift, auto-updates,
 firmware-check, and — last, read-only — the security audits **pkg-audit** (`-P`)
 and **aur-ioc-scan** (`-I`), so a full run also reports where your packages came
 from and whether any installed AUR package matches a known-compromise feed.
-Excluded from the default set — request explicitly: `-O`, `-k`, `-A`.
+Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-H`.
 
 `auto-updates` (`-x`) is a **read-only, informational** report of whether the
 system is set up to update itself unattended — on Debian/Ubuntu whether
@@ -293,6 +295,48 @@ finding still aborts unattended — pass `--force-aur` to override; `--no-aur-pr
 (or `aur_precheck_on_update = false` in config) turns the gate off. It covers the
 `yay -Qua` upgrade set; `--devel`/`-git` rebuilds that don't bump a version stay
 covered by the yay hook and the post-update `aur-ioc-scan`.
+
+### Binary hardening audit — `-H` / `hardening-audit`
+
+`fettle -H` asks a supply-chain question the other checks don't: **were the
+installed binaries actually built with the hardening the distro says it uses?** It
+runs [`checksec`](https://github.com/slimm609/checksec) over your executables and
+compares each against a baseline *derived from the distro's own build policy* —
+not a generic wishlist. On Arch that baseline is `makepkg.conf` **plus GCC's
+compiled-in defaults** (`--enable-default-pie`/`--enable-default-ssp` supply PIE
+and the stack canary, which `makepkg.conf`'s `CFLAGS` never mention); on
+Debian/Ubuntu it's `dpkg-buildflags`. A deviation therefore means a package
+escaped the distro's build policy — an upstream Makefile clobbering `CFLAGS`, a
+vendored prebuilt binary, or a sloppy AUR build. Findings are rolled up **per
+package** and saved to `~/hardening-audit.txt`.
+
+**Scope:** every ELF executable in the standard `bin` dirs plus every setuid/setgid
+binary (paths are `realpath`-deduped so a merged-`/usr` layout isn't scanned
+twice). It needs no root. It's **opt-in** (not in the default `-a` set) because the
+list is long and mostly informational — the signal is the *outlier* (a setuid or
+network-facing binary missing RELRO/canary), not the bulk.
+
+**What it can and can't see.** checksec infers hardening from ELF structure, so:
+detectable = PIE, NX, RELRO (full/partial), stack canary, `_FORTIFY_SOURCE`
+*presence*, CET/IBT, RPATH/RUNPATH. **Not** detectable = `-fstack-clash-protection`,
+the FORTIFY *level* (2 vs 3), `-Werror=format-security`. Four accuracy corrections
+are always applied (they fix wrong data, and are *not* user-tunable): non-ELF files
+are skipped (checksec otherwise "fails" every check on a shell/Perl script); static
+Go/Rust binaries are skipped (symbol-based checks are meaningless there);
+`_FORTIFY_SOURCE=No` is ignored when nothing was fortifiable; and `stack_clash` is
+never treated as pass/fail (its "No Probes" just means the binary needed none).
+
+**Pruning the list.** The report shows *everything* by default; narrow it with an
+exclude list in your config (globs; ships empty):
+
+```toml
+[hardening]
+exclude_checks   = ["runpath"]                         # criteria you don't care about
+exclude_packages = ["mingw-w64-*", "*-linux-gnu-gcc"]  # e.g. cross-compilers
+exclude_paths    = ["/usr/lib/electron*/*"]
+```
+
+fettle tells you how many findings your own exclude lists hid.
 
 ## System supply-chain — `sys-audit`
 
@@ -613,8 +657,9 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.8.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.9.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
+| **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
 | **Package-file integrity verification** | ❌ | ✅ via `sys-audit` (paccheck / debsums) |

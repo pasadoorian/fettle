@@ -26,6 +26,15 @@
 #aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
 #aur_precheck_on_update = true   # IoC-check AUR pkgs before yay builds them; --no-aur-precheck skips
 
+# Binary hardening audit (`fettle -H` / `hardening-audit`). The report shows EVERY
+# deviation from the distro's declared build hardening by default; use these
+# exclude lists (fnmatch globs; all ship empty) to prune it to taste. The always-on
+# accuracy corrections (non-ELF/static-binary skips, etc.) are NOT tunable here.
+#[hardening]
+#exclude_checks   = ["runpath"]                          # criterion names to ignore
+#exclude_packages = ["mingw-w64-*", "*-linux-gnu-gcc"]   # package name globs
+#exclude_paths    = ["/usr/lib/electron*/*"]             # binary path globs
+
 # Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
 # STRONGLY prefer the ANTHROPIC_API_KEY env var. If you put the key here instead,
 # `chmod 600` this file — fettle does NOT refuse a world-readable config, so a 644
