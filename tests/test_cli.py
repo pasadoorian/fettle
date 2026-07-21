@@ -195,6 +195,27 @@ def test_default_set_includes_security_audits():
     assert "pkg_audit" in DEFAULT_ACTIONS and "aur_ioc_scan" in DEFAULT_ACTIONS
 
 
+def test_hardening_audit_flag_word_and_opt_in():
+    from fettle.config import DEFAULT_ACTIONS
+    assert _actions_for(["-H"]) == ["hardening_audit"]
+    assert _actions_for(["--hardening-audit"]) == ["hardening_audit"]
+    assert _actions_for(["hardening-audit"]) == ["hardening_audit"]  # bare word
+    assert "hardening_audit" not in DEFAULT_ACTIONS  # opt-in, not in -a
+
+
+def test_hardening_audit_is_read_only():
+    from fettle.cli import READ_ONLY_ACTIONS
+    assert "hardening_audit" in READ_ONLY_ACTIONS  # no sudo for a standalone -H
+
+
+def test_hardening_audit_dispatches_to_runner():
+    with patch("fettle.hardening.audit.run", return_value=None) as run:
+        main(["--distro", "arch", "-H"])
+    assert run.called
+    backend, ctx = run.call_args[0]
+    assert backend.name == "arch"
+
+
 def test_aur_gate_flags_wire_into_context():
     captured = {}
     with patch("fettle.actions.run", side_effect=lambda a, b, ctx: captured.update(ctx=ctx)):

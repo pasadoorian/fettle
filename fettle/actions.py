@@ -27,6 +27,7 @@ TITLES = {
     "aur_audit": "AUR audit",
     "aur_ioc_scan": "AUR IoC scan",
     "pkg_audit": "Package supply-chain audit",
+    "hardening_audit": "Binary hardening audit",
 }
 
 
@@ -167,7 +168,13 @@ HANDLERS = {
     # -A is the health/metrics table; -S is the installed-package IoC scan.
     "aur_audit": lambda b, c: _aur_audit(c),
     "aur_ioc_scan": lambda b, c: _aur_ioc_scan(c),
+    "hardening_audit": lambda b, c: _hardening_audit(b, c),
 }
+
+
+def _hardening_audit(backend: "PackageBackend", ctx: "Context") -> None:
+    from .hardening import audit
+    audit.run(backend, ctx)
 
 
 def _aur_audit(ctx: "Context") -> None:

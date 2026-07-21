@@ -22,7 +22,7 @@ if TYPE_CHECKING:  # imported only for type hints — keeps runtime import-free
 ALL_ACTIONS = (
     "clean", "orphans", "update", "rebuild_check", "python_rebuild_check",
     "config_drift", "firmware_check", "kernel", "aur_audit", "aur_ioc_scan",
-    "pkg_audit", "auto_updates",
+    "pkg_audit", "auto_updates", "hardening_audit",
 )
 
 

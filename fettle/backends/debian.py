@@ -59,6 +59,7 @@ class DebianBackend(PackageBackend):
     supported = {
         "clean", "orphans", "update", "only_update", "rebuild_check",
         "config_drift", "auto_updates", "firmware_check", "kernel", "pkg_audit",
+        "hardening_audit",
         # No python_rebuild_check / aur_* (Arch-only). Integrity lives in sys-audit.
     }
 

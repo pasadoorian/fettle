@@ -40,6 +40,7 @@ FLAG_ACTIONS = [
     (("-A", "--aur-audit"), "aur_audit"),
     (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
     (("-P", "--pkg-audit"), "pkg_audit"),
+    (("-H", "--hardening-audit"), "hardening_audit"),
 ]
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 
@@ -49,7 +50,7 @@ WORD_ALIASES = {"upgrade": "update"}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
-                     "auto_updates"}
+                     "auto_updates", "hardening_audit"}
 
 # The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
 # (orphan removal, kernel management) are NOT here — they must be named explicitly.
@@ -70,6 +71,7 @@ ACTION_HELP = {
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/aur-audit.txt",
     "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/aur-ioc-scan.txt",
     "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/pkg-audit.txt",
+    "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/hardening-audit.txt",
 }
 
 _EPILOG = """\
