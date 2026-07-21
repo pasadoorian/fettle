@@ -52,6 +52,11 @@ class Config:
     # exclude_packages (name globs), exclude_paths (path globs). The always-on
     # accuracy corrections are NOT tunable here (they fix wrong data, not taste).
     hardening: dict = field(default_factory=dict)
+    # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
+    # type per host to retain, default 5), dir (base dir override, default
+    # ~/.fettle), log (bool, run-log on/off — used from RP3). Reports live under
+    # <dir>/reports/<host>/, run-logs under <dir>/logs/<host>/.
+    reports: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True
