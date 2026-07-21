@@ -306,6 +306,18 @@ covered by the yay hook and the post-update `aur-ioc-scan`.
 
 ### Binary hardening audit — `-H` / `hardening-audit`
 
+**In plain terms:** when a program is compiled it can be given built-in *safety
+features* — protections that don't change what it does, but that make a bug much
+harder for an attacker to turn into a break-in. Your distro publishes a "building
+code" of features every program it ships should have. `fettle -H` is the building
+inspector: it walks every installed program and lists the ones built *without* the
+safety features their neighbours all have — and which package they came from. Most
+findings are harmless; the ones that matter are high-privilege or network-facing
+programs missing a protection. It's a "why is this one different?" signal, not a
+"you've been hacked" alarm.
+
+The rest of this section is the technical detail behind that.
+
 `fettle -H` asks a supply-chain question the other checks don't: **were the
 installed binaries actually built with the hardening the distro says it uses?** It
 runs [`checksec`](https://github.com/slimm609/checksec) over your executables and
@@ -345,6 +357,38 @@ exclude_paths    = ["/usr/lib/electron*/*"]
 ```
 
 fettle tells you how many findings your own exclude lists hid.
+
+**Reading the output.** fettle only lists *deviations* — binaries missing
+something the baseline provides — rolled up per package. A package **not** in the
+report conforms fully; a line like `xorg-server  (1)  relro=1, canary=1` reads
+*"1 binary from xorg-server is missing Full RELRO and a stack canary."* More
+criteria / higher counts on a package = more protections missing. Each criterion,
+roughly most- to least-important:
+
+| Criterion | Good value | Protects against | Missing means |
+|---|---|---|---|
+| `canary` | `Canary Found` | stack buffer overflows | no tripwire before the return address — a classic stack smash is easier |
+| `relro` | `Full RELRO` | GOT-overwrite attacks | function-pointer tables stay writable (a common exploit primitive) |
+| `pie` | `PIE Enabled` | predictable code addresses | loads at a fixed address, weakening ASLR (ROP is easier) |
+| `nx` | `NX enabled` | code injection | a writable memory page could also be executable |
+| `cfi` | `SHSTK & IBT` | ROP/JOP hijacking | no hardware shadow-stack / indirect-branch tracking |
+| `fortify_source` | `Yes` | unsafe libc calls (`strcpy`…) | no compile-time bounds checks on those wrappers |
+| `rpath` / `runpath` | `No RPATH` | malicious library loading | a baked-in library search path an attacker could plant a `.so` in |
+
+**Triage — most findings don't matter; the outlier does.** Two questions:
+
+1. **Is it a privilege boundary?** A missing canary on a setuid-root helper
+   (`sudo`, `Xorg.wrap`) or a network-facing daemon is worth a look; the same gap
+   on an offline image-conversion tool is academic.
+2. **Which protection, on untrusted input?** `canary` / `relro` / `pie` gaps on
+   something that parses untrusted data matter most. `runpath` is the mildest (a
+   hygiene smell, not a memory-safety hole) — usually the first entry in
+   `exclude_checks`.
+
+Rule of thumb: skim the report for setuid or network binaries missing **canary,
+relro, or pie**; exclude the rest. A deviation means the binary was built
+*differently from the distro norm* — it tells you where to look, not that anything
+is exploitable.
 
 ## System supply-chain — `sys-audit`
 
