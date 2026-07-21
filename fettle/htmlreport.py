@@ -86,45 +86,90 @@ def collect(base: Path) -> dict[str, dict]:
 _BANDS = ("Critical", "High", "Medium", "Low")
 
 _STYLE = """
-:root{color-scheme:light dark}
+:root{
+  --bg:#080b10;--panel:#0c121b;--panel2:#0f1722;--border:#1b2a3a;
+  --fg:#c6d3e2;--dim:#5a6b7d;--green:#4ade80;--amber:#e3b341;
+  --red:#ff6b6b;--cyan:#4dd0e1;--yellow:#f2cc60;
+  --mono:ui-monospace,"JetBrains Mono","Cascadia Code","Fira Code","DejaVu Sans Mono",Menlo,Consolas,monospace;
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;
-  background:#f4f5f7;color:#1a1a1a;line-height:1.45}
-header{background:#1f2933;color:#fff;padding:1.1rem 1.5rem}
-header h1{margin:0;font-size:1.4rem}
-.meta{color:#c3ccd6;font-size:.82rem;margin-top:.2rem}
-.controls{margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap}
-.controls input,.controls select{padding:.35rem .5rem;border-radius:6px;border:1px solid #3a4653;
-  background:#2b3742;color:#fff;font-size:.85rem}
-main{padding:1.2rem 1.5rem;max-width:1100px;margin:0 auto}
-.dashboard{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-bottom:1.4rem}
-.card{background:#fff;border:1px solid #dde1e6;border-radius:10px;padding:.8rem .9rem}
-.card h3{margin:0 0 .4rem;font-size:1rem}
-.chips{display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0}
-.chip{font-size:.72rem;padding:.1rem .45rem;border-radius:999px;color:#fff;font-weight:600}
-.count{font-size:.78rem;color:#556}
-.b-Critical{background:#b00020}.b-High{background:#e65100}.b-Medium{background:#c79100}.b-Low{background:#2e7d32}
-section.host{background:#fff;border:1px solid #dde1e6;border-radius:10px;margin:1rem 0;overflow:hidden}
-section.host>h2{margin:0;padding:.7rem 1rem;background:#eef1f4;font-size:1.1rem}
-.group{padding:.3rem 1rem 1rem}
-.group h3{margin:.9rem 0 .4rem;font-size:.95rem;color:#334}
-details{border:1px solid #e6e9ed;border-radius:8px;margin:.35rem 0;background:#fbfbfc}
-summary{cursor:pointer;padding:.45rem .7rem;font-size:.86rem;display:flex;gap:.6rem;align-items:center}
+html{color-scheme:dark}
+body{font-family:var(--mono);margin:0;background:var(--bg);color:var(--fg);
+  font-size:14px;line-height:1.5;letter-spacing:.2px}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.16) 2px 3px);
+  mix-blend-mode:multiply;opacity:.5}
+header{background:linear-gradient(180deg,#0c131d,#0a0f16);border-bottom:1px solid var(--border);padding:0 0 .9rem}
+.titlebar{display:flex;align-items:center;gap:.45rem;padding:.5rem .9rem;
+  border-bottom:1px solid var(--border);background:#0a0f16}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.d-r{background:#ff5f56}.d-y{background:#ffbd2e}.d-g{background:#27c93f}
+.tb-title{margin-left:.6rem;color:var(--dim);font-size:.8rem}
+.prompt-line{font-size:1.05rem;white-space:nowrap;overflow-x:auto;padding:.9rem 1.1rem 0}
+.user,.host{color:var(--green)}.cwd{color:var(--cyan)}.sep,.dollar{color:var(--dim)}
+.cmd{color:var(--fg);text-shadow:0 0 8px rgba(74,222,128,.25)}
+.cursor{display:inline-block;width:.6em;height:1.05em;background:var(--green);
+  margin-left:.15em;vertical-align:-.15em;animation:blink 1.1s steps(1) infinite;
+  box-shadow:0 0 8px rgba(74,222,128,.6)}
+@keyframes blink{50%{opacity:0}}
+.meta{color:var(--dim);font-size:.82rem;margin:.5rem 0 0;padding:0 1.1rem}
+.controls{margin:.7rem 0 0;padding:0 1.1rem;display:flex;gap:.5rem;flex-wrap:wrap}
+.controls input,.controls select{font-family:var(--mono);padding:.35rem .55rem;border-radius:4px;
+  border:1px solid var(--border);background:#0a0f16;color:var(--fg);font-size:.82rem}
+.controls input:focus,.controls select:focus{outline:none;border-color:var(--green);
+  box-shadow:0 0 0 1px rgba(74,222,128,.3)}
+main{padding:1.3rem 1.1rem;max-width:1180px;margin:0 auto}
+.dashboard{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.8rem;margin-bottom:1.6rem}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.7rem .85rem}
+.card::before{content:"● ";color:var(--green)}
+.card h3{display:inline;margin:0;font-size:.98rem;color:var(--fg)}
+.chips{display:flex;gap:.35rem;flex-wrap:wrap;margin:.5rem 0 .35rem}
+.chip{font-size:.72rem;padding:.06rem .4rem;border-radius:3px;border:1px solid;font-weight:600}
+.chip::before{content:"["}.chip::after{content:"]"}
+.count{font-size:.76rem;color:var(--dim)}
+.b-Critical{color:var(--red);border-color:var(--red)}
+.b-High{color:var(--amber);border-color:var(--amber)}
+.b-Medium{color:var(--yellow);border-color:var(--yellow)}
+.b-Low{color:var(--green);border-color:var(--green)}
+section.host{background:var(--panel);border:1px solid var(--border);border-radius:6px;margin:1rem 0;overflow:hidden}
+section.host>h2{margin:0;padding:.6rem .9rem;background:var(--panel2);font-size:1.02rem;
+  border-bottom:1px solid var(--border);color:var(--green)}
+section.host>h2::before{content:"\\25b8  ";color:var(--dim)}
+.group{padding:.2rem .9rem .9rem}
+.group h3{margin:.9rem 0 .35rem;font-size:.9rem;color:var(--cyan)}
+.group h3::before{content:"## ";color:var(--dim)}
+details{border:1px solid var(--border);border-radius:4px;margin:.35rem 0;background:#0a0f16}
+details[open]{border-color:#26384b}
+summary{cursor:pointer;padding:.4rem .65rem;font-size:.84rem;display:flex;gap:.6rem;align-items:center;list-style:none}
 summary::-webkit-details-marker{display:none}
-.when{color:#667;font-variant-numeric:tabular-nums}
-.badge{font-size:.72rem;padding:.06rem .4rem;border-radius:5px;color:#fff;font-weight:600}
-.body{padding:.2rem .7rem .7rem}
+summary::before{content:"$ ";color:var(--dim)}
+summary:hover{background:#0d141e}
+.when{color:var(--dim);font-variant-numeric:tabular-nums}
+.badge,.pill{font-family:var(--mono);font-size:.72rem;font-weight:600;padding:.05rem .35rem;border-radius:3px;border:1px solid}
+.badge::before,.pill::before{content:"["}.badge::after,.pill::after{content:"]"}
+.badge{color:var(--fg)}
+.body{padding:.3rem .7rem .75rem}
 table{border-collapse:collapse;width:100%;font-size:.8rem}
-th,td{text-align:left;padding:.25rem .5rem;border-bottom:1px solid #eee}
-th{color:#556;font-weight:600}
+th,td{text-align:left;padding:.28rem .55rem;border-bottom:1px solid #14212e}
+th{color:var(--dim);font-weight:600;text-transform:lowercase}
+tr:hover td{background:#0d141e}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
-.pill{display:inline-block;min-width:4.5rem;text-align:center;border-radius:5px;color:#fff;font-size:.72rem;padding:.05rem .3rem}
-.sev-CRIT{background:#b00020}.sev-WARN{background:#c79100}.sev-LOW{background:#2f6fb0}.sev-INFO{background:#77808a}
-.v-safe{background:#2e7d32}.v-caution{background:#c79100}.v-risky{background:#b00020}
-ul.k{margin:.3rem 0;padding-left:1.1rem}
-pre{background:#f6f7f9;padding:.6rem;border-radius:6px;overflow-x:auto;font-size:.78rem;max-height:26rem}
-.muted{color:#778}
+.pill{display:inline-block;text-align:center;background:transparent}
+.sev-CRIT{color:var(--red);border-color:var(--red)}
+.sev-WARN{color:var(--amber);border-color:var(--amber)}
+.sev-LOW{color:var(--cyan);border-color:var(--cyan)}
+.sev-INFO{color:var(--dim);border-color:var(--dim)}
+.v-safe{color:var(--green);border-color:var(--green)}
+.v-caution{color:var(--amber);border-color:var(--amber)}
+.v-risky{color:var(--red);border-color:var(--red)}
+ul.k{margin:.35rem 0;padding-left:1.2rem}
+ul.k li::marker{content:"\\203a  ";color:var(--green)}
+strong{color:var(--fg)}
+pre{background:#070a0e;border:1px solid var(--border);padding:.6rem;border-radius:4px;
+  overflow-x:auto;font-size:.78rem;max-height:26rem;color:#a9bccf}
+.muted{color:var(--dim)}
 .hidden{display:none}
+::selection{background:rgba(74,222,128,.25)}
 """
 
 _SCRIPT = """
@@ -148,6 +193,14 @@ function apply(){
 }
 [q,hf,tf].forEach(el=>el.addEventListener('input',apply));
 """
+
+
+def _current_user() -> str:
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:  # pragma: no cover - getpass can fail without a passwd entry
+        return "you"
 
 
 def _fmt_ts(ts: str) -> str:
@@ -321,7 +374,7 @@ def _host_summary(host: dict) -> str:
             f'<div class="count muted">latest: {_esc(_fmt_ts(latest)) or "—"}</div>')
 
 
-def render(hostmap: dict, *, generated_at: str, version: str) -> str:
+def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you") -> str:
     hosts = sorted(hostmap)
     all_types = sorted({e.get("tool", "?")
                         for h in hostmap.values() for e in h["reports"]})
@@ -368,10 +421,11 @@ def render(hostmap: dict, *, generated_at: str, version: str) -> str:
 </head>
 <body>
 <header>
-<h1>fettle report</h1>
-<div class="meta">generated {_esc(generated_at)} · fettle {_esc(version)} · {len(hosts)} host(s)</div>
+<div class="titlebar"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span><span class="tb-title">— ~/.fettle/report.html —</span></div>
+<div class="prompt-line"><span class="user">{_esc(user)}</span><span class="sep">@</span><span class="host">fettle</span><span class="sep">:</span><span class="cwd">~/.fettle</span><span class="dollar">$</span> <span class="cmd">fettle report</span><span class="cursor"></span></div>
+<div class="meta"># generated {_esc(generated_at)} · fettle v{_esc(version)} · {len(hosts)} host(s)</div>
 <div class="controls">
-<input id="q" type="search" placeholder="search…">
+<input id="q" type="search" placeholder="grep…">
 <select id="hostf"><option value="">all hosts</option>{host_opts}</select>
 <select id="typef"><option value="">all types</option>{type_opts}</select>
 </div>
@@ -395,9 +449,11 @@ def build(ctx, *, open_browser: bool = False, now=None) -> Path:
     base, _ = _reports._settings(ctx)
     hostmap = collect(base)
     generated = (now or _dt.datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+    user = getattr(ctx, "sudo_user", None) or _current_user()
     out_path = base / "report.html"
     base.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render(hostmap, generated_at=generated, version=__version__))
+    out_path.write_text(render(hostmap, generated_at=generated,
+                               version=__version__, user=user))
     try:
         out_path.chmod(0o600)
     except OSError:
