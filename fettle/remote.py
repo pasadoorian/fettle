@@ -85,6 +85,57 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     return runner(ssh_cmd).returncode
 
 
+# where a remote fettle writes its own reports (tagged `local` from its POV)
+_REMOTE_REPORT_DIR = "~/.fettle/reports/local"
+
+
+def fetch_reports(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) -> list[str]:
+    """Copy the remote's reports into ``dest_dir`` and return the basenames pulled.
+
+    Streams them as a tar over the *same* ssh (so ``--ssh-arg`` options apply
+    verbatim — scp's flags differ, e.g. ``-p``/``-P``). A missing dir or no reports
+    yields an empty tar → ``[]``; never raises. Extraction is basename-only (no
+    path traversal) and each file is written ``0600``.
+    """
+    import io
+    import os
+    import tarfile
+    from pathlib import Path
+
+    remote_cmd = (f"cd {_REMOTE_REPORT_DIR} 2>/dev/null && "
+                  "tar cf - -- *.txt 2>/dev/null || true")
+    try:
+        proc = runner(["ssh", *ssh_args, host, remote_cmd], capture_output=True)
+    except OSError:
+        return []
+    data = getattr(proc, "stdout", b"") or b""
+    if not data:
+        return []
+    dest = Path(dest_dir)
+    fetched: list[str] = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                name = Path(member.name).name        # basename only
+                if not name.endswith(".txt") or name != member.name:
+                    continue                          # skip anything with a path
+                src = tf.extractfile(member)
+                if src is None:
+                    continue
+                out = dest / name
+                out.write_bytes(src.read())
+                try:
+                    os.chmod(out, 0o600)
+                except OSError:
+                    pass
+                fetched.append(name)
+    except (tarfile.TarError, OSError):
+        pass
+    return fetched
+
+
 def collect(host: str, fettle_args, *, ssh_args=(), runner=subprocess.run) -> str | None:
     """Run ``fettle_args`` on ``host`` and return its captured stdout, or ``None``
     on failure. Rootless, no PTY — for ``upgrade-check --collect``, where the

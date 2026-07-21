@@ -154,3 +154,14 @@ def test_no_legacy_note_without_old_reports(tmp_path):
     ctx = SimpleNamespace(user_home=tmp_path, sudo_user=None, config=Config(), output=out)
     reports.write_report("pkg-audit", "x", ctx, now=_at())
     assert not any("reports now live" in n for n in out.notes)
+
+
+def test_prune_known_rotates_every_report_type(tmp_path):
+    d = tmp_path / ".fettle/reports/foo"
+    d.mkdir(parents=True)
+    for base in ("hardening-audit", "pkg-audit"):
+        for i in range(7):
+            (d / f"{base}-2026072{i}-000000.txt").write_text(str(i))
+    reports.prune_known(d, 5)
+    assert len(list(d.glob("hardening-audit-*.txt"))) == 5
+    assert len(list(d.glob("pkg-audit-*.txt"))) == 5

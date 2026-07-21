@@ -154,6 +154,13 @@ def write_report(name: str, body: str, ctx, *, host: str = "local", now=None) ->
     return path
 
 
+def prune_known(directory: Path, keep: int) -> None:
+    """Rotate every known report type in ``directory`` to the newest ``keep``.
+    Used after pulling a batch of reports back from a remote host."""
+    for name in _LEGACY_NAMES:
+        prune(directory, name, keep)
+
+
 def prune(directory: Path, name: str, keep: int) -> list[Path]:
     """Delete all but the newest ``keep`` ``<name>-<timestamp>.txt`` files.
 

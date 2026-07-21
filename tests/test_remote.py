@@ -294,3 +294,67 @@ def test_remote_maintenance_ssh_arg_passthrough():
     (_, fettle_args), kw = run.call_args
     assert kw["ssh_args"] == ["-oConnectTimeout=5"]
     assert fettle_args == ["-a"]
+
+
+# -- RP-remote: fetch reports back to the controller -------------------------
+def _tar_of(files: dict) -> bytes:
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        for name, body in files.items():
+            data = body.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def test_fetch_reports_extracts_and_sets_perms(tmp_path):
+    import os
+    tar = _tar_of({"hardening-audit-20260721-010101.txt": "h",
+                   "pkg-audit-20260721-010101.txt": "p"})
+    rec = _Rec(stdouts={"ssh": tar})
+    names = remote.fetch_reports("foo", tmp_path, runner=rec)
+    assert set(names) == {"hardening-audit-20260721-010101.txt",
+                          "pkg-audit-20260721-010101.txt"}
+    ssh = next(c for c in rec.calls if c[0] == "ssh")
+    assert "tar cf -" in ssh[-1] and "~/.fettle/reports/local" in ssh[-1]
+    got = tmp_path / "hardening-audit-20260721-010101.txt"
+    assert got.read_text() == "h"
+    assert oct(os.stat(got).st_mode & 0o777) == "0o600"
+
+
+def test_fetch_reports_empty_tar_returns_nothing(tmp_path):
+    rec = _Rec(stdouts={"ssh": b""})     # no reports on the remote
+    assert remote.fetch_reports("foo", tmp_path, runner=rec) == []
+
+
+def test_fetch_reports_rejects_path_traversal(tmp_path):
+    # a hostile tar member with a path must not escape dest_dir
+    tar = _tar_of({"../evil.txt": "x", "sub/nested.txt": "y",
+                   "ok-20260721-010101.txt": "z"})
+    names = remote.fetch_reports("foo", tmp_path, runner=_Rec(stdouts={"ssh": tar}))
+    assert names == ["ok-20260721-010101.txt"]           # only the safe basename
+    assert not (tmp_path.parent / "evil.txt").exists()
+    assert not (tmp_path / "sub").exists()
+
+
+def test_fetch_reports_ssh_failure_is_graceful(tmp_path):
+    def boom(cmd, *a, **k):
+        raise OSError("ssh missing")
+    assert remote.fetch_reports("foo", tmp_path, runner=boom) == []
+
+
+def test_remote_maintenance_fetches_after_run_not_on_dry_run():
+    # non-dry-run -> fetch-back invoked with the host + ssh args
+    with patch("fettle.remote.run", return_value=0), \
+         patch("fettle.cli._fetch_remote_reports") as fetch:
+        cli_main(["remote", "--ssh-arg", "-p2222", "web", "-c"])
+    fetch.assert_called_once()
+    assert fetch.call_args[0][0] == "web" and fetch.call_args[0][1] == ["-p2222"]
+
+    with patch("fettle.remote.run", return_value=0), \
+         patch("fettle.cli._fetch_remote_reports") as fetch:
+        cli_main(["remote", "host", "-c", "--dry-run"])
+    fetch.assert_not_called()                            # dry-run writes nothing remote

@@ -344,8 +344,36 @@ def _run_remote_maintenance(argv: list[str]) -> int:
     # dry-run needs neither sudo nor a PTY; --yes is fully unattended (no PTY).
     dry_run = "--dry-run" in forwarded
     unattended = "--yes" in forwarded
-    return remote.run(host, forwarded, sudo=not dry_run,
-                      ssh_args=ssh_args, tty=not unattended)
+    rc = remote.run(host, forwarded, sudo=not dry_run,
+                    ssh_args=ssh_args, tty=not unattended)
+    if not dry_run:  # pull any reports the remote wrote back under reports/<host>/
+        _fetch_remote_reports(host, ssh_args)
+    return rc
+
+
+def _fetch_remote_reports(host: str, ssh_args) -> None:
+    """Copy reports the remote run produced into ~/.fettle/reports/<host>/ and
+    rotate them per the controller's keep. Best-effort — never fails the run."""
+    if _in_test():  # don't spawn a real ssh under pytest
+        return
+    from types import SimpleNamespace
+
+    from . import remote, reports
+    from .config import load
+    try:
+        cfg, _ = load(DEFAULT_CONFIG)
+    except Exception:
+        cfg = None
+    ctxlike = SimpleNamespace(user_home=Path.home(), sudo_user=None, config=cfg)
+    try:
+        dest = reports.reports_dir(ctxlike, host)
+        names = remote.fetch_reports(host, dest, ssh_args=ssh_args)
+        if names:
+            _, keep = reports._settings(ctxlike)
+            reports.prune_known(dest, keep)
+            print(f"Fetched {len(set(names))} report(s) from {host} into {dest}")
+    except Exception:  # pragma: no cover - fetch-back must never break a run
+        pass
 
 
 def _run_upgrade_check(argv: list[str]) -> int:
