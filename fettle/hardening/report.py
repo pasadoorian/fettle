@@ -63,23 +63,35 @@ class PackageReport:
     package: str
     checks: dict[str, int] = field(default_factory=dict)   # criterion -> count
     binaries: int = 0
+    score: float = 0.0            # the package's WORST binary's score (its rank)
+    total_score: float = 0.0      # sum across binaries (tiebreak)
+    band: str = "Low"
+    worst_binary: str = ""        # path of the highest-scoring binary
+    has_privileged: bool = False  # any setuid/setgid or sensitive-pkg binary
 
     @property
     def total(self) -> int:
         return sum(self.checks.values())
 
 
-def apply(deviations, pkgmap, excl: Exclusions):
-    """Attribute, filter, and roll up. Returns ``(package_reports, stats)``.
+def apply(deviations, pkgmap, excl: Exclusions, scorer=None):
+    """Attribute, filter, score, and roll up. Returns ``(package_reports, stats)``.
 
-    ``package_reports`` is a list of :class:`PackageReport` sorted by deviation
-    count (desc), then name. ``stats`` records how many deviations each exclude
-    rule dropped, so the run can tell the user what its own config hid.
+    Each *binary's* score is the weighted sum of the protections it's missing
+    (see :mod:`.score`); a package's rank is its **worst** binary's score, so the
+    single most-vulnerable binary floats its package to the top even though rows
+    are per-package. ``stats`` records how many deviations each exclude rule
+    dropped, so the run can tell the user what its own config hid.
     """
+    from .score import Scorer, band
+    scorer = scorer or Scorer()
+
     stats = {"input": 0, "excluded_check": 0, "excluded_package": 0,
              "excluded_path": 0, "kept": 0}
     per_pkg: dict[str, PackageReport] = {}
     per_pkg_bins: dict[str, set] = {}
+    bin_checks: dict[str, set] = {}   # path -> missing checks (kept only)
+    bin_pkg: dict[str, str] = {}
 
     for dev in deviations:
         stats["input"] += 1
@@ -97,10 +109,26 @@ def apply(deviations, pkgmap, excl: Exclusions):
         rep = per_pkg.setdefault(pkg, PackageReport(package=pkg))
         rep.checks[dev.check] = rep.checks.get(dev.check, 0) + 1
         per_pkg_bins.setdefault(pkg, set()).add(dev.path)
+        bin_checks.setdefault(dev.path, set()).add(dev.check)
+        bin_pkg[dev.path] = pkg
+
+    # score every affected binary, roll the worst/sum up to its package
+    for path, checks in bin_checks.items():
+        pkg = bin_pkg[path]
+        rep = per_pkg[pkg]
+        privileged = scorer.is_privileged(path, pkg)
+        s = scorer.binary_score(checks, privileged=privileged)
+        rep.total_score = round(rep.total_score + s, 2)
+        if s > rep.score:
+            rep.score, rep.worst_binary = s, path
+        if privileged:
+            rep.has_privileged = True
 
     for pkg, rep in per_pkg.items():
         rep.binaries = len(per_pkg_bins[pkg])
-    reports = sorted(per_pkg.values(), key=lambda r: (-r.total, r.package))
+        rep.band = band(rep.score)
+    reports = sorted(per_pkg.values(),
+                     key=lambda r: (-r.score, -r.total_score, r.package))
     return reports, stats
 
 

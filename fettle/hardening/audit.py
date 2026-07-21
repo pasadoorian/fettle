@@ -11,7 +11,7 @@ from .. import command
 from ..backends.base import Context, PackageBackend, Result
 from ..util import chown_to_user
 from . import baseline as bl
-from . import engine, report
+from . import engine, report, score
 
 
 def run(backend: PackageBackend, ctx: Context) -> Result:
@@ -34,7 +34,8 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
 
     pkgmap = backend.map_files_to_packages({d.path for d in deviations})
     excl = report.exclusions(ctx.config)
-    reports, filt_stats = report.apply(deviations, pkgmap, excl)
+    scorer = score.Scorer.from_config(ctx.config)
+    reports, filt_stats = report.apply(deviations, pkgmap, excl, scorer)
 
     if not reports:
         out.ok("no hardening deviations from the distro baseline.")
