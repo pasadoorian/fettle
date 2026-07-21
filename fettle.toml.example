@@ -58,6 +58,7 @@
 #keep = 5                # how many of each report/log to keep per host
 #dir = "~/.fettle"       # base dir override (reports/ and logs/ live under it)
 #log = true              # record a per-run transcript (false disables the run-log)
+#json = true             # write a .json sibling per report/log (feeds `fettle report`)
 
 # Per-distro tool selection (schema finalized as each backend lands). Example:
 #[updaters.arch]

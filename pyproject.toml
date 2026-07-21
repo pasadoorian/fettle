@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fettle"
-version = "0.11.0"
+version = "0.12.0"
 description = "Cross-distribution Linux system-maintenance and supply-chain tool"
 readme = "README.md"
 license = { text = "MIT" }

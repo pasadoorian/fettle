@@ -626,6 +626,32 @@ there's no terminal to record, so the log captures fettle's own output only.
 > The one-time re-exec is transparent, but if you're debugging startup or wrapping
 > fettle in another tool and want it off, set `log = false` under `[reports]`.
 
+**JSON siblings.** Every report and log is also written as a structured
+`<name>-<timestamp>.json` beside the `.txt` — a `{schema, tool, host, timestamp,
+fettle_version, data}` envelope whose `data` is the real structure (scored
+hardening packages, findings with severity, the upgrade-check result, package
+lists, log transcript). Same `0600`, rotated as a unit with the `.txt`. Turn it off
+with `json = false` under `[reports]`.
+
+### HTML report — `fettle report` *(beta)*
+
+`fettle report` regenerates a single self-contained **`~/.fettle/report.html`**
+(`0600`) from all the stored JSON, across **every host**: a per-host summary card
+row (latest hardening band tally, per-type counts, latest run), collapsible
+sections grouped by report type with native rendering — scored hardening tables,
+severity-coloured findings, upgrade verdicts, package lists, log transcripts — and
+a host/type/text filter. Pure stdlib, no external assets, nothing served.
+
+```sh
+fettle report                 # (re)build ~/.fettle/report.html
+fettle report --open          # …and open it in a browser
+fettle report --backfill-json # one-off: give pre-0.12 .txt reports a JSON sibling first
+```
+
+> **This is an initial (beta) revision** — the layout and contents will evolve.
+> It reads whatever JSON is currently retained (the `keep` window), so run it after
+> your scans; for older text-only reports, run `--backfill-json` once.
+
 ## Previewing an upgrade
 
 `fettle -u --dry-run` resolves and lists **every package the upgrade would
@@ -750,7 +776,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.11.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.12.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |

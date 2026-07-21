@@ -4,6 +4,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.12.0] — machine-readable JSON output; HTML report (beta)
+
+- **Every report and run-log now has a structured `.json` sibling.** Alongside the
+  `.txt`, fettle writes `<name>-<ts>.json` under `~/.fettle/{reports,logs}/<host>/`
+  — a `{schema, tool, host, timestamp, fettle_version, data}` envelope whose `data`
+  is the real structure the report was built from (scored hardening packages,
+  supply-chain findings with severity, the upgrade-check result, package lists, log
+  transcript + argv/exit). Same `0600`, same rotation (txt+json rotate as a unit).
+  Toggle with `[reports] json = false`.
+- **`fettle report` — an HTML dashboard (BETA, initial revision).** Regenerates a
+  single self-contained `~/.fettle/report.html` (`0600`) from all stored JSON,
+  across every host: a per-host summary card row (latest hardening band tally,
+  per-type counts, latest run), collapsible sections grouped by report type with
+  native rendering (scored hardening tables, severity-coloured findings, upgrade
+  verdicts, package lists, log transcripts), and a host/type/text filter. Pure
+  stdlib, no external assets. `fettle report --open` opens it in a browser.
+  *This is a first cut — the layout and contents will evolve; feedback welcome.*
+- **`fettle report --backfill-json`** — one-off converter that gives pre-0.12
+  `.txt` reports/logs a JSON sibling (idempotent, non-destructive) so the dashboard
+  is populated without re-scanning.
+- Remote report fetch-back now pulls the `.json` siblings too.
+
 ## [0.11.0] — reports moved to ~/.fettle, timestamped & rotated; run logs
 
 - **Reports no longer clutter `$HOME`.** Every report (`aur-audit`, `pkg-audit`,
