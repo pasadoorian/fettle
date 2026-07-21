@@ -134,16 +134,18 @@ main{padding:1.3rem 1.1rem;max-width:1180px;margin:0 auto}
 section.host{background:var(--panel);border:1px solid var(--border);border-radius:6px;margin:1rem 0;overflow:hidden}
 section.host>h2{margin:0;padding:.6rem .9rem;background:var(--panel2);font-size:1.02rem;
   border-bottom:1px solid var(--border);color:var(--green)}
-section.host>h2::before{content:"\\25b8  ";color:var(--dim)}
+section.host>h2::before{content:"# ";color:var(--dim)}
 .group{padding:.2rem .9rem .9rem}
 .group h3{margin:.9rem 0 .35rem;font-size:.9rem;color:var(--cyan)}
 .group h3::before{content:"## ";color:var(--dim)}
 details{border:1px solid var(--border);border-radius:4px;margin:.35rem 0;background:#0a0f16}
 details[open]{border-color:#26384b}
-summary{cursor:pointer;padding:.4rem .65rem;font-size:.84rem;display:flex;gap:.6rem;align-items:center;list-style:none}
+summary{cursor:pointer;padding:.4rem .65rem;font-size:.84rem;display:flex;gap:.55rem;align-items:center;list-style:none}
 summary::-webkit-details-marker{display:none}
-summary::before{content:"$ ";color:var(--dim)}
+summary::before{content:"[+]";color:var(--green);font-weight:700;flex:none}
+details[open]>summary::before{content:"[-]";color:var(--amber)}
 summary:hover{background:#0d141e}
+summary:hover::before{text-shadow:0 0 8px currentColor}
 .when{color:var(--dim);font-variant-numeric:tabular-nums}
 .badge,.pill{font-family:var(--mono);font-size:.72rem;font-weight:600;padding:.05rem .35rem;border-radius:3px;border:1px solid}
 .badge::before,.pill::before{content:"["}.badge::after,.pill::after{content:"]"}
