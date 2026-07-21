@@ -98,6 +98,14 @@ with a note**, so you install only what the commands you actually use need.
 | flatpak / snap | — | `flatpak`, `snapd` |
 | hardening audit (`-H`) | `checksec` | `checksec` |
 
+Every tool above is optional and its check is skipped with a note when absent.
+The one you likely need to install is **`checksec`** for the hardening audit:
+
+```sh
+sudo pacman -S checksec      # Arch / Manjaro
+sudo apt install checksec    # Debian / Ubuntu
+```
+
 ### `pkg-audit` (package supply-chain)
 
 Nothing extra is *required* — the AUR audit uses only `pacman` + the network, and
