@@ -4,6 +4,26 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.11.0] — reports moved to ~/.fettle, timestamped & rotated; run logs
+
+- **Reports no longer clutter `$HOME`.** Every report (`aur-audit`, `pkg-audit`,
+  `aur-ioc-scan`, `hardening-audit`, `upgrade-check`, the orphans list) now lands
+  under **`~/.fettle/reports/<host>/`**, **timestamped** (so runs don't clobber
+  each other), **`chmod 0600`** (they name your packages and can hold system
+  detail), and **rotated** to the newest `keep` (default 5) *per host, per report
+  type*. `<host>` is `local` locally, or the target hostname for `fettle remote
+  <host> …`, so each machine keeps its own history. Pre-0.11 `~/*.txt` reports are
+  left untouched; fettle notes the move once.
+- **Every run is recorded to a transcript** under `~/.fettle/logs/<host>/run-<ts>.txt`
+  (same `0600` + rotation). On an interactive terminal fettle captures the whole
+  session — its own output **and** every tool it runs — `script(1)`-style, by
+  re-execing once under a pseudo-terminal so the run happens on a real tty and
+  colours / `sudo` / PKGBUILD prompts are unaffected. Logs are ANSI-stripped;
+  non-interactive runs record fettle's own output only.
+- **New `[reports]` config:** `keep` (retention per host+type, default 5), `dir`
+  (base-dir override, default `~/.fettle`), `log` (set `false` to disable the
+  run-log).
+
 ## [0.10.0] — scored, ranked hardening audit
 
 - **`hardening-audit` output is now scored and ranked.** Each binary gets a risk

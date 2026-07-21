@@ -51,6 +51,14 @@
 #ai_max_web_searches = 5       # cap forum searches per run (bounds tokens/cost)
 #ai_api_key = "sk-ant-..."     # optional; never printed in full by --print-config
 
+# Reports & run logs. Reports go to ~/.fettle/reports/<host>/, per-run transcripts
+# to ~/.fettle/logs/<host>/ — timestamped, 0600, and rotated to the newest `keep`
+# per host + type. <host> is `local` locally or the target of `fettle remote <host>`.
+#[reports]
+#keep = 5                # how many of each report/log to keep per host
+#dir = "~/.fettle"       # base dir override (reports/ and logs/ live under it)
+#log = true              # record a per-run transcript (false disables the run-log)
+
 # Per-distro tool selection (schema finalized as each backend lands). Example:
 #[updaters.arch]
 #system_updater = "pacman"   # pacman | pamac

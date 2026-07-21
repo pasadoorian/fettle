@@ -188,8 +188,8 @@ fettle -c -u               # clean, then upgrade packages (short flags)
 fettle clean update        # identical — every action also works as a bare word
 fettle upgrade             # `upgrade` is a synonym for `update`
 fettle -O                  # refresh metadata + report upgradable (no upgrade; safe)
-fettle -A                  # AUR health audit  -> ~/aur-audit.txt
-fettle -P                  # package supply-chain audit -> ~/pkg-audit.txt
+fettle -A                  # AUR health audit  -> ~/.fettle/reports/
+fettle -P                  # package supply-chain audit -> ~/.fettle/reports/
 fettle -S                  # full security scan (sys-audit --all; self-elevates)
 fettle -U                  # AI: is this upgrade safe? [experimental] (needs API key)
 ```
@@ -203,7 +203,7 @@ Anything a distro's backend doesn't support is skipped with a note.
 | Flag | Action | Arch | Debian |
 |---|---|---|---|
 | `-c` | `clean` | pacman + pamac/yay caches (**asks first**; `--yes` skips) | `apt-get clean`/`autoclean`, unused flatpaks, disabled snap revisions (**asks first**) |
-| `-o` | `orphans` | foreign pkgs → `~/alien-pkgs.txt`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/obsolete-pkgs.txt`; `deborphan` + `autoremove` |
+| `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` |
 | `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap |
 | `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable |
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) |
@@ -212,10 +212,10 @@ Anything a distro's backend doesn't support is skipped with a note.
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) |
-| `-A` | `aur-audit` *(arch)* | AUR health table → `~/aur-audit.txt` | — |
-| `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/aur-ioc-scan.txt` | — |
-| `-P` | `pkg-audit` | package supply-chain audit → `~/pkg-audit.txt` | apt/flatpak/snap provenance |
-| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/hardening-audit.txt` | same, via `dpkg-buildflags` baseline |
+| `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — |
+| `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — |
+| `-P` | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance |
+| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline |
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
@@ -255,9 +255,9 @@ answers a different question.**
 
 | Command | What it answers | Use it when | Output |
 |---|---|---|---|
-| `fettle -P` / `pkg-audit` | Across **all** ecosystems (AUR/APT/Flatpak/Snap): where did my installed software come from, and has it been tampered with? | you want one whole-system supply-chain report | findings → `~/pkg-audit.txt` |
-| `fettle -A` / `aur-audit` *(arch)* | AUR **health census**: age, votes, out-of-date, orphan, recently-changed, maintainer-change (re-adoption tell) | you want to vet how well-maintained your AUR pkgs are | table → `~/aur-audit.txt` |
-| `fettle -I` / `aur-ioc-scan` *(arch)* | AUR **threat sweep**: do any installed AUR pkgs match known-compromise feeds (bad package names, malicious maintainers, malicious JS-cache traces)? | you want a known-compromise check (lenucksi IoC feed) | findings → `~/aur-ioc-scan.txt` |
+| `fettle -P` / `pkg-audit` | Across **all** ecosystems (AUR/APT/Flatpak/Snap): where did my installed software come from, and has it been tampered with? | you want one whole-system supply-chain report | findings → `~/.fettle/reports/` |
+| `fettle -A` / `aur-audit` *(arch)* | AUR **health census**: age, votes, out-of-date, orphan, recently-changed, maintainer-change (re-adoption tell) | you want to vet how well-maintained your AUR pkgs are | table → `~/.fettle/reports/` |
+| `fettle -I` / `aur-ioc-scan` *(arch)* | AUR **threat sweep**: do any installed AUR pkgs match known-compromise feeds (bad package names, malicious maintainers, malicious JS-cache traces)? | you want a known-compromise check (lenucksi IoC feed) | findings → `~/.fettle/reports/` |
 | `fettle -p` / `aur-precheck` *(arch)* | AUR **pre-install / quick sweep**: is this package (or every installed AUR pkg) risky right now — orphaned, out-of-date, stale, compromised name, malicious maintainer? | before building an AUR pkg (the yay hook), or a fast all-installed check | `CRIT`/`WARN` lines |
 
 `pkg-audit` runs each provider whose package manager is present and reports one
@@ -328,7 +328,7 @@ and the stack canary, which `makepkg.conf`'s `CFLAGS` never mention); on
 Debian/Ubuntu it's `dpkg-buildflags`. A deviation therefore means a package
 escaped the distro's build policy — an upstream Makefile clobbering `CFLAGS`, a
 vendored prebuilt binary, or a sloppy AUR build. Findings are rolled up **per
-package** and saved to `~/hardening-audit.txt`.
+package** and saved to `~/.fettle/reports/`.
 
 **Scope:** every ELF executable in the standard `bin` dirs plus every setuid/setgid
 binary (paths are `realpath`-deduped so a merged-`/usr` layout isn't scanned
@@ -349,7 +349,7 @@ never treated as pass/fail (its "No Probes" just means the binary needed none).
 **Reading the output.** Results are **scored and ranked**, worst first. The
 on-screen table shows only the **Critical** and **High** packages (the ones worth
 acting on); Medium/Low collapse into a one-line tally and the *full* per-criterion
-matrix is written to `~/hardening-audit.txt`.
+matrix is written to `~/.fettle/reports/`.
 
 ```
 BAND      SCORE  P  PACKAGE           BINS  MISSING (worst-weighted first)
@@ -483,7 +483,7 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
   is special: fettle collects a (redacted) snapshot on the remote — **read-only, no
   sudo, no API key** — and runs the AI analysis **on your machine** with your local
   key. Your key never leaves your machine, only your machine needs internet to
-  Anthropic, and the report is saved locally as `~/upgrade-check-<host>.txt`. (On
+  Anthropic, and the report is saved locally as `~/.fettle/reports/<host>/`. (On
   Debian the remote's pending list is read from cached apt data, so it may be stale
   if the host hasn't `apt update`d recently; Arch uses a fresh rootless sync.)
 - **Asks before upgrading.** By default the run is interactive over an `ssh -t`
@@ -518,14 +518,14 @@ before/after steps. It is **report-only** — it never touches your system; you 
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-…
-fettle upgrade-check                 # verdict + steps -> ~/upgrade-check.txt
+fettle upgrade-check                 # verdict + steps -> ~/.fettle/reports/
 fettle upgrade-check --effort high   # deeper analysis for a big/risky upgrade
 fettle upgrade-check --no-web        # skip forum search (faster, cheaper)
 fettle remote HOST upgrade-check     # check a remote host — key stays on YOUR box
 ```
 
 For a remote host, fettle gathers the snapshot **on the host** (read-only, no key)
-and runs the AI analysis **locally** with your key, saving `~/upgrade-check-<host>.txt`
+and runs the AI analysis **locally** with your key, saving `~/.fettle/reports/<host>/`
 — see [Remote maintenance](#remote-maintenance).
 
 - **API key** (first found wins): `ANTHROPIC_API_KEY` env → `ai_api_key` in the
@@ -583,6 +583,12 @@ ai_effort           = "medium"   # low | medium | high — thinking depth vs cos
 ai_max_web_searches = 5          # cap forum searches per run (bounds tokens/cost)
 # ai_api_key = "sk-ant-..."      # optional; keep the file chmod 600; never printed in full
 
+# Reports & run logs (stored under ~/.fettle/, per host, 0600)
+[reports]
+keep = 5                 # how many of each report/log to keep per host
+# dir = "~/.fettle"      # base dir override (reports/ and logs/ live under it)
+# log = true             # record a per-run transcript (set false to disable)
+
 # Per-distro tool selection
 [updaters.arch]
 system_updater = "pacman"   # pacman | pamac
@@ -597,6 +603,28 @@ snap_updater    = "snap"     # snap | none
 `fettle --print-config` shows the effective configuration; `--config PATH` points
 at an alternate file; `--no-config` ignores it entirely. A starter template ships
 as [`fettle.toml.example`](fettle.toml.example).
+
+### Reports & run logs
+
+Every report (`aur-audit`, `pkg-audit`, `hardening-audit`, `upgrade-check`, the
+orphans list, …) is written under **`~/.fettle/reports/<host>/`**, timestamped so
+runs never clobber each other, `chmod 0600` (they name your packages and can hold
+system detail), and rotated to the newest **`keep`** (default 5) *per host, per
+report type*. `<host>` is `local` for a local run or the target hostname for
+`fettle remote <host> …`, so each machine keeps its own history. (Pre-0.11 reports
+in `$HOME` are left untouched; fettle notes the move once.)
+
+Every invocation is also **recorded to a transcript** under
+`~/.fettle/logs/<host>/run-<timestamp>.txt` (same `0600` + rotation). On an
+interactive terminal fettle captures the *whole* session — its own output **and**
+every tool it runs (yay/pacman/apt) — the way `script(1)` does: it re-execs itself
+once under a pseudo-terminal, so the actual run happens on a **real tty** and
+colours, progress bars, and `sudo`/PKGBUILD prompts behave exactly as normal. The
+saved log is ANSI-stripped for readability. When output is piped or non-interactive
+there's no terminal to record, so the log captures fettle's own output only.
+
+> The one-time re-exec is transparent, but if you're debugging startup or wrapping
+> fettle in another tool and want it off, set `log = false` under `[reports]`.
 
 ## Previewing an upgrade
 
@@ -722,7 +750,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.10.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.11.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
