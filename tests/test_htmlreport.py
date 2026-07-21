@@ -51,9 +51,13 @@ def test_collect_newest_first(tmp_path):
 # -- build -------------------------------------------------------------------
 def test_build_writes_0600_html_with_hosts(tmp_path):
     _write_report_json(tmp_path, "local", "hardening-audit", "20260721-010101",
-                       {"band_tally": {"Critical": 1}})
+                       {"band_tally": {"Critical": 1},
+                        "packages": [{"package": "x", "band": "Critical", "score": 18,
+                                      "binaries": 1, "has_privileged": False,
+                                      "checks": {"relro": 1}}]})
     _write_report_json(tmp_path, "ec3", "pkg-audit", "20260721-020202",
-                       {"findings": []})
+                       {"findings": [{"severity": "WARN", "source": "apt",
+                                      "package": "p", "detail": "d"}]})
     path = htmlreport.build(_ctx(tmp_path))
     assert path == tmp_path / ".fettle/report.html"
     assert oct(os.stat(path).st_mode & 0o777) == "0o600"
@@ -173,3 +177,34 @@ def test_bad_payload_never_breaks_the_page(tmp_path):
                        {"packages": "not-a-list"})
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert text.startswith("<!doctype html>")     # rendered fine anyway
+
+
+# -- empty-report filtering --------------------------------------------------
+def test_empty_reports_are_hidden(tmp_path):
+    _write_report_json(tmp_path, "ec3", "obsolete-pkgs", "20260721-010101",
+                       {"packages": []})                       # empty -> hidden
+    _write_report_json(tmp_path, "ec3", "pkg-audit", "20260721-020202",
+                       {"findings": [{"severity": "CRIT", "source": "apt",
+                                      "package": "real", "detail": "d"}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "pkg-audit" in text and "real" in text              # non-empty shown
+    assert "obsolete-pkgs" not in text                          # empty hidden
+    assert "1 empty report(s) hidden" in text                   # noted
+
+
+def test_is_empty_predicate():
+    e = htmlreport._is_empty
+    assert e({"tool": "obsolete-pkgs", "data": {"packages": []}})
+    assert not e({"tool": "obsolete-pkgs", "data": {"packages": ["x"]}})
+    assert e({"tool": "aur-ioc-scan", "data": {"findings": []}})
+    assert e({"tool": "alien-pkgs", "data": {"text": "\n"}})     # blank backfill
+    assert not e({"tool": "upgrade-check", "data": {"safety_verdict": "safe"}})
+    assert e({"schema": "fettle.log/1", "transcript": "   "})    # blank log
+
+
+def test_host_with_only_empty_reports_is_dropped(tmp_path):
+    _write_report_json(tmp_path, "quiet-host", "obsolete-pkgs", "20260721-010101",
+                       {"packages": []})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    # no host <section> for a host whose every report is empty (and no logs)
+    assert 'data-host="quiet-host"' not in text

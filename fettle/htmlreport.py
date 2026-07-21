@@ -343,6 +343,30 @@ def _render_entry_body(entry: dict) -> str:
         return f'<pre>{_esc(json.dumps(data, indent=2))}</pre>'
 
 
+def _is_empty(entry: dict) -> bool:
+    """True when a report/log carries no meaningful content (nothing to show).
+
+    A clean `obsolete-pkgs` with no packages, an `aur-ioc-scan` with no
+    indicators, a blank backfilled text report, etc. — hidden from the dashboard.
+    """
+    if entry.get("schema") == "fettle.log/1" or "transcript" in entry:
+        return not str(entry.get("transcript") or "").strip()
+    data = entry.get("data")
+    if not isinstance(data, dict):
+        return True
+    if set(data) == {"text"}:                       # wrapper / backfilled / fallback
+        return not data["text"].strip()
+    tool = entry.get("tool")
+    if tool in ("pkg-audit", "aur-ioc-scan"):
+        return not data.get("findings")
+    if tool in ("obsolete-pkgs", "alien-pkgs", "hardening-audit"):
+        return not data.get("packages")
+    if tool == "aur-audit":
+        return not (data.get("packages") or data.get("not_found_in_aur")
+                    or data.get("maintainer_changes"))
+    return False                                    # upgrade-check / unknown: keep
+
+
 def _entry_badge(entry: dict) -> str:
     """A small severity/verdict badge on the entry's summary line, when relevant."""
     data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
@@ -367,6 +391,8 @@ def _host_summary(host: dict) -> str:
             break
     types: dict[str, int] = {}
     for e in host["reports"]:
+        if _is_empty(e):
+            continue
         types[e.get("tool", "?")] = types.get(e.get("tool", "?"), 0) + 1
     counts = " · ".join(f"{_esc(t)}:{n}" for t, n in sorted(types.items()))
     latest = max((e.get("timestamp", "") for e in host["reports"] + host["logs"]),
@@ -378,8 +404,8 @@ def _host_summary(host: dict) -> str:
 
 def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you") -> str:
     hosts = sorted(hostmap)
-    all_types = sorted({e.get("tool", "?")
-                        for h in hostmap.values() for e in h["reports"]})
+    all_types = sorted({e.get("tool", "?") for h in hostmap.values()
+                        for e in h["reports"] if not _is_empty(e)})
     host_opts = "".join(f'<option value="{_esc(h)}">{_esc(h)}</option>' for h in hosts)
     type_opts = "".join(f'<option value="{_esc(t)}">{_esc(t)}</option>' for t in all_types)
 
@@ -389,19 +415,24 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you")
     sections = []
     for h in hosts:
         groups = []
+        hidden = 0
         by_tool: dict[str, list[dict]] = {}
         for e in hostmap[h]["reports"]:
             by_tool.setdefault(e.get("tool", "?"), []).append(e)
         for tool in sorted(by_tool):
+            entries = [e for e in by_tool[tool] if not _is_empty(e)]
+            hidden += len(by_tool[tool]) - len(entries)
+            if not entries:                         # whole group is empty — skip it
+                continue
             items = "".join(
                 f'<details data-host="{_esc(h)}" data-type="{_esc(tool)}">'
                 f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
                 f'{_entry_badge(e)}</summary>'
                 f'<div class="body">{_render_entry_body(e)}</div></details>'
-                for e in by_tool[tool])
+                for e in entries)
             groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'
-                          f'<h3>{_esc(tool)} ({len(by_tool[tool])})</h3>{items}</div>')
-        logs = hostmap[h]["logs"]
+                          f'<h3>{_esc(tool)} ({len(entries)})</h3>{items}</div>')
+        logs = [e for e in hostmap[h]["logs"] if not _is_empty(e)]
         if logs:
             items = "".join(
                 f'<details data-host="{_esc(h)}" data-type="run-log">'
@@ -410,8 +441,12 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you")
                 for e in logs)
             groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="run-log">'
                           f'<h3>run logs ({len(logs)})</h3>{items}</div>')
+        if not groups:                              # nothing to show for this host
+            continue
+        note = (f'<div class="group muted" style="font-size:.75rem">'
+                f'({hidden} empty report(s) hidden)</div>') if hidden else ""
         sections.append(f'<section class="host" data-host="{_esc(h)}">'
-                        f'<h2>{_esc(h)}</h2>{"".join(groups)}</section>')
+                        f'<h2>{_esc(h)}</h2>{"".join(groups)}{note}</section>')
 
     return f"""<!doctype html>
 <html lang=en>
