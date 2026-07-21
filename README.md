@@ -640,7 +640,9 @@ with `json = false` under `[reports]`.
 row (latest hardening band tally, per-type counts, latest run), collapsible
 sections grouped by report type with native rendering — scored hardening tables,
 severity-coloured findings, upgrade verdicts, package lists, log transcripts — and
-a host/type/text filter. Pure stdlib, no external assets, nothing served.
+a host/type/text filter. Empty reports are hidden (with a per-host "N hidden"
+note). It's styled as a dark Linux terminal (monospace, phosphor palette). Pure
+stdlib, no external assets, nothing served.
 
 ```sh
 fettle report                 # (re)build ~/.fettle/report.html

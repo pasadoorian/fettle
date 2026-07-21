@@ -16,10 +16,14 @@ All notable changes to fettle are recorded here. Newest first.
 - **`fettle report` — an HTML dashboard (BETA, initial revision).** Regenerates a
   single self-contained `~/.fettle/report.html` (`0600`) from all stored JSON,
   across every host: a per-host summary card row (latest hardening band tally,
-  per-type counts, latest run), collapsible sections grouped by report type with
-  native rendering (scored hardening tables, severity-coloured findings, upgrade
-  verdicts, package lists, log transcripts), and a host/type/text filter. Pure
-  stdlib, no external assets. `fettle report --open` opens it in a browser.
+  per-type counts, latest run), collapsible sections (with a `[+]`/`[-]` expand
+  affordance) grouped by report type with native rendering (scored hardening
+  tables, severity-coloured findings, upgrade verdicts, package lists, log
+  transcripts), and a host/type/text filter. **Empty reports** (a clean
+  `obsolete-pkgs`, an `aur-ioc-scan` with no indicators, …) are hidden, with a
+  per-host "N hidden" note. Styled as a **dark Linux terminal** (monospace, phosphor
+  palette, shell-prompt header). Pure stdlib, no external assets. `fettle report
+  --open` opens it in a browser.
   *This is a first cut — the layout and contents will evolve; feedback welcome.*
 - **`fettle report --backfill-json`** — one-off converter that gives pre-0.12
   `.txt` reports/logs a JSON sibling (idempotent, non-destructive) so the dashboard
