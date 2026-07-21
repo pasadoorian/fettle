@@ -4,6 +4,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.10.0] — scored, ranked hardening audit
+
+- **`hardening-audit` output is now scored and ranked.** Each binary gets a risk
+  score — `Σ weight(missing protection) × 3 when it's a privilege boundary
+  (setuid/setgid or a configured `sensitive_packages`) — mapped to **Critical /
+  High / Medium / Low** bands, and packages are sorted worst-first by their most
+  vulnerable binary. So the outlier that matters (e.g. a setuid helper missing a
+  stack canary) rises to the top instead of drowning under big, harmless packages.
+- **Focused terminal, full detail on disk.** The on-screen table shows only the
+  **Critical** and **High** packages (`BAND · SCORE · P · PACKAGE · BINS ·
+  MISSING`), collapses Medium/Low into a one-line tally, and writes the complete
+  per-criterion **matrix** (a column per protection) to `~/hardening-audit.txt`.
+  The summary still reports every band's count.
+- **New `[hardening]` scoring keys** (all optional): `sensitive_packages` (globs
+  — mark network daemons as privilege boundaries; setuid/setgid is automatic),
+  `priv_multiplier`, and `weights` (per-criterion). Band thresholds are calibrated
+  constants.
+
 ## [0.9.0] — binary hardening audit
 
 - **New `hardening-audit` check (`-H` / `--hardening-audit`).** Runs `checksec`

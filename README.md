@@ -346,49 +346,62 @@ Go/Rust binaries are skipped (symbol-based checks are meaningless there);
 `_FORTIFY_SOURCE=No` is ignored when nothing was fortifiable; and `stack_clash` is
 never treated as pass/fail (its "No Probes" just means the binary needed none).
 
-**Pruning the list.** The report shows *everything* by default; narrow it with an
-exclude list in your config (globs; ships empty):
+**Reading the output.** Results are **scored and ranked**, worst first. The
+on-screen table shows only the **Critical** and **High** packages (the ones worth
+acting on); Medium/Low collapse into a one-line tally and the *full* per-criterion
+matrix is written to `~/hardening-audit.txt`.
 
-```toml
-[hardening]
-exclude_checks   = ["runpath"]                         # criteria you don't care about
-exclude_packages = ["mingw-w64-*", "*-linux-gnu-gcc"]  # e.g. cross-compilers
-exclude_paths    = ["/usr/lib/electron*/*"]
+```
+BAND      SCORE  P  PACKAGE           BINS  MISSING (worst-weighted first)
+Critical     18  !  xorg-server          2  canary=2, relro=2
+High         10     containerd           3  canary=2, relro=3, fortify_source=3, pie=3
+High          9  !  xf86-video-intel     2  relro=2
+… plus 131 Medium, 95 Low package(s) — full list in the saved matrix
+✓ 1 Critical, 6 High, 131 Medium, 95 Low  (813 deviations across 233 packages)
 ```
 
-fettle tells you how many findings your own exclude lists hid.
+Each row is a package; a package **not** listed conforms fully. `BINS` is how many
+of its binaries deviate, `MISSING` names the absent protections (heaviest-weighted
+first, with counts), and **`P = !`** marks a **privilege boundary** — a
+setuid/setgid binary or one in your `sensitive_packages` list.
 
-**Reading the output.** fettle only lists *deviations* — binaries missing
-something the baseline provides — rolled up per package. A package **not** in the
-report conforms fully; a line like `xorg-server  (1)  relro=1, canary=1` reads
-*"1 binary from xorg-server is missing Full RELRO and a stack canary."* More
-criteria / higher counts on a package = more protections missing. Each criterion,
-roughly most- to least-important:
+**The score** is `Σ weight(missing protection) × privilege-multiplier`, computed
+per binary; a package takes its **worst** binary's score. Defaults: canary 3,
+relro 3, pie 2, fortify 2, cfi 1, rpath 1, runpath 0.5; ×3 when privileged. Bands:
+**Critical ≥ 14 · High ≥ 8 · Medium ≥ 3 · Low < 3**. Because the score already
+folds in *how bad* the missing protection is and *whether the binary is
+privileged*, the ranking does your triage for you — the Critical/High rows are the
+outliers that matter, not the bulk. What each protection defends, heaviest first:
 
 | Criterion | Good value | Protects against | Missing means |
 |---|---|---|---|
 | `canary` | `Canary Found` | stack buffer overflows | no tripwire before the return address — a classic stack smash is easier |
 | `relro` | `Full RELRO` | GOT-overwrite attacks | function-pointer tables stay writable (a common exploit primitive) |
 | `pie` | `PIE Enabled` | predictable code addresses | loads at a fixed address, weakening ASLR (ROP is easier) |
-| `nx` | `NX enabled` | code injection | a writable memory page could also be executable |
-| `cfi` | `SHSTK & IBT` | ROP/JOP hijacking | no hardware shadow-stack / indirect-branch tracking |
 | `fortify_source` | `Yes` | unsafe libc calls (`strcpy`…) | no compile-time bounds checks on those wrappers |
+| `cfi` | `SHSTK & IBT` | ROP/JOP hijacking | no hardware shadow-stack / indirect-branch tracking |
+| `nx` | `NX enabled` | code injection | a writable memory page could also be executable |
 | `rpath` / `runpath` | `No RPATH` | malicious library loading | a baked-in library search path an attacker could plant a `.so` in |
 
-**Triage — most findings don't matter; the outlier does.** Two questions:
+**Tuning.** Everything below ships with sensible defaults; add a `[hardening]`
+block to your config to adjust. Exclude lists (globs) prune the report; the
+scoring keys re-weight it. `sensitive_packages` is how you tell fettle a network
+daemon is a privilege boundary (setuid/setgid is detected automatically):
 
-1. **Is it a privilege boundary?** A missing canary on a setuid-root helper
-   (`sudo`, `Xorg.wrap`) or a network-facing daemon is worth a look; the same gap
-   on an offline image-conversion tool is academic.
-2. **Which protection, on untrusted input?** `canary` / `relro` / `pie` gaps on
-   something that parses untrusted data matter most. `runpath` is the mildest (a
-   hygiene smell, not a memory-safety hole) — usually the first entry in
-   `exclude_checks`.
+```toml
+[hardening]
+# prune — fettle reports how many findings your excludes hid
+exclude_checks     = ["runpath", "cfi"]                  # criteria you don't care about
+exclude_packages   = ["mingw-w64-*", "*-linux-gnu-gcc"]  # e.g. cross-compilers
+exclude_paths      = ["/usr/lib/electron*/*"]
+# score — all optional
+sensitive_packages = ["openssh", "nginx", "cups", "avahi"]  # treat as privilege boundaries
+priv_multiplier    = 3
+weights            = { canary = 3, relro = 3, pie = 2, fortify_source = 2 }
+```
 
-Rule of thumb: skim the report for setuid or network binaries missing **canary,
-relro, or pie**; exclude the rest. A deviation means the binary was built
-*differently from the distro norm* — it tells you where to look, not that anything
-is exploitable.
+A deviation means the binary was built *differently from the distro norm* — the
+score tells you *where to look*, not that anything is exploitable.
 
 ## System supply-chain — `sys-audit`
 
@@ -709,7 +722,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.9.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.10.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |

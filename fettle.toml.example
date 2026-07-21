@@ -26,14 +26,21 @@
 #aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
 #aur_precheck_on_update = true   # IoC-check AUR pkgs before yay builds them; --no-aur-precheck skips
 
-# Binary hardening audit (`fettle -H` / `hardening-audit`). The report shows EVERY
-# deviation from the distro's declared build hardening by default; use these
-# exclude lists (fnmatch globs; all ship empty) to prune it to taste. The always-on
-# accuracy corrections (non-ELF/static-binary skips, etc.) are NOT tunable here.
+# Binary hardening audit (`fettle -H` / `hardening-audit`). Results are scored and
+# ranked; the screen shows Critical/High packages, the full matrix goes to
+# ~/hardening-audit.txt. The always-on accuracy corrections (non-ELF/static-binary
+# skips, etc.) are NOT tunable — only the pruning and scoring below are.
 #[hardening]
-#exclude_checks   = ["runpath"]                          # criterion names to ignore
+# -- prune the report (fnmatch globs; all ship empty) --
+#exclude_checks   = ["runpath", "cfi"]                   # criterion names to ignore
 #exclude_packages = ["mingw-w64-*", "*-linux-gnu-gcc"]   # package name globs
 #exclude_paths    = ["/usr/lib/electron*/*"]             # binary path globs
+# -- scoring (all optional) --
+# score = Σ weight(missing protection) × priv_multiplier (if setuid/setgid or
+# sensitive); bands Critical>=14, High>=8, Medium>=3, Low<3.
+#sensitive_packages = ["openssh", "nginx", "cups", "avahi"]  # treat as privilege boundaries
+#priv_multiplier    = 3
+#weights = { canary = 3, relro = 3, pie = 2, fortify_source = 2, cfi = 1, rpath = 1, runpath = 0.5 }
 
 # Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
 # STRONGLY prefer the ANTHROPIC_API_KEY env var. If you put the key here instead,
