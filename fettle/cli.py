@@ -84,6 +84,8 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
                                                    installed AUR pkg (also the yay hook) [arch]
   fettle remote HOST [actions]                     run maintenance on a remote host
                                                    over ssh (safe set by default; 'remote -h')
+  fettle report [--open]                           build ~/.fettle/report.html from all
+                                                   stored reports/logs (every host)
 
 which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
   -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap): provenance + tampering
@@ -376,6 +378,46 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
         pass
 
 
+def _run_report(argv: list[str]) -> int:
+    """`fettle report` — regenerate ~/.fettle/report.html from all stored JSON.
+    Read-only, no sudo. `--backfill-json` converts pre-0.12 .txt files first."""
+    from types import SimpleNamespace
+
+    from . import htmlreport
+
+    p = argparse.ArgumentParser(
+        prog="fettle report",
+        description="Build a single HTML dashboard (~/.fettle/report.html) from all "
+                    "stored reports and run-logs, across every host. Read-only.")
+    p.add_argument("--open", action="store_true", help="open the report in a browser")
+    p.add_argument("--backfill-json", action="store_true",
+                   help="one-off: give pre-0.12 .txt reports a JSON sibling first")
+    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--no-config", action="store_true", help="ignore the config file")
+    args = p.parse_args(argv)
+
+    out = Output(color=None)
+    cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
+    for w in warnings:
+        out.warn(w)
+    sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    user_home = Path.home()
+    if sudo_user:
+        try:
+            user_home = Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+    ctx = SimpleNamespace(config=cfg, user_home=user_home, sudo_user=sudo_user,
+                          output=out)
+
+    if args.backfill_json:
+        n = htmlreport.backfill(ctx)
+        out.note(f"backfilled {n} JSON sibling(s) for existing reports/logs")
+    path = htmlreport.build(ctx, open_browser=args.open)
+    out.ok(f"report written to {path}")
+    return 0
+
+
 def _run_upgrade_check(argv: list[str]) -> int:
     from .ai import snapshot as ai_snapshot
     from .ai import upgrade_check as uc
@@ -629,6 +671,10 @@ def _main(argv: list[str]) -> int:
     # `fettle upgrade-check` — AI-assisted pre-upgrade safety advisor (read-only).
     if argv and argv[0] == "upgrade-check":
         return _run_upgrade_check(argv[1:])
+
+    # `fettle report` — regenerate the HTML dashboard from stored JSON (read-only).
+    if argv and argv[0] == "report":
+        return _run_report(argv[1:])
 
     # Dispatch shortcuts: -S / -U / -p are single-flag aliases for the sys-audit,
     # upgrade-check, and aur-precheck runners (Q4: flag = shortcut, subcommand =

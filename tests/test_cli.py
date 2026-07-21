@@ -260,3 +260,24 @@ def test_unknown_distro_returns_one(capsys):
     rc = main(["--distro", "temple-os", "--dry-run", "-c"])
     assert rc == 1
     assert "not a known backend" in capsys.readouterr().err
+
+
+def test_report_subcommand_dispatches():
+    from unittest.mock import patch
+    with patch("fettle.htmlreport.build", return_value="/tmp/x/report.html") as b:
+        rc = main(["report", "--no-config"])
+    assert rc == 0 and b.called
+
+
+def test_report_backfill_flag_calls_backfill():
+    from unittest.mock import patch
+    with patch("fettle.htmlreport.backfill", return_value=3) as bf, \
+         patch("fettle.htmlreport.build", return_value="/tmp/x/report.html"):
+        main(["report", "--backfill-json", "--no-config"])
+    assert bf.called
+
+
+def test_help_documents_report_subcommand(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    assert "fettle report" in capsys.readouterr().out
