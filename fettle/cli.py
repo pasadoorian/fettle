@@ -234,7 +234,10 @@ def _reexec_argv(args: argparse.Namespace | None, pythonpath: str) -> list[str]:
     (--no-config is honoured: it's already in sys.argv and we add nothing.)
     """
     extra = [] if (args is None or args.no_config) else ["--config", str(args.config)]
-    return ["sudo", "env", f"PYTHONPATH={pythonpath}",
+    # Forward the run-log guard so the elevated child doesn't open a SECOND pty
+    # (sudo's env_reset would otherwise drop it — see runlog.py).
+    guard = ["FETTLE_RUNLOG=1"] if os.environ.get("FETTLE_RUNLOG") == "1" else []
+    return ["sudo", "env", f"PYTHONPATH={pythonpath}", *guard,
             sys.executable, "-m", "fettle", *sys.argv[1:], *extra]
 
 
@@ -558,6 +561,23 @@ def _find_dispatch_shortcut(argv: list[str]) -> tuple[str, list[str]] | None:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
+    # OUTERMOST: on an interactive tty, re-exec under a PTY so the whole session
+    # (fettle + every subprocess) is recorded. Returns the child's exit code when
+    # this process WAS the recorder; None means we're the real run — continue.
+    # (See runlog.py for the re-exec model and its risks.)
+    from . import runlog
+    recorded = runlog.maybe_record(argv)
+    if recorded is not None:
+        return recorded
+    _nontty_log = runlog.start_nontty_log(argv)  # non-tty runs still get a log
+    try:
+        return _main(argv)
+    finally:
+        if _nontty_log is not None:
+            _nontty_log.close()
+
+
+def _main(argv: list[str]) -> int:
     # ``aur-precheck`` is a standalone, unprivileged helper (called per-package by
     # the yay install hook), not one of the maintenance actions — route it before
     # the flag parser so it bypasses config load, root elevation, and section UI.
