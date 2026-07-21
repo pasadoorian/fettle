@@ -146,7 +146,9 @@ def test_legacy_note_fires_once_when_old_reports_present(tmp_path):
     reports.write_report("hardening-audit", "new2", ctx, now=_at(s=31))
     hits = [n for n in out.notes if "reports now live under" in n]
     assert len(hits) == 1                                  # exactly once, not per write
-    assert (tmp_path / ".fettle/.reports-migrated").exists()
+    marker = tmp_path / ".fettle/.reports-migrated"
+    assert marker.exists()
+    assert oct(os.stat(marker).st_mode & 0o777) == "0o600"  # marker is owner-only too
 
 
 def test_no_legacy_note_without_old_reports(tmp_path):

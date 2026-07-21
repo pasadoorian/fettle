@@ -131,6 +131,7 @@ def maybe_legacy_note(ctx) -> None:
         base.mkdir(parents=True, exist_ok=True)
         os.chmod(base, 0o700)
         marker.write_text("")
+        os.chmod(marker, 0o600)  # keep the whole ~/.fettle tree owner-only
         chown_to_user(base, getattr(ctx, "sudo_user", None))
         chown_to_user(marker, getattr(ctx, "sudo_user", None))
     except OSError:

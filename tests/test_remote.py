@@ -358,3 +358,17 @@ def test_remote_maintenance_fetches_after_run_not_on_dry_run():
          patch("fettle.cli._fetch_remote_reports") as fetch:
         cli_main(["remote", "host", "-c", "--dry-run"])
     fetch.assert_not_called()                            # dry-run writes nothing remote
+
+
+def test_fetch_remote_reports_is_a_noop_under_pytest(tmp_path, monkeypatch):
+    # regression: a pre-guard version created ~/.fettle/reports/<host> in the REAL
+    # home and did a real ssh during the remote CLI tests. The FETTLE_TEST guard
+    # must make _fetch_remote_reports do nothing at all.
+    from fettle import cli
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+    called = []
+    monkeypatch.setattr("fettle.remote.fetch_reports",
+                        lambda *a, **k: called.append(a) or [])
+    cli._fetch_remote_reports("server1", [])
+    assert called == []                                   # no ssh attempted
+    assert not (tmp_path / ".fettle").exists()            # no dir created
