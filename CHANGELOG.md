@@ -4,6 +4,18 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.13.1] — group runs show under each target host
+
+- **A group run's per-host result now shows under that host in the HTML report.**
+  After a remote (or group) run, fettle fetches back not just the host's reports but
+  also its **own run-log** (its session transcript, including the package-update
+  output) into `~/.fettle/logs/<host>/`. So `fettle remote bifrost-lab -a` produces
+  a "Session Transcripts (run logs)" entry under **each** of bifrost/ec1/ec2/ec3 —
+  the actual `fettle -a` run that happened on that host.
+- **The "group runs" area is now a tiny pass/fail summary**, not a transcript dump:
+  one line per `fettle remote <group>` session (when · command · ok/exit badge).
+  The detail lives under each host, where the previous bullet now puts it.
+
 ## [0.13.0] — remote host groups
 
 - **`fettle remote <group>` runs on a whole group of hosts, one by one.** Define a

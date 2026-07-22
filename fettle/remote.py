@@ -132,15 +132,31 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     return runner(ssh_cmd).returncode
 
 
-# where a remote fettle writes its own reports (tagged `local` from its POV)
+# where a remote fettle writes its own reports/logs (tagged `local` from its POV)
 _REMOTE_REPORT_DIR = "~/.fettle/reports/local"
+_REMOTE_LOG_DIR = "~/.fettle/logs/local"
 
 
 def fetch_reports(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) -> list[str]:
-    """Copy the remote's reports into ``dest_dir`` and return the basenames pulled.
+    """Copy the remote's reports into ``dest_dir``; see :func:`_fetch_remote_dir`."""
+    return _fetch_remote_dir(host, _REMOTE_REPORT_DIR, dest_dir,
+                             ssh_args=ssh_args, runner=runner)
+
+
+def fetch_logs(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) -> list[str]:
+    """Copy the remote's own run-logs into ``dest_dir`` (its per-host session
+    transcripts, incl. the package-update output). See :func:`_fetch_remote_dir`."""
+    return _fetch_remote_dir(host, _REMOTE_LOG_DIR, dest_dir,
+                             ssh_args=ssh_args, runner=runner)
+
+
+def _fetch_remote_dir(host: str, remote_dir: str, dest_dir, *,
+                      ssh_args=(), runner=subprocess.run) -> list[str]:
+    """Copy ``remote_dir``'s ``*.txt``/``*.json`` into ``dest_dir`` and return the
+    basenames pulled.
 
     Streams them as a tar over the *same* ssh (so ``--ssh-arg`` options apply
-    verbatim — scp's flags differ, e.g. ``-p``/``-P``). A missing dir or no reports
+    verbatim — scp's flags differ, e.g. ``-p``/``-P``). A missing dir or no files
     yields an empty tar → ``[]``; never raises. Extraction is basename-only (no
     path traversal) and each file is written ``0600``.
     """
@@ -149,7 +165,7 @@ def fetch_reports(host: str, dest_dir, *, ssh_args=(), runner=subprocess.run) ->
     import tarfile
     from pathlib import Path
 
-    remote_cmd = (f"cd {_REMOTE_REPORT_DIR} 2>/dev/null && "
+    remote_cmd = (f"cd {remote_dir} 2>/dev/null && "
                   "tar cf - -- *.txt *.json 2>/dev/null || true")
     try:
         proc = runner(["ssh", *ssh_args, host, remote_cmd], capture_output=True)

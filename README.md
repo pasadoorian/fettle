@@ -527,13 +527,18 @@ fettle remote bifrost-lab -a          # run `fettle -a` on each host, in order
 fettle remote bifrost-lab -a --yes    # unattended (no confirm; needs passwordless sudo)
 ```
 
-`fettle remote <group>` runs the same per-host flow (including the report
-fetch-back to `~/.fettle/reports/<host>/`) on each host **sequentially**. It
-**confirms the host list** before starting (skipped under `--yes` / `--dry-run`),
+`fettle remote <group>` runs the same per-host flow on each host **sequentially**.
+It **confirms the host list** before starting (skipped under `--yes` / `--dry-run`),
 **continues past a host that fails**, and prints a **pass/fail summary** at the end
 (the command exits non-zero if any host failed). A group name takes precedence over
 a same-named single host; an unknown name is treated as a single host. One group
 (or host) per command.
+
+After each host's run, fettle fetches back that host's **reports** *and* its own
+**run-log** (the session transcript, including the package-update output) into
+`~/.fettle/{reports,logs}/<host>/`. So in the HTML report, a group run shows up as a
+per-host entry under **each** target host — not as a single "group" asset. The
+"group runs" area itself is just a one-line pass/fail summary of each orchestration.
 
 > For a truly walk-away group run, use `--yes` (or `yes = true`) **and** set up
 > **passwordless sudo** (`NOPASSWD`) on the group's hosts — otherwise each host

@@ -150,6 +150,9 @@ summary:hover::before{text-shadow:0 0 8px currentColor}
 .badge,.pill{font-family:var(--mono);font-size:.72rem;font-weight:600;padding:.05rem .35rem;border-radius:3px;border:1px solid}
 .badge::before,.pill::before{content:"["}.badge::after,.pill::after{content:"]"}
 .badge{color:var(--fg)}
+.badge.b-ok{color:var(--green);border-color:var(--green)}
+.badge.b-bad{color:var(--red);border-color:var(--red)}
+.grow{display:flex;gap:.6rem;align-items:baseline;padding:.15rem .2rem;font-size:.82rem}
 .body{padding:.3rem .7rem .75rem}
 table{border-collapse:collapse;width:100%;font-size:.8rem}
 th,td{text-align:left;padding:.28rem .55rem;border-bottom:1px solid #14212e}
@@ -516,30 +519,37 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
         sections.append(f'<section class="host" data-host="{_esc(h)}">'
                         f'<h2>{_esc(h)}</h2>{"".join(groups)}{note}</section>')
 
-    # "Group runs" — the orchestration transcript of each `fettle remote <group>`
-    # session (per-host results are under the hosts above, not here).
+    # "Group runs" — a tiny pass/fail summary of each `fettle remote <group>`
+    # session. The real per-host results (incl. the update output) live under each
+    # target host above, fetched from that host's own run-log; here we only note
+    # that the orchestration ran, so this stays a one-liner per run.
     group_blocks = []
     for g in group_names:
         logs = [e for e in hostmap[g]["logs"] if not _is_empty(e)]
         if not logs:
             continue
-        items = "".join(
-            f'<details data-host="{_esc(g)}" data-type="group-run">'
-            f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
-            f'<span class="badge">group</span></summary>'
-            f'<div class="body">{_render_entry_body(e)}</div></details>'
-            for e in logs)
-        group_blocks.append(f'<div class="group" data-host="{_esc(g)}" data-type="group-run">'
-                            f'<h3>{_esc(g)} '
-                            f'<span class="muted">(group) · {len(logs)}</span></h3>'
-                            f'{items}</div>')
+        rows = []
+        for e in sorted(logs, key=lambda e: e.get("timestamp", ""), reverse=True):
+            code = e.get("exit_code")
+            ok = code in (0, None)
+            label = _esc(_run_label(e)) or "fettle remote"
+            badge = ("<span class=\"badge b-ok\">ok</span>" if ok
+                     else f'<span class="badge b-bad">exit {_esc(str(code))}</span>')
+            rows.append(
+                f'<div class="grow" data-host="{_esc(g)}" data-type="group-run">'
+                f'<span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
+                f'<span class="muted">{label}</span>{badge}</div>')
+        group_blocks.append(
+            f'<div class="group" data-host="{_esc(g)}" data-type="group-run">'
+            f'<h3>{_esc(g)} <span class="muted">(group) · {len(logs)}</span></h3>'
+            f'{"".join(rows)}</div>')
     group_section = ""
     if group_blocks:
         group_section = (
             '<section class="host" data-host="(group runs)"><h2>group runs</h2>'
             '<div class="muted" style="padding:.2rem .9rem .4rem;font-size:.78rem">'
-            'orchestration transcripts for `fettle remote &lt;group&gt;` — each '
-            'host’s own results are under that host above</div>'
+            'pass/fail summary of each `fettle remote &lt;group&gt;` — each host’s '
+            'own results are under that host above</div>'
             f'{"".join(group_blocks)}</section>')
 
     return f"""<!doctype html>

@@ -414,8 +414,11 @@ def _run_group(group, cli_ssh_args, cli_forwarded) -> int:
 
 
 def _fetch_remote_reports(host: str, ssh_args) -> None:
-    """Copy reports the remote run produced into ~/.fettle/reports/<host>/ and
-    rotate them per the controller's keep. Best-effort — never fails the run."""
+    """Copy the reports AND run-logs the remote run produced into
+    ~/.fettle/{reports,logs}/<host>/ and rotate them per the controller's keep.
+    The fetched run-logs are that host's own session transcripts (incl. its
+    package-update output), so a group `-a` run shows up under each target host.
+    Best-effort — never fails the run."""
     if _in_test():  # don't spawn a real ssh under pytest
         return
     from types import SimpleNamespace
@@ -428,12 +431,18 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
         cfg = None
     ctxlike = SimpleNamespace(user_home=Path.home(), sudo_user=None, config=cfg)
     try:
+        _, keep = reports._settings(ctxlike)
         dest = reports.reports_dir(ctxlike, host)
         names = remote.fetch_reports(host, dest, ssh_args=ssh_args)
         if names:
-            _, keep = reports._settings(ctxlike)
             reports.prune_known(dest, keep)
-            print(f"Fetched {len(set(names))} report(s) from {host} into {dest}")
+        ldest = reports.logs_dir(ctxlike, host)
+        logs = remote.fetch_logs(host, ldest, ssh_args=ssh_args)
+        if logs:
+            reports.prune(ldest, "run", keep)
+        if names or logs:
+            print(f"Fetched {len(set(names))} report(s), {len(set(logs))} run-log(s) "
+                  f"from {host}")
     except Exception:  # pragma: no cover - fetch-back must never break a run
         pass
 

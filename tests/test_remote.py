@@ -346,6 +346,18 @@ def test_fetch_reports_ssh_failure_is_graceful(tmp_path):
     assert remote.fetch_reports("foo", tmp_path, runner=boom) == []
 
 
+def test_fetch_logs_pulls_from_remote_log_dir(tmp_path):
+    # each host's own run-logs come back so a group `-a` shows under that host
+    tar = _tar_of({"run-20260722-020202.txt": "session",
+                   "run-20260722-020202.json": "{}"})
+    rec = _Rec(stdouts={"ssh": tar})
+    names = remote.fetch_logs("ec1", tmp_path, runner=rec)
+    assert set(names) == {"run-20260722-020202.txt", "run-20260722-020202.json"}
+    ssh = next(c for c in rec.calls if c[0] == "ssh")
+    assert "~/.fettle/logs/local" in ssh[-1]              # the remote LOG dir
+    assert (tmp_path / "run-20260722-020202.txt").read_text() == "session"
+
+
 def test_remote_maintenance_fetches_after_run_not_on_dry_run():
     # non-dry-run -> fetch-back invoked with the host + ssh args
     with patch("fettle.remote.run", return_value=0), \

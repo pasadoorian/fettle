@@ -230,7 +230,10 @@ def test_group_name_rendered_as_group_run_not_host(tmp_path):
     assert '<div class="card"><h3>bifrost-lab</h3>' not in text   # NOT a host card
     assert '<option value="bifrost-lab">' not in text      # NOT in the host filter
     assert "group runs" in text and 'data-type="group-run"' in text
-    assert "group summary: 4 ok" in text                   # transcript still there
+    # tiny summary: argv label + pass badge, NOT the full transcript
+    assert "fettle remote bifrost-lab -a" in text
+    assert 'class="badge b-ok"' in text
+    assert "group summary: 4 ok" not in text               # transcript not dumped here
 
 
 def test_no_group_config_treats_all_as_hosts(tmp_path):
