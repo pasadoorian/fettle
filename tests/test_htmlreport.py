@@ -242,3 +242,21 @@ def test_no_group_config_treats_all_as_hosts(tmp_path):
          "timestamp": "20260722-010101", "transcript": "hi"}))
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert 'data-host="somehost"' in text and "group runs" not in text
+
+
+# -- friendly section labels + run-log argv hint -----------------------------
+def test_section_headers_are_friendly_with_name_in_parens(tmp_path):
+    _write_report_json(tmp_path, "ec3", "pkg-audit", "20260722-010101",
+                       {"findings": [{"severity": "WARN", "source": "apt",
+                                      "package": "p", "detail": "d"}]})
+    ld = tmp_path / ".fettle/logs/ec3"
+    ld.mkdir(parents=True)
+    (ld / "run-20260722-020202.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": "ec3",
+         "timestamp": "20260722-020202", "argv": ["remote", "ec3", "-H"],
+         "exit_code": 0, "transcript": "no hardening deviations"}))
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "Package Supply-Chain Audit" in text and "(pkg-audit)" in text
+    assert "Session Transcripts" in text and "(run logs)" in text
+    # each run-log summary is labeled by what it ran
+    assert "fettle remote ec3 -H" in text

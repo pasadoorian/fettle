@@ -64,7 +64,7 @@ def test_sysaudit_renders_categories_and_levels(tmp_path):
     ctx = SimpleNamespace(user_home=tmp_path, sudo_user=None,
                           config=__import__("fettle.config", fromlist=["Config"]).Config())
     text = htmlreport.build(ctx).read_text()
-    assert ">sys-audit (" in text                  # its own section
+    assert "System Security Scan" in text and "(sys-audit)" in text   # friendly + name
     assert "Secure Boot" in text and "TPM" in text
     assert "sev-WARN" in text and "v-safe" in text   # level pills
     assert "Disabled" in text and "Present" in text

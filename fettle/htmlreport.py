@@ -412,6 +412,34 @@ def _entry_badge(entry: dict) -> str:
     return ""
 
 
+# friendly descriptions shown before the technical section name, e.g.
+# "Package Supply-Chain Audit (pkg-audit)".
+_SECTION_LABELS = {
+    "hardening-audit": "Binary Hardening Audit",
+    "pkg-audit": "Package Supply-Chain Audit",
+    "aur-audit": "AUR Package Health",
+    "aur-ioc-scan": "AUR Threat Scan",
+    "alien-pkgs": "Foreign / AUR Packages",
+    "obsolete-pkgs": "Obsolete Packages",
+    "upgrade-check": "AI Upgrade Check",
+    "sys-audit": "System Security Scan",
+    "run-log": "Session Transcripts",
+    "group-run": "Group Orchestration",
+}
+
+
+def _section_title(key: str, count: int) -> str:
+    desc = _SECTION_LABELS.get(key, key.replace("-", " ").title())
+    shown = "run logs" if key == "run-log" else "group" if key == "group-run" else key
+    return f'{_esc(desc)} <span class="muted">({_esc(shown)}) · {count}</span>'
+
+
+def _run_label(entry: dict) -> str:
+    """A short 'what did this run do' hint for a run-log summary, from its argv."""
+    argv = entry.get("argv")
+    return ("fettle " + " ".join(str(a) for a in argv)) if isinstance(argv, list) and argv else ""
+
+
 def _host_summary(host: dict) -> str:
     """The dashboard card body: latest hardening bands, per-type counts, latest run."""
     chips = ""
@@ -470,16 +498,17 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
                 f'<div class="body">{_render_entry_body(e)}</div></details>'
                 for e in entries)
             groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'
-                          f'<h3>{_esc(tool)} ({len(entries)})</h3>{items}</div>')
+                          f'<h3>{_section_title(tool, len(entries))}</h3>{items}</div>')
         logs = [e for e in hostmap[h]["logs"] if not _is_empty(e)]
         if logs:
             items = "".join(
                 f'<details data-host="{_esc(h)}" data-type="run-log">'
                 f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
+                f'<span class="muted">{_esc(_run_label(e))}</span>'
                 f'</summary><div class="body">{_render_entry_body(e)}</div></details>'
                 for e in logs)
             groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="run-log">'
-                          f'<h3>run logs ({len(logs)})</h3>{items}</div>')
+                          f'<h3>{_section_title("run-log", len(logs))}</h3>{items}</div>')
         if not groups:                              # nothing to show for this host
             continue
         note = (f'<div class="group muted" style="font-size:.75rem">'
@@ -501,7 +530,9 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
             f'<div class="body">{_render_entry_body(e)}</div></details>'
             for e in logs)
         group_blocks.append(f'<div class="group" data-host="{_esc(g)}" data-type="group-run">'
-                            f'<h3>{_esc(g)} ({len(logs)})</h3>{items}</div>')
+                            f'<h3>{_esc(g)} '
+                            f'<span class="muted">(group) · {len(logs)}</span></h3>'
+                            f'{items}</div>')
     group_section = ""
     if group_blocks:
         group_section = (
