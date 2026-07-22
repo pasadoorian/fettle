@@ -417,6 +417,12 @@ fettle sys-audit -v microcode        # verbose (raw tool output)
 fettle sys-audit --user hardware     # run as your user, no sudo
 ```
 
+Like the other checks, a local scan saves a report to
+`~/.fettle/reports/<host>/sys-audit-<ts>.{txt,json}`, so it appears in
+`fettle report` (see [HTML report](#html-report--fettle-report-beta)); a
+`sys-audit remote <host>` scan fetches its report back to the controller. Run with
+sudo/`--all` for the fullest results — many checks only produce real output as root.
+
 > **`sudo: fettle: command not found`?** Don't prefix `sudo` — `fettle` lives in
 > `~/.local/bin`, which isn't on root's `PATH`. fettle elevates itself, so plain
 > `fettle sys-audit …` works. (If you *want* `sudo fettle` to work, also symlink it
@@ -639,8 +645,10 @@ with `json = false` under `[reports]`.
 (`0600`) from all the stored JSON, across **every host**: a per-host summary card
 row (latest hardening band tally, per-type counts, latest run), collapsible
 sections grouped by report type with native rendering — scored hardening tables,
-severity-coloured findings, upgrade verdicts, package lists, log transcripts — and
-a host/type/text filter. Empty reports are hidden (with a per-host "N hidden"
+severity-coloured findings, upgrade verdicts, package lists, `sys-audit`
+firmware/boot/hardware results (status levels + a raw-output section), log
+transcripts — and a host/type/text filter. Empty reports are hidden (with a
+per-host "N hidden"
 note). It's styled as a dark Linux terminal (monospace, phosphor palette). Pure
 stdlib, no external assets, nothing served.
 
