@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.13.0] — remote host groups
+
+- **`fettle remote <group>` runs on a whole group of hosts, one by one.** Define a
+  group in the config and update the entire lab with one command:
+  ```toml
+  [remote.groups.bifrost-lab]
+  hosts = ["bifrost", "ec1", "ec2", "ec3"]   # + optional actions / ssh_args / yes
+  ```
+  `fettle remote bifrost-lab -a` runs `fettle -a` on each host **in order** (same
+  per-host flow, including the report fetch-back), **confirms the host list** first
+  (skipped under `--yes` / `--dry-run`), **continues past a failing host**, and
+  prints a **pass/fail summary** (non-zero exit if any host failed). A group can set
+  per-group default `actions`, `ssh_args`, and `yes`; a bare host list is shorthand.
+  A group name wins over a same-named single host. For a walk-away run, use `--yes`
+  with passwordless (`NOPASSWD`) sudo on the hosts.
+
 ## [0.12.0] — machine-readable JSON output; HTML report (beta)
 
 - **Every report and run-log now has a structured `.json` sibling.** Alongside the

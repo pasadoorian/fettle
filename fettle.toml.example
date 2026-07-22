@@ -60,6 +60,17 @@
 #log = true              # record a per-run transcript (false disables the run-log)
 #json = true             # write a .json sibling per report/log (feeds `fettle report`)
 
+# Remote host groups. `fettle remote <group>` runs on each host in order (confirms
+# first, continues past failures, prints a summary). `hosts` is required; the rest
+# are optional. A bare list is shorthand for {hosts = [...]}.
+#[remote.groups.bifrost-lab]
+#hosts    = ["bifrost", "ec1", "ec2", "ec3"]   # ssh aliases, hostnames, or IPs
+#actions  = ["-a"]                             # default action(s) if none on the CLI
+#ssh_args = ["-o", "ConnectTimeout=5"]         # merged with any CLI --ssh-arg
+#yes      = true                               # always unattended (needs NOPASSWD sudo)
+#[remote.groups]
+#arch-boxes = ["mjolnir", "wopr"]              # shorthand form
+
 # Per-distro tool selection (schema finalized as each backend lands). Example:
 #[updaters.arch]
 #system_updater = "pacman"   # pacman | pamac

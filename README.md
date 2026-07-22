@@ -505,6 +505,40 @@ fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 > `fettle remote <host> config-drift` (apt keeps the old file and drops a
 > `.dpkg-dist`; pacman leaves a `.pacnew`).
 
+### Host groups
+
+Define a **group** of hosts in the config and run on all of them, in order, with
+one command — e.g. update the whole lab:
+
+```toml
+# ~/.config/fettle/config.toml
+[remote.groups.bifrost-lab]
+hosts    = ["bifrost", "ec1", "ec2", "ec3"]   # ~/.ssh/config aliases, hostnames, or IPs
+# actions  = ["-a"]        # optional: default action(s) when none given on the CLI
+# ssh_args = ["-o", "ConnectTimeout=5"]   # optional: merged with any CLI --ssh-arg
+# yes      = true          # optional: always run unattended
+
+[remote.groups]            # shorthand — a bare list is {hosts = [...]}
+arch-boxes = ["mjolnir", "wopr"]
+```
+
+```sh
+fettle remote bifrost-lab -a          # run `fettle -a` on each host, in order
+fettle remote bifrost-lab -a --yes    # unattended (no confirm; needs passwordless sudo)
+```
+
+`fettle remote <group>` runs the same per-host flow (including the report
+fetch-back to `~/.fettle/reports/<host>/`) on each host **sequentially**. It
+**confirms the host list** before starting (skipped under `--yes` / `--dry-run`),
+**continues past a host that fails**, and prints a **pass/fail summary** at the end
+(the command exits non-zero if any host failed). A group name takes precedence over
+a same-named single host; an unknown name is treated as a single host. One group
+(or host) per command.
+
+> For a truly walk-away group run, use `--yes` (or `yes = true`) **and** set up
+> **passwordless sudo** (`NOPASSWD`) on the group's hosts — otherwise each host
+> stops for its sudo password over the interactive `ssh -t`.
+
 A standalone binary (for hosts with no `python3` at all) is a planned option; the
 zipapp is the current transport. It's uploaded to the remote user's home under a
 random name (not a predictable world-writable `/tmp` path) and removed after the run.
@@ -786,7 +820,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.12.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (v0.13.0, beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
