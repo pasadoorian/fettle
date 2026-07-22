@@ -434,10 +434,17 @@ def _host_summary(host: dict) -> str:
             f'<div class="count muted">latest: {_esc(_fmt_ts(latest)) or "—"}</div>')
 
 
-def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you") -> str:
-    hosts = sorted(hostmap)
-    all_types = sorted({e.get("tool", "?") for h in hostmap.values()
-                        for e in h["reports"] if not _is_empty(e)})
+def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
+           groups=frozenset()) -> str:
+    # A configured group name (e.g. `fettle remote bifrost-lab`) is NOT a host — its
+    # only artifact here is the controller's orchestration run-log. Keep it out of
+    # the host dashboard and show it in a separate "group runs" area; the real
+    # per-host results already live under each host's own directory.
+    all_names = sorted(hostmap)
+    hosts = [h for h in all_names if h not in groups]
+    group_names = [h for h in all_names if h in groups]
+    all_types = sorted({e.get("tool", "?") for h in hosts
+                        for e in hostmap[h]["reports"] if not _is_empty(e)})
     host_opts = "".join(f'<option value="{_esc(h)}">{_esc(h)}</option>' for h in hosts)
     type_opts = "".join(f'<option value="{_esc(t)}">{_esc(t)}</option>' for t in all_types)
 
@@ -480,6 +487,30 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you")
         sections.append(f'<section class="host" data-host="{_esc(h)}">'
                         f'<h2>{_esc(h)}</h2>{"".join(groups)}{note}</section>')
 
+    # "Group runs" — the orchestration transcript of each `fettle remote <group>`
+    # session (per-host results are under the hosts above, not here).
+    group_blocks = []
+    for g in group_names:
+        logs = [e for e in hostmap[g]["logs"] if not _is_empty(e)]
+        if not logs:
+            continue
+        items = "".join(
+            f'<details data-host="{_esc(g)}" data-type="group-run">'
+            f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
+            f'<span class="badge">group</span></summary>'
+            f'<div class="body">{_render_entry_body(e)}</div></details>'
+            for e in logs)
+        group_blocks.append(f'<div class="group" data-host="{_esc(g)}" data-type="group-run">'
+                            f'<h3>{_esc(g)} ({len(logs)})</h3>{items}</div>')
+    group_section = ""
+    if group_blocks:
+        group_section = (
+            '<section class="host" data-host="(group runs)"><h2>group runs</h2>'
+            '<div class="muted" style="padding:.2rem .9rem .4rem;font-size:.78rem">'
+            'orchestration transcripts for `fettle remote &lt;group&gt;` — each '
+            'host’s own results are under that host above</div>'
+            f'{"".join(group_blocks)}</section>')
+
     return f"""<!doctype html>
 <html lang=en>
 <head>
@@ -502,6 +533,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you")
 <main>
 <div class="dashboard">{cards}</div>
 {"".join(sections)}
+{group_section}
 </main>
 <script>{_SCRIPT}</script>
 </body>
@@ -519,10 +551,15 @@ def build(ctx, *, open_browser: bool = False, now=None) -> Path:
     hostmap = collect(base)
     generated = (now or _dt.datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
     user = getattr(ctx, "sudo_user", None) or _current_user()
+    try:
+        from . import remote
+        groups = frozenset(remote.remote_groups(getattr(ctx, "config", None)))
+    except Exception:
+        groups = frozenset()
     out_path = base / "report.html"
     base.mkdir(parents=True, exist_ok=True)
     out_path.write_text(render(hostmap, generated_at=generated,
-                               version=__version__, user=user))
+                               version=__version__, user=user, groups=groups))
     try:
         out_path.chmod(0o600)
     except OSError:

@@ -19,6 +19,9 @@ All notable changes to fettle are recorded here. Newest first.
   per-group default `actions`, `ssh_args`, and `yes`; a bare host list is shorthand.
   A group name wins over a same-named single host. For a walk-away run, use `--yes`
   with passwordless (`NOPASSWD`) sudo on the hosts.
+- In the HTML report, a group is **not** shown as a host asset: each host in the
+  group keeps its own dashboard card/section (results are fetched back per host),
+  and the group's orchestration transcript appears in a separate "group runs" area.
 
 ## [0.12.0] — machine-readable JSON output; HTML report (beta)
 

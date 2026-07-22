@@ -208,3 +208,37 @@ def test_host_with_only_empty_reports_is_dropped(tmp_path):
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     # no host <section> for a host whose every report is empty (and no logs)
     assert 'data-host="quiet-host"' not in text
+
+
+# -- group name is not a host asset ------------------------------------------
+def test_group_name_rendered_as_group_run_not_host(tmp_path):
+    from fettle.config import Config
+    _write_report_json(tmp_path, "ec1", "pkg-audit", "20260722-010101",
+                       {"findings": [{"severity": "WARN", "source": "apt",
+                                      "package": "p", "detail": "d"}]})
+    ld = tmp_path / ".fettle/logs/bifrost-lab"
+    ld.mkdir(parents=True)
+    (ld / "run-20260722-020202.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": "bifrost-lab",
+         "timestamp": "20260722-020202", "argv": ["remote", "bifrost-lab", "-a"],
+         "exit_code": 0, "transcript": "group summary: 4 ok"}))
+    cfg = Config()
+    cfg.remote = {"groups": {"bifrost-lab": ["ec1", "ec2"]}}
+    text = htmlreport.build(SimpleNamespace(user_home=tmp_path, sudo_user=None,
+                                            config=cfg)).read_text()
+    assert 'data-host="ec1"' in text                       # real host still shown
+    assert '<div class="card"><h3>bifrost-lab</h3>' not in text   # NOT a host card
+    assert '<option value="bifrost-lab">' not in text      # NOT in the host filter
+    assert "group runs" in text and 'data-type="group-run"' in text
+    assert "group summary: 4 ok" in text                   # transcript still there
+
+
+def test_no_group_config_treats_all_as_hosts(tmp_path):
+    # without a group config, a logs/<name> dir is still a host (unchanged behavior)
+    ld = tmp_path / ".fettle/logs/somehost"
+    ld.mkdir(parents=True)
+    (ld / "run-20260722-010101.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": "somehost",
+         "timestamp": "20260722-010101", "transcript": "hi"}))
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert 'data-host="somehost"' in text and "group runs" not in text
