@@ -19,7 +19,54 @@ import subprocess
 import sys
 import tempfile
 import zipapp
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+@dataclass
+class RemoteGroup:
+    """A named set of hosts `fettle remote <group>` runs over, in order."""
+
+    name: str
+    hosts: list[str]
+    ssh_args: list[str] = field(default_factory=list)  # merged with CLI --ssh-arg
+    actions: list[str] = field(default_factory=list)   # default when none on the CLI
+    yes: bool = False                                   # imply --yes (unattended)
+
+
+def _str_list(value) -> list[str]:
+    return [str(x) for x in value if str(x).strip()] \
+        if isinstance(value, (list, tuple)) else []
+
+
+def remote_groups(cfg) -> dict[str, RemoteGroup]:
+    """Parse `[remote.groups]` into ``{name: RemoteGroup}``.
+
+    Each group is either a rich table (`hosts` + optional `ssh_args`/`actions`/
+    `yes`) or a bare host list (shorthand for ``{hosts = [...]}``). Malformed
+    entries are skipped, and a group with no hosts is dropped — never raises.
+    """
+    r = getattr(cfg, "remote", None)
+    r = r if isinstance(r, dict) else {}
+    raw = r.get("groups")
+    raw = raw if isinstance(raw, dict) else {}
+    out: dict[str, RemoteGroup] = {}
+    for name, spec in raw.items():
+        if isinstance(spec, (list, tuple)):
+            grp = RemoteGroup(name=str(name), hosts=_str_list(spec))
+        elif isinstance(spec, dict):
+            grp = RemoteGroup(
+                name=str(name),
+                hosts=_str_list(spec.get("hosts")),
+                ssh_args=_str_list(spec.get("ssh_args")),
+                actions=_str_list(spec.get("actions")),
+                yes=bool(spec.get("yes", False)),
+            )
+        else:
+            continue
+        if grp.hosts:
+            out[str(name)] = grp
+    return out
 
 
 def build_zipapp(dest: Path) -> None:

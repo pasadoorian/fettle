@@ -58,6 +58,11 @@ class Config:
     # each report/log — default on; the `fettle report` HTML dashboard reads them).
     # Reports live under <dir>/reports/<host>/, run-logs under <dir>/logs/<host>/.
     reports: dict = field(default_factory=dict)
+    # Remote host groups (fettle/remote.py). `[remote.groups.<name>]` tables map a
+    # group name to hosts (+ optional per-group ssh_args / actions / yes), so
+    # `fettle remote <group>` runs on each host in order. A bare list is shorthand
+    # for {hosts = [...]}.
+    remote: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True

@@ -372,3 +372,54 @@ def test_fetch_remote_reports_is_a_noop_under_pytest(tmp_path, monkeypatch):
     cli._fetch_remote_reports("server1", [])
     assert called == []                                   # no ssh attempted
     assert not (tmp_path / ".fettle").exists()            # no dir created
+
+
+# -- RG1: remote host groups (config) ----------------------------------------
+def _cfg_with_remote(remote):
+    from fettle.config import Config
+    c = Config()
+    c.remote = remote
+    return c
+
+
+def test_remote_groups_rich_table():
+    from fettle.config import Config
+    from fettle.remote import remote_groups
+    cfg = _cfg_with_remote({"groups": {"ubuntu-lab": {
+        "hosts": ["ubu1", "ubu2", "10.0.0.5"],
+        "ssh_args": ["-o", "ConnectTimeout=5"],
+        "actions": ["-a"], "yes": True}}})
+    g = remote_groups(cfg)["ubuntu-lab"]
+    assert g.hosts == ["ubu1", "ubu2", "10.0.0.5"]
+    assert g.ssh_args == ["-o", "ConnectTimeout=5"]
+    assert g.actions == ["-a"] and g.yes is True
+    assert remote_groups(Config()) == {}                # no [remote] -> empty
+
+
+def test_remote_groups_bare_list_shorthand():
+    from fettle.remote import remote_groups
+    cfg = _cfg_with_remote({"groups": {"arch-lab": ["mjolnir", "wopr"]}})
+    g = remote_groups(cfg)["arch-lab"]
+    assert g.hosts == ["mjolnir", "wopr"]
+    assert g.ssh_args == [] and g.actions == [] and g.yes is False
+
+
+def test_remote_groups_preserves_host_order():
+    from fettle.remote import remote_groups
+    cfg = _cfg_with_remote({"groups": {"g": ["a", "b", "c", "d"]}})
+    assert remote_groups(cfg)["g"].hosts == ["a", "b", "c", "d"]
+
+
+def test_remote_groups_tolerates_malformed():
+    from fettle.remote import remote_groups
+    # not-a-dict remote, empty hosts, wrong types -> skipped, never raises
+    assert remote_groups(_cfg_with_remote("garbage")) == {}
+    cfg = _cfg_with_remote({"groups": {
+        "empty": {"hosts": []},                # dropped (no hosts)
+        "bad": 42,                             # skipped (not list/dict)
+        "ok": ["h1"],
+        "typed": {"hosts": ["h2"], "ssh_args": "notalist", "yes": "x"}}})
+    g = remote_groups(cfg)
+    assert set(g) == {"ok", "typed"}
+    assert g["typed"].hosts == ["h2"] and g["typed"].ssh_args == []
+    assert g["typed"].yes is True              # bool("x") -> True (truthy string)
