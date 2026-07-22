@@ -331,26 +331,86 @@ def _run_remote_maintenance(argv: list[str]) -> int:
         print("fettle remote: missing HOST. Try 'fettle remote -h'.", file=sys.stderr)
         return 2
 
+    # A HOST token that names a config group runs on every host in the group, in
+    # order (a group name wins over a same-named single host).
+    from .config import Config, load
+    if _in_test() or "--no-config" in argv:
+        cfg = Config()
+    else:
+        try:
+            cfg, _ = load(DEFAULT_CONFIG)
+        except Exception:
+            cfg = Config()
+    groups = remote.remote_groups(cfg)
+    if host in groups:
+        return _run_group(groups[host], ssh_args, forwarded)
+    return _remote_one(host, ssh_args, forwarded)
+
+
+def _remote_one(host: str, ssh_args, forwarded) -> int:
+    """Run fettle on a single remote host: the upgrade-check collect/analyse path
+    or the generic forward-and-run maintenance path (+ report fetch-back)."""
+    from . import remote
+
     # upgrade-check is special: collect a snapshot on the remote, analyse it here
-    # with the local key (the key never leaves this machine). Route it out of the
-    # generic forward-and-run path.
+    # with the local key (the key never leaves this machine).
     uc_tokens = {"-U", "--upgrade-check", "upgrade-check"}
     if any(t in uc_tokens for t in forwarded):
         return _remote_upgrade_check(host, ssh_args, [t for t in forwarded
                                                       if t not in uc_tokens])
 
+    fwd = list(forwarded)
     # No action named -> run the SAFE set (never destructive unless asked for).
-    if not _remote_has_action(forwarded):
-        forwarded = [a.replace("_", "-") for a in REMOTE_DEFAULT_ACTIONS] + forwarded
-
+    if not _remote_has_action(fwd):
+        fwd = [a.replace("_", "-") for a in REMOTE_DEFAULT_ACTIONS] + fwd
     # dry-run needs neither sudo nor a PTY; --yes is fully unattended (no PTY).
-    dry_run = "--dry-run" in forwarded
-    unattended = "--yes" in forwarded
-    rc = remote.run(host, forwarded, sudo=not dry_run,
-                    ssh_args=ssh_args, tty=not unattended)
+    dry_run = "--dry-run" in fwd
+    unattended = "--yes" in fwd
+    rc = remote.run(host, fwd, sudo=not dry_run, ssh_args=ssh_args,
+                    tty=not unattended)
     if not dry_run:  # pull any reports the remote wrote back under reports/<host>/
         _fetch_remote_reports(host, ssh_args)
     return rc
+
+
+def _run_group(group, cli_ssh_args, cli_forwarded) -> int:
+    """Run fettle on every host in ``group``, in order. Continues past a failing
+    host and prints a pass/fail summary; exit code is non-zero if any host failed."""
+    ssh_args = list(cli_ssh_args) + list(group.ssh_args)
+    fwd = list(cli_forwarded)
+    if not _remote_has_action(fwd) and group.actions:   # group's default actions
+        fwd = list(group.actions) + fwd
+    if group.yes and "--yes" not in fwd:                 # group implies unattended
+        fwd.append("--yes")
+    unattended = "--yes" in fwd
+    dry_run = "--dry-run" in fwd
+
+    action_desc = " ".join(fwd) or "the safe default set"
+    if not unattended and not dry_run and not _in_test():
+        print(f"About to run `{action_desc}` on {len(group.hosts)} host(s) in "
+              f"group '{group.name}':")
+        for h in group.hosts:
+            print(f"  - {h}")
+        try:
+            ans = input("Proceed? [y/N] ").strip().lower()
+        except (EOFError, OSError):
+            ans = ""
+        if ans not in ("y", "yes"):
+            print("Aborted.")
+            return 1
+
+    results = []
+    for idx, h in enumerate(group.hosts, 1):
+        print(f"\n=== [{group.name}] {h}  ({idx}/{len(group.hosts)}) ===")
+        results.append((h, _remote_one(h, ssh_args, fwd)))
+
+    print(f"\n=== group '{group.name}' summary ===")
+    for h, rc in results:
+        print(f"  [{'OK  ' if rc == 0 else 'FAIL'}] {h}"
+              + (f"  (exit {rc})" if rc else ""))
+    failed = sum(1 for _, rc in results if rc != 0)
+    print(f"{len(results) - failed} ok, {failed} failed")
+    return 1 if failed else 0
 
 
 def _fetch_remote_reports(host: str, ssh_args) -> None:

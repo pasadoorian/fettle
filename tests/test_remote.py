@@ -423,3 +423,74 @@ def test_remote_groups_tolerates_malformed():
     assert set(g) == {"ok", "typed"}
     assert g["typed"].hosts == ["h2"] and g["typed"].ssh_args == []
     assert g["typed"].yes is True              # bool("x") -> True (truthy string)
+
+
+# -- RG2: group execution ----------------------------------------------------
+def _grp(name, hosts, **kw):
+    return {name: remote.RemoteGroup(name=name, hosts=hosts, **kw)}
+
+
+def test_group_runs_each_host_in_order():
+    calls = []
+    with patch("fettle.remote.remote_groups",
+               return_value=_grp("bifrost-lab", ["bifrost", "ec1", "ec2", "ec3"])), \
+         patch("fettle.remote.run",
+               side_effect=lambda h, f, **k: calls.append((h, list(f))) or 0):
+        rc = cli_main(["remote", "bifrost-lab", "-a"])
+    assert rc == 0
+    assert [h for h, _ in calls] == ["bifrost", "ec1", "ec2", "ec3"]   # order kept
+    assert all(f == ["-a"] for _, f in calls)                          # -a to each
+
+
+def test_group_continues_past_failure_and_summarizes(capsys):
+    rcs = {"a": 0, "b": 2, "c": 0}
+    with patch("fettle.remote.remote_groups", return_value=_grp("g", ["a", "b", "c"])), \
+         patch("fettle.remote.run", side_effect=lambda h, f, **k: rcs[h]):
+        rc = cli_main(["remote", "g", "-a"])
+    out = capsys.readouterr().out
+    assert rc == 1                                        # a host failed
+    assert "[OK  ] a" in out and "[FAIL] b" in out and "[OK  ] c" in out
+    assert "2 ok, 1 failed" in out
+
+
+def test_group_default_actions_yes_and_ssh_merge():
+    seen = {}
+
+    def fake(h, f, **k):
+        seen.update(host=h, fwd=list(f), ssh=list(k["ssh_args"]), tty=k["tty"])
+        return 0
+    grp = _grp("g", ["h1"], ssh_args=["-o", "X=1"], actions=["-a"], yes=True)
+    with patch("fettle.remote.remote_groups", return_value=grp), \
+         patch("fettle.remote.run", side_effect=fake):
+        cli_main(["remote", "--ssh-arg", "-p2222", "g"])
+    assert seen["fwd"] == ["-a", "--yes"]                 # group actions + group.yes
+    assert seen["ssh"] == ["-p2222", "-o", "X=1"]         # CLI + group ssh_args
+    assert seen["tty"] is False                           # --yes -> unattended
+
+
+def test_unknown_name_is_a_single_host():
+    with patch("fettle.remote.remote_groups", return_value={}), \
+         patch("fettle.remote.run", return_value=0) as run:
+        cli_main(["remote", "justahost", "-a"])
+    (host, fwd), _ = run.call_args
+    assert host == "justahost" and fwd == ["-a"]          # single-host path
+
+
+def test_group_confirm_decline_aborts(monkeypatch, capsys):
+    from fettle import cli
+    monkeypatch.setattr(cli, "_in_test", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda *_: "n")
+    with patch("fettle.remote.run") as run:
+        rc = cli._run_group(remote.RemoteGroup(name="g", hosts=["a", "b"]), [], ["-a"])
+    assert rc == 1 and not run.called                     # declined -> nothing ran
+    assert "Aborted" in capsys.readouterr().out
+
+
+def test_group_confirm_accept_runs(monkeypatch):
+    from fettle import cli
+    monkeypatch.setattr(cli, "_in_test", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda *_: "y")
+    with patch("fettle.remote.run", return_value=0) as run, \
+         patch("fettle.cli._fetch_remote_reports"):
+        rc = cli._run_group(remote.RemoteGroup(name="g", hosts=["a"]), [], ["-a"])
+    assert rc == 0 and run.called                         # accepted -> ran
