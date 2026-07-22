@@ -157,7 +157,10 @@ def _remote(argv: list[str]) -> int:
     forwarded += ["--all"] if args.all else chosen
 
     from .. import remote
-    return remote.run(args.host, ["sys-audit", *forwarded], sudo=args.sudo)
+    from ..cli import _fetch_remote_reports
+    rc = remote.run(args.host, ["sys-audit", *forwarded], sudo=args.sudo)
+    _fetch_remote_reports(args.host, [])  # pull the remote's sys-audit report back
+    return rc
 
 
 def main(argv: list[str]) -> int:

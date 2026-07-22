@@ -29,10 +29,12 @@ All notable changes to fettle are recorded here. Newest first.
   `.txt` reports/logs a JSON sibling (idempotent, non-destructive) so the dashboard
   is populated without re-scanning.
 - Remote report fetch-back now pulls the `.json` siblings too.
-- **`sys-audit` now writes a report** (`~/.fettle/reports/<host>/sys-audit-<ts>.{txt,json}`,
-  grouped by category with per-item status levels), so the firmware/boot/hardware
-  scan shows up in the HTML dashboard alongside the other reports — previously it
-  only printed to the terminal.
+- **`sys-audit` now writes a report** (`~/.fettle/reports/<host>/sys-audit-<ts>.{txt,json}`),
+  so the firmware/boot/hardware scan shows up in the HTML dashboard alongside the
+  other reports — previously it only printed to the terminal. Every scanned
+  category is captured (even ones whose detail comes from raw command output, not
+  status lines), with per-item status levels **and a full raw-output section**.
+  `fettle sys-audit remote <host>` fetches its report back to the controller.
 
 ## [0.11.0] — reports moved to ~/.fettle, timestamped & rotated; run logs
 

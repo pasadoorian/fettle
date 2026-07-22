@@ -321,19 +321,25 @@ _LEVEL_PILL = {"error": "sev-CRIT", "warn": "sev-WARN", "ok": "v-safe",
 
 def _render_sysaudit(data: dict) -> str:
     cats = data.get("categories") or []
-    if not cats:
-        return '<div class="muted">no results</div>'
     out = []
     for c in cats:
         out.append(f'<h4 class="cat">{_esc(str(c.get("name", "")))}</h4>')
-        rows = "".join(
-            f'<tr><td><span class="pill {_LEVEL_PILL.get(it.get("level"), "sev-INFO")}">'
-            f'{_esc(str(it.get("level", "")))}</span></td>'
-            f'<td>{_esc(str(it.get("label", "")))}</td>'
-            f'<td>{_esc(str(it.get("value", "")))}</td></tr>'
-            for it in c.get("items", []))
-        out.append(f"<table>{rows}</table>")
-    return "".join(out)
+        items = c.get("items", [])
+        if items:
+            rows = "".join(
+                f'<tr><td><span class="pill {_LEVEL_PILL.get(it.get("level"), "sev-INFO")}">'
+                f'{_esc(str(it.get("level", "")))}</span></td>'
+                f'<td>{_esc(str(it.get("label", "")))}</td>'
+                f'<td>{_esc(str(it.get("value", "")))}</td></tr>'
+                for it in items)
+            out.append(f"<table>{rows}</table>")
+        else:
+            out.append('<div class="muted">summary in raw output below</div>')
+    text = data.get("text")
+    if text:                                        # full transcript (all check detail)
+        out.append('<details class="raw"><summary>raw output</summary>'
+                   f'<pre>{_esc(str(text))}</pre></details>')
+    return "".join(out) or '<div class="muted">no results</div>'
 
 
 def _render_log(entry: dict) -> str:
@@ -389,7 +395,7 @@ def _is_empty(entry: dict) -> bool:
         return not (data.get("packages") or data.get("not_found_in_aur")
                     or data.get("maintainer_changes"))
     if tool == "sys-audit":
-        return not data.get("categories")
+        return not (data.get("categories") or data.get("text"))
     return False                                    # upgrade-check / unknown: keep
 
 

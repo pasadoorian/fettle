@@ -74,3 +74,37 @@ def test_sysaudit_empty_is_hidden():
     assert htmlreport._is_empty({"tool": "sys-audit", "data": {"categories": []}})
     assert not htmlreport._is_empty(
         {"tool": "sys-audit", "data": {"categories": [{"name": "x", "items": []}]}})
+
+
+def test_report_data_includes_full_raw_text():
+    s = _scan()
+    s.section("BIOS")
+    s.sub("dmidecode")
+    s.result("Vendor: ACME\nVersion: 1.2.3")     # raw output — not a status()
+    s.status("BIOS date", "2024", "info")
+    data = s.report_data()
+    assert "Vendor: ACME" in data["text"]          # detail captured in raw text
+    assert "Version: 1.2.3" in data["text"]
+
+
+def test_sysaudit_renders_raw_output_section(tmp_path):
+    _write(tmp_path, "local", "sys-audit", "20260721-010101", {
+        "categories": [{"name": "BIOS", "items": []}],
+        "text": "== BIOS ==\n-- dmidecode --\n    Vendor: ACME\n    Version: 1.2.3"})
+    from fettle.config import Config
+    ctx = SimpleNamespace(user_home=tmp_path, sudo_user=None, config=Config())
+    text = htmlreport.build(ctx).read_text()
+    assert "raw output" in text                    # the raw section exists
+    assert "Vendor: ACME" in text                  # full detail shown
+    assert "summary in raw output below" in text   # empty-items category note
+
+
+def test_remote_sysaudit_fetches_reports_back():
+    from unittest.mock import patch
+    from fettle.secure import audit
+    with patch("fettle.remote.run", return_value=0) as run, \
+         patch("fettle.cli._fetch_remote_reports") as fetch:
+        rc = audit.main(["remote", "server1", "secureboot"])
+    assert rc == 0 and run.called
+    fetch.assert_called_once()
+    assert fetch.call_args[0][0] == "server1"      # fetch-back keyed on the host

@@ -24,6 +24,7 @@ class Scan:
     # accumulated for the persisted report (in addition to live terminal output)
     records: list = field(default_factory=list)   # [{category, sub, label, value, level}]
     lines: list = field(default_factory=list)      # plain-text report body
+    _sections: list = field(default_factory=list)  # every category, in scan order
     _cat: str = ""
     _sub: str = ""
 
@@ -66,6 +67,8 @@ class Scan:
     # -- presentation (mirrors the bash print_* helpers via output.py) -------
     def section(self, title: str) -> None:
         self._cat, self._sub = title, ""
+        if title not in self._sections:
+            self._sections.append(title)
         self.lines.append(f"\n== {title} ==")
         self.output.section(title)
 
@@ -109,16 +112,22 @@ class Scan:
     def report_data(self) -> dict:
         """Structured payload grouped by category (for the JSON + HTML report)."""
         cats: dict[str, list] = {}
-        order: list[str] = []
         for r in self.records:
             c = r["category"] or "general"
-            if c not in cats:
-                cats[c] = []
+            cats.setdefault(c, []).append(
+                {k: r[k] for k in ("sub", "label", "value", "level")})
+        # every category that ran, in scan order — even ones whose detail was
+        # emitted only via result()/dim() (they point to the raw output).
+        order = list(self._sections)
+        for c in cats:
+            if c not in order:
                 order.append(c)
-            cats[c].append({k: r[k] for k in ("sub", "label", "value", "level")})
         levels = ("error", "warn", "ok", "info")
         return {
-            "categories": [{"name": c, "items": cats[c]} for c in order],
+            "categories": [{"name": c, "items": cats.get(c, [])} for c in order],
             "level_counts": {lvl: sum(1 for r in self.records if r["level"] == lvl)
                              for lvl in levels},
+            # the full transcript (status + sub-headers + raw command output + hints)
+            # — most check detail is emitted via result()/dim(), not status().
+            "text": self.report_text(),
         }
