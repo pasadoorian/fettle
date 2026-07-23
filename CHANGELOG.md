@@ -4,6 +4,19 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.14.0] — AUR reports link packages + say what they are
+
+- **In the HTML report, AUR package names are now links to their AUR page**
+  (`aur.archlinux.org/packages/<name>`) — in the AUR Package Health report *and* in
+  the supply-chain (`pkg-audit`) and IOC-scan (`aur-ioc-scan`) findings. Only AUR
+  packages are linked; `apt`/`flatpak`/`snap` names (no AUR page) stay plain text.
+- **The AUR Package Health table gains a "software" column** — the AUR one-line
+  description (truncated, full text on hover) plus a `↗ homepage` link to the
+  upstream project. Both come from data fettle already fetches (the AUR RPC
+  response), so there are **no new network calls**. Upstream URLs are gated to
+  `http(s)` before becoming a link (a malicious `javascript:` URL is never emitted).
+  The plain-text `.txt` report is unchanged.
+
 ## [0.13.3] — `fettle remote -h` docs refresh
 
 - `fettle remote -h` now documents **host groups** (`HOST|GROUP` grammar + how a

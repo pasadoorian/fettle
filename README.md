@@ -693,9 +693,12 @@ sections grouped by report type with native rendering — scored hardening table
 severity-coloured findings, upgrade verdicts, package lists, `sys-audit`
 firmware/boot/hardware results (status levels + a raw-output section), log
 transcripts — and a host/type/text filter. Each entry shows the exact command that
-produced it (a `$ fettle …` chip). Empty reports are hidden (with a per-host "N
-hidden" note). It's styled as a dark Linux terminal (monospace, phosphor palette).
-Pure stdlib, no external assets, nothing served.
+produced it (a `$ fettle …` chip). AUR package names link to their AUR page (in the
+health, supply-chain, and IOC reports), and the AUR Package Health table shows a
+**software** column — the package description plus a link to the upstream project.
+Empty reports are hidden (with a per-host "N hidden" note). It's styled as a dark
+Linux terminal (monospace, phosphor palette). Pure stdlib, no external assets,
+nothing served.
 
 ```sh
 fettle report                 # (re)build ~/.fettle/report.html

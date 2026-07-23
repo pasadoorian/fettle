@@ -150,6 +150,45 @@ def test_findings_render_with_severity_pills(tmp_path):
     assert "sev-CRIT" in text and "evil" in text and "bad feed" in text
 
 
+def test_aur_audit_links_name_and_shows_software(tmp_path):
+    _write_report_json(tmp_path, "local", "aur-audit", "20260721-010101",
+                       {"packages": [
+                           {"name": "yay", "maintainer": "jdoe", "age_days": 5,
+                            "votes": 900, "flags": "",
+                            "description": "AUR helper", "homepage": "https://github.com/x/yay"},
+                           {"name": "evil", "maintainer": "m", "age_days": 1,
+                            "votes": 0, "flags": "",
+                            "description": "sneaky", "homepage": "javascript:alert(1)"}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert '<th>software</th>' in text                             # new column
+    assert 'href="https://aur.archlinux.org/packages/yay"' in text  # name links to AUR
+    assert "AUR helper" in text                                    # description shown
+    assert 'href="https://github.com/x/yay"' in text               # safe homepage linked
+    assert "javascript:alert(1)" not in text                       # unsafe URL blocked
+
+
+def test_findings_link_only_aur_packages(tmp_path):
+    _write_report_json(tmp_path, "local", "pkg-audit", "20260721-010101",
+                       {"findings": [
+                           {"severity": "WARN", "source": "aur", "package": "aurpkg",
+                            "detail": "d"},
+                           {"severity": "WARN", "source": "apt", "package": "aptpkg",
+                            "detail": "d"}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert 'href="https://aur.archlinux.org/packages/aurpkg"' in text   # aur -> linked
+    assert "packages/aptpkg" not in text                               # apt -> plain text
+
+
+def test_aur_audit_escapes_html_in_name_and_desc(tmp_path):
+    _write_report_json(tmp_path, "local", "aur-audit", "20260721-010101",
+                       {"packages": [{"name": "p<b>", "maintainer": "m", "age_days": 1,
+                                      "votes": 0, "flags": "",
+                                      "description": "<script>x</script>", "homepage": ""}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "<b>" not in text and "<script>x</script>" not in text       # escaped
+    assert "&lt;script&gt;" in text
+
+
 def test_upgrade_check_renders_verdict(tmp_path):
     _write_report_json(tmp_path, "ec3", "upgrade-check", "20260721-010101",
                        {"safety_verdict": "caution", "failure_likelihood": "medium",

@@ -80,7 +80,9 @@ def run(ctx) -> None:
         try:
             data = {
                 "packages": [{"age_days": age, "name": name, "maintainer": maint,
-                              "out_of_date": ood, "votes": votes, "flags": flags}
+                              "out_of_date": ood, "votes": votes, "flags": flags,
+                              "description": (by_name.get(name, {}).get("Description") or ""),
+                              "homepage": (by_name.get(name, {}).get("URL") or "")}
                              for age, name, maint, ood, votes, flags in rows],
                 "not_found_in_aur": list(missing),
                 "maintainer_changes": list(changes),

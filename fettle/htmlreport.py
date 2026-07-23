@@ -13,6 +13,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import urllib.parse
 from pathlib import Path
 
 from . import reports as _reports
@@ -20,6 +21,36 @@ from .util import chown_to_user
 
 _NAME_RE = re.compile(r"^(?P<tool>.+)-(?P<ts>\d{8}-\d{6})(?:-\d+)?$")
 _esc = html.escape
+
+_AUR_PKG_BASE = "https://aur.archlinux.org/packages/"
+
+
+def _aur_pkg_link(name: str) -> str:
+    """A package name as a link to its AUR page (deterministic from the name)."""
+    href = _AUR_PKG_BASE + urllib.parse.quote(name, safe="")
+    return (f'<a href="{_esc(href)}" target="_blank" rel="noopener">'
+            f'{_esc(name)}</a>')
+
+
+def _safe_url(url: str) -> str:
+    """Return ``url`` only if it is an http(s) URL — the gate for AUR-supplied
+    upstream URLs, which are attacker-influenceable (block ``javascript:`` etc.)."""
+    if not isinstance(url, str):
+        return ""
+    return url if url.lower().startswith(("http://", "https://")) else ""
+
+
+def _ext_link(url: str, text: str) -> str:
+    """An external link, or ``""`` when the url is absent/unsafe."""
+    safe = _safe_url(url)
+    return (f'<a href="{_esc(safe)}" target="_blank" rel="noopener">{_esc(text)}</a>'
+            if safe else "")
+
+
+def _homepage_link(pkg: dict) -> str:
+    """A small ` ↗ homepage` link for a package's (safe) upstream URL, else ``""``."""
+    link = _ext_link(str(pkg.get("homepage", "")), "↗ homepage")
+    return f' <span class="homepage">{link}</span>' if link else ""
 
 
 def _parse_name(stem: str) -> tuple[str, str]:
@@ -161,6 +192,11 @@ th,td{text-align:left;padding:.28rem .55rem;border-bottom:1px solid #14212e}
 th{color:var(--dim);font-weight:600;text-transform:lowercase}
 tr:hover td{background:#0d141e}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.desc{max-width:44ch}
+.desc-text{display:inline-block;max-width:30ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+td a{color:var(--cyan);text-decoration:none}
+td a:hover{text-decoration:underline}
+.homepage{margin-left:.4rem;font-size:.72rem}
 .pill{display:inline-block;text-align:center;background:transparent}
 .sev-CRIT{color:var(--red);border-color:var(--red)}
 .sev-WARN{color:var(--amber);border-color:var(--amber)}
@@ -249,6 +285,13 @@ def _render_hardening(data: dict) -> str:
     return f'{chips}{meta}{table or "<div class=muted>no Critical/High packages</div>"}{tail}'
 
 
+def _pkg_cell(f: dict) -> str:
+    """A finding's package name — linked to its AUR page when it's an AUR package,
+    plain otherwise (apt/flatpak/snap have no AUR entry)."""
+    name = str(f.get("package", ""))
+    return _aur_pkg_link(name) if f.get("source") == "aur" else _esc(name)
+
+
 def _render_findings(data: dict) -> str:
     findings = data.get("findings") or []
     if not findings:
@@ -259,7 +302,7 @@ def _render_findings(data: dict) -> str:
         f'<tr><td><span class="pill sev-{_esc(str(f.get("severity","INFO")))}">'
         f'{_esc(str(f.get("severity","")))}</span></td>'
         f'<td>{_esc(str(f.get("source","")))}</td>'
-        f'<td>{_esc(str(f.get("package","")))}</td>'
+        f'<td>{_pkg_cell(f)}</td>'
         f'<td>{_esc(str(f.get("detail","")))}</td></tr>' for f in findings)
     return (f'<table><tr><th>sev</th><th>source</th><th>package</th><th>detail</th></tr>'
             f'{rows}</table>')
@@ -302,13 +345,16 @@ def _render_pkglist(data: dict) -> str:
 def _render_aur_audit(data: dict) -> str:
     pkgs = data.get("packages") or []
     rows = "".join(
-        f'<tr><td>{_esc(str(p.get("name","")))}</td>'
+        f'<tr><td>{_aur_pkg_link(str(p.get("name","")))}</td>'
+        f'<td class=desc title="{_esc(str(p.get("description","")))}">'
+        f'<span class="desc-text">{_esc(str(p.get("description","")))}</span>'
+        f'{_homepage_link(p)}</td>'
         f'<td>{_esc(str(p.get("maintainer","")))}</td>'
         f'<td class=num>{_esc(str(p.get("age_days","")))}</td>'
         f'<td class=num>{_esc(str(p.get("votes","")))}</td>'
         f'<td>{_esc(str(p.get("flags","")))}</td></tr>' for p in pkgs[:60])
-    table = (f'<table><tr><th>package</th><th>maintainer</th><th>age(d)</th>'
-             f'<th>votes</th><th>flags</th></tr>{rows}</table>') if rows else ""
+    table = (f'<table><tr><th>package</th><th>software</th><th>maintainer</th>'
+             f'<th>age(d)</th><th>votes</th><th>flags</th></tr>{rows}</table>') if rows else ""
     missing = data.get("not_found_in_aur") or []
     changes = data.get("maintainer_changes") or []
     extra = ""
