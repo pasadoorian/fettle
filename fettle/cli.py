@@ -86,6 +86,8 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
                                                    over ssh (safe set by default; 'remote -h')
   fettle report [--open]                           build ~/.fettle/report.html from all
                                                    stored reports/logs (every host)
+  fettle web [--port N]                            serve the web UI (localhost; needs
+                                                   the 'web' extra: pip install fettle[web])
 
 which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
   -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap): provenance + tampering
@@ -493,6 +495,41 @@ def _run_report(argv: list[str]) -> int:
     return 0
 
 
+def _run_web(argv: list[str]) -> int:
+    """`fettle web` — serve the NiceGUI web UI (localhost by default). Needs the
+    optional `web` extra; the core stays pure-stdlib and never imports it."""
+    p = argparse.ArgumentParser(
+        prog="fettle web",
+        description="Serve the fettle web UI (a browser dashboard over your stored "
+                    "reports; drives fettle actions in later phases). Localhost-only "
+                    "by default. Needs the web extra: pip install 'fettle[web]'.")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="bind address (default 127.0.0.1 — localhost only)")
+    p.add_argument("--port", type=int, default=8080, help="bind port (default 8080)")
+    p.add_argument("--reload", action="store_true", help="dev auto-reload")
+    p.add_argument("--show", action="store_true", help="open a browser on start")
+    args = p.parse_args(argv)
+
+    try:
+        run_web = _web_runner()
+    except ImportError as exc:
+        if "nicegui" in (getattr(exc, "name", "") or ""):
+            print("fettle web needs the web extra:  pip install 'fettle[web]'",
+                  file=sys.stderr)
+            return 1
+        raise
+    run_web(host=args.host, port=args.port, reload=args.reload, show=args.show)
+    return 0
+
+
+def _web_runner():
+    """Load the web UI's ``run`` entry point. Split out so the missing-extra path is
+    testable without nicegui installed. Raises ImportError (name='nicegui') when the
+    web extra isn't present."""
+    from .web.app import run
+    return run
+
+
 def _run_upgrade_check(argv: list[str]) -> int:
     from .ai import snapshot as ai_snapshot
     from .ai import upgrade_check as uc
@@ -750,6 +787,10 @@ def _main(argv: list[str]) -> int:
     # `fettle report` — regenerate the HTML dashboard from stored JSON (read-only).
     if argv and argv[0] == "report":
         return _run_report(argv[1:])
+
+    # `fettle web` — the NiceGUI web UI (optional, needs the `web` extra).
+    if argv and argv[0] == "web":
+        return _run_web(argv[1:])
 
     # Dispatch shortcuts: -S / -U / -p are single-flag aliases for the sys-audit,
     # upgrade-check, and aur-precheck runners (Q4: flag = shortcut, subcommand =

@@ -4,6 +4,17 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### Web UI — Phase 0 (foundations)
+
+- New optional **`fettle web`** command serves a NiceGUI web UI (localhost-only by
+  default). It's strictly opt-in: `pip install 'fettle[web]'`. The CLI core stays
+  **pure-stdlib** (`dependencies = []`) — only `fettle/web/` imports nicegui, and a
+  test enforces that importing the core never pulls it in, so the stdlib-only remote
+  zipapp is unaffected. Without the extra, `fettle web` prints a friendly install
+  hint instead of a traceback. This phase is scaffolding only: the page reuses the
+  report's terminal theme and lists the hosts found under `~/.fettle`; live
+  dashboards and action-runners come in later phases.
+
 ## [0.14.0] — AUR reports link packages + say what they are
 
 - **In the HTML report, AUR package names are now links to their AUR page**

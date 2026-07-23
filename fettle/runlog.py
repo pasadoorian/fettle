@@ -62,8 +62,14 @@ def is_active() -> bool:
     return os.environ.get(GUARD) == "1"
 
 
-def _skip() -> bool:
-    return is_active() or os.environ.get("FETTLE_TEST") == "1"
+# Subcommands that must NOT be run-logged: long-running servers whose output never
+# ends (a transcript would grow unbounded and never finalize).
+_NO_RECORD = frozenset({"web"})
+
+
+def _skip(argv=()) -> bool:
+    return (is_active() or os.environ.get("FETTLE_TEST") == "1"
+            or bool(argv) and argv[0] in _NO_RECORD)
 
 
 def clean(data: bytes) -> bytes:
@@ -191,7 +197,7 @@ def maybe_record(argv) -> int | None:
 
     Never raises: any failure falls through to a normal, unlogged run.
     """
-    if _skip() or not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if _skip(argv) or not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
     try:
         config = _early_config(argv)
@@ -285,7 +291,7 @@ class _NonTtyLog:
 
 def start_nontty_log(argv):
     """Install a Python-level tee for a non-tty run; returns a closer or None."""
-    if _skip() or sys.stdout.isatty():
+    if _skip(argv) or sys.stdout.isatty():
         return None
     try:
         config = _early_config(argv)

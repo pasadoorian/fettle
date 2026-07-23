@@ -14,6 +14,10 @@ dependencies = []  # runtime: pure standard library, on purpose
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# The web UI (`fettle web`) — the ONLY runtime dependency, and strictly opt-in.
+# The core CLI stays pure-stdlib (`dependencies = []`) so the remote zipapp keeps
+# working under any bare python3; nothing outside fettle/web/ may import nicegui.
+web = ["nicegui>=2"]
 
 [project.scripts]
 fettle = "fettle.cli:main"
