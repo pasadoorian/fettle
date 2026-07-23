@@ -143,3 +143,24 @@ def test_run_action_streams_lines_and_exit_code():
 def test_run_action_default_cmd_targets_fettle():
     from fettle.web import runner
     assert runner._cmd(["-A"])[1:] == ["-m", "fettle", "-A"]   # `python -m fettle -A`
+
+
+def test_cmd_sudo_wraps_with_sudo_S_and_pins_config():
+    from fettle.web import runner
+    cmd = runner._cmd(["-u", "--yes"], sudo=True)
+    assert cmd[0] == "sudo" and "-S" in cmd[:4]     # read password from stdin
+    assert "fettle" in cmd and "-u" in cmd and "--yes" in cmd
+    assert "--config" in cmd                        # pinned (HOME=/root under sudo)
+    plain = runner._cmd(["-A"])                      # non-sudo: no sudo, no --config
+    assert plain[0] != "sudo" and "--config" not in plain
+
+
+def test_run_action_feeds_password_to_stdin():
+    import asyncio
+
+    from fettle.web import runner
+    stub = [sys.executable, "-c",
+            "import sys; pw=sys.stdin.readline().strip(); print('pw='+pw)"]
+    lines: list[str] = []
+    code = asyncio.run(runner.run_action([], lines.append, cmd=stub, password="s3cret"))
+    assert code == 0 and "pw=s3cret" in lines       # password reached the subprocess stdin

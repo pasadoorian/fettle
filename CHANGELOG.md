@@ -21,8 +21,15 @@ All notable changes to fettle are recorded here. Newest first.
   a button per read-only audit (`pkg-audit`, `aur-audit`, `aur-ioc-scan`,
   `hardening-audit`, `config-drift`, `auto-updates`, `only-update`). Clicking one
   runs it as an unprivileged `python -m fettle <action>` subprocess and **streams the
-  output live**; when it finishes, reload the dashboard to see the new report. No
-  sudo — privileged actions come in a later phase.
+  output live**; when it finishes, reload the dashboard to see the new report.
+- **Run system-modifying actions (Phase 3):** the `/run` page also drives the
+  privileged actions (`update`, `clean`, `orphans`, `kernel`, `rebuild-check`,
+  `python-rebuild-check`, `firmware`, and the full `-a` set). Each has a **Preview**
+  (a no-sudo `--dry-run`) and a **Run (sudo)** that first shows a **confirmation**
+  and then runs `sudo -S fettle <action> --yes` with a sudo password you type on the
+  page (held in memory only, never stored or logged, never on the command line),
+  streaming the output live. The web server itself stays unprivileged. Note: some
+  flows (AUR helpers / pamac) may prompt for a password separately.
 
 ## [0.14.0] — AUR reports link packages + say what they are
 
