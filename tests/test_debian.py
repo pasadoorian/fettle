@@ -81,7 +81,9 @@ def test_update_default_apt_then_extras():
         b.update_extras(ctx)
     argvs = [c for c, _ in calls]
     assert ["apt-get", "update"] in argvs
-    assert ["apt-get", "full-upgrade"] in argvs  # interactive: apt prompts (no -y)
+    up = next(c for c in argvs if "full-upgrade" in c)
+    assert up[-2:] == ["apt-get", "full-upgrade"]  # interactive: apt prompts (no -y)
+    assert "DEBIAN_FRONTEND=readline" in up and "NEEDRESTART_MODE=l" in up  # no ncurses
     assert ["flatpak", "update", "-y"] in argvs
     assert ["snap", "refresh"] in argvs
     assert not any(c[0] == "nala" for c in argvs)
@@ -168,7 +170,7 @@ def test_update_yes_is_noninteractive():
          patch("fettle.command.which", return_value=True):
         DebianBackend().update_system(_ctx(assume_yes=True))
     upgrade = next(c for c, _ in calls if "full-upgrade" in c)
-    assert upgrade[:2] == ["env", "DEBIAN_FRONTEND=noninteractive"]
+    assert upgrade[:3] == ["env", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l"]
     assert "Dpkg::Options::=--force-confold" in upgrade  # keep old conffiles, no prompt
 
 
@@ -178,8 +180,9 @@ def test_update_interactive_apt_prompts():
          patch("fettle.command.which", return_value=True):
         DebianBackend().update_system(_ctx())  # no assume_yes
     argvs = [c for c, _ in calls]
-    assert ["apt-get", "full-upgrade"] in argvs      # no -y -> apt asks before upgrading
-    assert not any(c[:2] == ["apt-get", "full-upgrade"] and "-y" in c for c in argvs)
+    up = next(c for c in argvs if "full-upgrade" in c)
+    assert up[-2:] == ["apt-get", "full-upgrade"] and "-y" not in up  # apt asks first
+    assert "DEBIAN_FRONTEND=readline" in up           # plain-text debconf, not ncurses
 
 
 def test_update_nala_when_configured():
@@ -189,7 +192,9 @@ def test_update_nala_when_configured():
          patch("fettle.command.which", return_value=True):
         DebianBackend().update_system(_ctx(cfg))
     argvs = [c for c, _ in calls]
-    assert ["nala", "update"] in argvs and ["nala", "upgrade"] in argvs  # interactive: prompts
+    assert ["nala", "update"] in argvs
+    up = next(c for c in argvs if c[-2:] == ["nala", "upgrade"])  # interactive: prompts
+    assert "NEEDRESTART_MODE=l" in up
     assert not any("apt-get" in c for c in argvs)
 
 

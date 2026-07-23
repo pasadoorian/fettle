@@ -263,3 +263,15 @@ def test_section_headers_are_friendly_with_name_in_parens(tmp_path):
     assert "Session Transcripts" in text and "(run logs)" in text
     # each run-log summary is labeled by what it ran
     assert "fettle remote ec3 -H" in text
+
+
+def test_report_entry_shows_producing_command(tmp_path):
+    d = tmp_path / ".fettle/reports/ec1"
+    d.mkdir(parents=True)
+    (d / "hardening-audit-20260722-010101.json").write_text(json.dumps(
+        {"schema": "fettle.report/1", "tool": "hardening-audit", "host": "ec1",
+         "timestamp": "20260722-010101", "command": "fettle -H",
+         "data": {"packages": [{"package": "p", "score": 5, "band": "High",
+                                "binaries": [], "checks": {}}]}}))
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert 'class="cmdtag"' in text and "fettle -H" in text   # the exact command shown

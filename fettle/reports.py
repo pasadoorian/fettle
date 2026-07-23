@@ -122,6 +122,16 @@ def _secure(path: Path, ctx) -> None:
     chown_to_user(path, getattr(ctx, "sudo_user", None))
 
 
+def invocation() -> str:
+    """The command line that is producing this report, e.g. ``fettle -a`` — the
+    actual ``fettle`` args of the running process. On a remote host this is
+    recorded there (its own ``-a``), so a fetched report shows how *it* was made."""
+    import shlex
+    import sys
+    args = sys.argv[1:]
+    return "fettle" + ("".join(" " + shlex.quote(a) for a in args))
+
+
 def envelope(name: str, host: str, ts: str, *, data=None, body: str = "") -> dict:
     """The JSON document wrapping a report: metadata + structured ``data`` (or a
     ``{"text": body}`` fallback so every file still has a machine-readable form)."""
@@ -132,6 +142,7 @@ def envelope(name: str, host: str, ts: str, *, data=None, body: str = "") -> dic
         "host": host_tag(host),
         "timestamp": ts,
         "fettle_version": __version__,
+        "command": invocation(),
         "data": data if data is not None else {"text": body},
     }
 

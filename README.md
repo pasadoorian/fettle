@@ -544,6 +544,12 @@ per-host entry under **each** target host — not as a single "group" asset. The
 > **passwordless sudo** (`NOPASSWD`) on the group's hosts — otherwise each host
 > stops for its sudo password over the interactive `ssh -t`.
 
+> On Debian/Ubuntu, fettle keeps the `apt` upgrade from opening a full-screen
+> ncurses dialog (`needrestart`'s service-restart menu, `debconf` config screens) —
+> those corrupt the terminal over `ssh -t`. `needrestart` only **lists** what needs
+> restarting (restart later with `sudo needrestart`); `debconf` prompts, if any,
+> are plain text.
+
 A standalone binary (for hosts with no `python3` at all) is a planned option; the
 zipapp is the current transport. It's uploaded to the remote user's home under a
 random name (not a predictable world-writable `/tmp` path) and removed after the run.
@@ -686,10 +692,10 @@ row (latest hardening band tally, per-type counts, latest run), collapsible
 sections grouped by report type with native rendering — scored hardening tables,
 severity-coloured findings, upgrade verdicts, package lists, `sys-audit`
 firmware/boot/hardware results (status levels + a raw-output section), log
-transcripts — and a host/type/text filter. Empty reports are hidden (with a
-per-host "N hidden"
-note). It's styled as a dark Linux terminal (monospace, phosphor palette). Pure
-stdlib, no external assets, nothing served.
+transcripts — and a host/type/text filter. Each entry shows the exact command that
+produced it (a `$ fettle …` chip). Empty reports are hidden (with a per-host "N
+hidden" note). It's styled as a dark Linux terminal (monospace, phosphor palette).
+Pure stdlib, no external assets, nothing served.
 
 ```sh
 fettle report                 # (re)build ~/.fettle/report.html

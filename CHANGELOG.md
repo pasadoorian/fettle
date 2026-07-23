@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.13.2] — no ncurses over SSH; show each report's command
+
+- **Debian/Ubuntu upgrades no longer pop a full-screen ncurses dialog.** `apt`'s
+  `needrestart` service-restart menu and any `debconf` config screen used to take
+  over the terminal (and corrupt it — wrapped, single-line output — especially over
+  `ssh -t` under the run-log recorder). fettle now runs the upgrade with
+  `NEEDRESTART_MODE=l` (needrestart *lists* what needs restarting instead of
+  prompting; fettle already surfaces `sudo needrestart` as a next step) and a
+  plain-text `debconf` frontend (`DEBIAN_FRONTEND=readline` interactively,
+  `noninteractive` under `--yes`). `apt` still asks its own `[Y/n]` in the default
+  (non-`--yes`) mode.
+- **The HTML report shows the exact command that produced each report.** Every
+  report records the `fettle …` invocation that created it (e.g. `fettle -H`), shown
+  as a `$ fettle -H` chip on the entry. Recorded per host, so a fetched remote
+  report shows how it was produced *there*. Pre-0.13.2 reports simply omit the chip.
+
 ## [0.13.1] — group runs show under each target host
 
 - **A group run's per-host result now shows under that host in the HTML report.**

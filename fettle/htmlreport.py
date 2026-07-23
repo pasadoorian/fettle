@@ -153,6 +153,8 @@ summary:hover::before{text-shadow:0 0 8px currentColor}
 .badge.b-ok{color:var(--green);border-color:var(--green)}
 .badge.b-bad{color:var(--red);border-color:var(--red)}
 .grow{display:flex;gap:.6rem;align-items:baseline;padding:.15rem .2rem;font-size:.82rem}
+.cmdtag{font-family:var(--mono);font-size:.72rem;color:var(--cyan)}
+.cmdtag::before{content:"$ ";color:var(--dim)}
 .body{padding:.3rem .7rem .75rem}
 table{border-collapse:collapse;width:100%;font-size:.8rem}
 th,td{text-align:left;padding:.28rem .55rem;border-bottom:1px solid #14212e}
@@ -443,6 +445,15 @@ def _run_label(entry: dict) -> str:
     return ("fettle " + " ".join(str(a) for a in argv)) if isinstance(argv, list) and argv else ""
 
 
+def _cmd_tag(entry: dict) -> str:
+    """The exact command line that produced a report, shown as a `$ fettle …` chip
+    in the entry's summary. Absent on pre-0.13.1 reports (no `command` recorded)."""
+    cmd = entry.get("command")
+    if not isinstance(cmd, str) or not cmd:
+        return ""
+    return f'<span class="cmdtag" title="command that produced this report">{_esc(cmd)}</span>'
+
+
 def _host_summary(host: dict) -> str:
     """The dashboard card body: latest hardening bands, per-type counts, latest run."""
     chips = ""
@@ -497,7 +508,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
             items = "".join(
                 f'<details data-host="{_esc(h)}" data-type="{_esc(tool)}">'
                 f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
-                f'{_entry_badge(e)}</summary>'
+                f'{_entry_badge(e)}{_cmd_tag(e)}</summary>'
                 f'<div class="body">{_render_entry_body(e)}</div></details>'
                 for e in entries)
             groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'

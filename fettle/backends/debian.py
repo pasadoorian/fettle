@@ -236,15 +236,20 @@ class DebianBackend(PackageBackend):
             # Unattended: auto-confirm, keep old conffiles (no dpkg prompt; the kept
             # file surfaces later via config-drift as .dpkg-dist), non-interactive
             # frontend so nothing can stall an SSH run.
+            env = ["env", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l"]
             if tool == "nala":
-                upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", "nala", "upgrade", "-y"]
+                upgrade = [*env, "nala", "upgrade", "-y"]
             else:
-                upgrade = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get",
+                upgrade = [*env, "apt-get",
                            "-o", "Dpkg::Options::=--force-confold",
                            "-o", "Dpkg::Options::=--force-confdef", "full-upgrade", "-y"]
         else:
             # Ask before upgrading by default — apt/nala show the plan and prompt.
-            upgrade = ["nala", "upgrade"] if tool == "nala" else ["apt-get", "full-upgrade"]
+            # Force plain-text debconf + non-interactive needrestart so neither pops a
+            # full-screen ncurses dialog (which corrupts the tty, esp. over `ssh -t`).
+            # apt still asks its own [Y/n]; needrestart just *lists* (see restart step).
+            env = ["env", "DEBIAN_FRONTEND=readline", "NEEDRESTART_MODE=l"]
+            upgrade = [*env, "nala", "upgrade"] if tool == "nala" else [*env, "apt-get", "full-upgrade"]
         ctx.execute(upgrade)
         return Result()
 

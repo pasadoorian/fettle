@@ -32,7 +32,15 @@ def test_json_sibling_written_with_envelope(tmp_path):
     assert env["host"] == "local"
     assert env["timestamp"] == "20260721-064530"
     assert env["fettle_version"]                      # non-empty version string
+    assert env["command"].startswith("fettle")        # how this report was produced
     assert env["data"] == {"text": "the body"}        # fallback when no structure
+
+
+def test_envelope_command_reflects_argv(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/bin/fettle", "-a", "--yes"])
+    assert reports.invocation() == "fettle -a --yes"
+    env = reports.envelope("pkg-audit", "local", "20260101-000000")
+    assert env["command"] == "fettle -a --yes"
 
 
 def test_structured_data_is_stored_verbatim(tmp_path):
