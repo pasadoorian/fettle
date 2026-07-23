@@ -710,6 +710,34 @@ fettle report --backfill-json # one-off: give pre-0.12 .txt reports a JSON sibli
 > It reads whatever JSON is currently retained (the `keep` window), so run it after
 > your scans; for older text-only reports, run `--backfill-json` once.
 
+### Web UI — `fettle web` *(beta, optional)*
+
+A browser interface over the same data and actions, built on **NiceGUI**. It's an
+**opt-in extra** so the CLI core stays pure-stdlib (the stdlib-only remote zipapp is
+unaffected):
+
+```sh
+pip install 'fettle[web]'
+fettle web                    # serves http://127.0.0.1:8080
+fettle web --port 9000        # a different port
+```
+
+- **Dashboard** (`/`) — the live `fettle report`, generated on each load, for every
+  host, with a **refresh** button. (Reuses the report renderers verbatim.)
+- **Run** (`/run`) — a button per **read-only audit** (runs unprivileged, output
+  streams live), and a **system-maintenance** section for the privileged actions
+  (`update`, `clean`, `orphans`, `kernel`, …): each has a **Preview** (a `--dry-run`)
+  and a **Run (sudo)** that confirms first, then runs `sudo fettle <action> --yes`
+  with a sudo password you type on the page (kept in memory, never stored/logged).
+- **Remote** (`/remote`) — run on a configured `[remote.groups.<name>]` or an ad-hoc
+  host over SSH; each host's results come back to the dashboard.
+
+> **Localhost-only, single-operator.** `fettle web` binds `127.0.0.1` and rejects any
+> non-localhost `Host` (DNS-rebinding defense). Web-triggered actions are logged to
+> `~/.fettle/web-actions.log` (`0600`). It has **no authentication** — do not expose
+> it to a network; put it behind your own auth/VPN if you must. The web server runs
+> unprivileged; only the `sudo` subprocess it spawns is elevated.
+
 ## Previewing an upgrade
 
 `fettle -u --dry-run` resolves and lists **every package the upgrade would

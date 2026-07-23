@@ -4,7 +4,10 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-### Web UI — Phases 0–1 (foundations + read-only dashboard)
+## [0.15.0] — web UI (`fettle web`, beta)
+
+An optional NiceGUI web interface over the fettle CLI. Strictly opt-in and
+localhost-only; the CLI core stays pure-stdlib.
 
 - New optional **`fettle web`** command serves a NiceGUI web UI (localhost-only by
   default). It's strictly opt-in: `pip install 'fettle[web]'`. The CLI core stays
@@ -37,6 +40,12 @@ All notable changes to fettle are recorded here. Newest first.
   the per-host output. Remote hosts elevate themselves over SSH (no local sudo);
   `--yes` uses non-tty SSH, so it needs passwordless sudo on the targets. Fetched-back
   per-host reports then appear under each host on the dashboard.
+- **Hardening (Phase 5):** binds `127.0.0.1` by default and rejects any request whose
+  `Host` header isn't localhost (defends a privileged local tool against
+  DNS-rebinding / cross-origin drive-by). Every web-triggered action is recorded in
+  `~/.fettle/web-actions.log` (`0600`; the command line only, never the password).
+  Networked/multi-user access with authentication is intentionally out of scope for
+  now — run it behind your own auth if you expose it.
 
 ## [0.14.0] — AUR reports link packages + say what they are
 

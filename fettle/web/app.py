@@ -15,13 +15,43 @@ This is the only module importing nicegui.
 
 from __future__ import annotations
 
+import datetime as _dt
 import html as _html
 from functools import partial
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from nicegui import app, ui
 
 from . import data, runner
+
+# fettle web is a PRIVILEGED local tool — keep it strictly localhost. This blocks
+# a malicious page / DNS-rebinding from driving the server via a spoofed Host
+# header (the requests still hit 127.0.0.1, but the browser sends the attacker's
+# host). Non-browser clients (curl/tests) that send a localhost Host pass through.
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+@app.middleware("http")
+async def _localhost_only(request, call_next):
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
+    if host and host not in _LOCAL_HOSTS:
+        return PlainTextResponse("fettle web is localhost-only", status_code=403)
+    return await call_next(request)
+
+
+def _audit(header: str, code) -> None:
+    """Append a one-line record of a web-triggered action (no secrets — the header
+    is the command line, never the password). Best-effort; never blocks a run."""
+    try:
+        base = data.base_dir()
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "web-actions.log"
+        ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(path, "a") as fh:
+            fh.write(f"{ts}  {header}  -> exit {code}\n")
+        path.chmod(0o600)
+    except Exception:
+        pass
 
 # Read-only audits (no sudo). Flag, then a friendly label with the action name.
 _READONLY_ACTIONS = [
@@ -124,6 +154,7 @@ def _run_page() -> None:
         try:
             code = await runner.run_action(fargs, log.push, sudo=sudo, password=password)
             log.push(f"[exit {code}] — {footer}")
+            _audit(header, code)
         except Exception as exc:  # never let a failed run wedge the page
             log.push(f"[error] {exc!r}")
         finally:
@@ -196,6 +227,7 @@ def _remote_page() -> None:
         try:
             code = await runner.run_action(["remote", target, *tokens], log.push)
             log.push(f"[exit {code}] — {footer}")
+            _audit(header, code)
         except Exception as exc:
             log.push(f"[error] {exc!r}")
         finally:

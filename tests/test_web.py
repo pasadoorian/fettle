@@ -117,7 +117,8 @@ def _client():
     from fastapi.testclient import TestClient
 
     from fettle.web import app as webapp
-    return webapp, TestClient(webapp.app)
+    # localhost Host so the anti-rebinding middleware admits the request
+    return webapp, TestClient(webapp.app, base_url="http://127.0.0.1")
 
 
 def test_dashboard_route_serves_report_with_refresh(monkeypatch):
@@ -138,6 +139,31 @@ def test_dashboard_route_shows_error_instead_of_500(monkeypatch):
     monkeypatch.setattr(webapp.data, "report_html", boom)
     r = client.get("/")
     assert r.status_code == 200 and "report unavailable" in r.text and "kaboom" in r.text
+
+
+def test_nonlocal_host_is_forbidden(monkeypatch):
+    webapp, _ = _client()
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(webapp.data, "report_html", lambda: "<html><body>X</body></html>")
+    evil = TestClient(webapp.app, base_url="http://evil.example.com")
+    r = evil.get("/")
+    assert r.status_code == 403 and "localhost-only" in r.text   # anti DNS-rebinding
+
+
+def test_localhost_variants_are_allowed(monkeypatch):
+    webapp, _ = _client()
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(webapp.data, "report_html", lambda: "<html><body>OK</body></html>")
+    for base in ("http://localhost", "http://127.0.0.1:8080"):
+        assert TestClient(webapp.app, base_url=base).get("/").status_code == 200
+
+
+def test_audit_writes_a_line(tmp_path, monkeypatch):
+    webapp, _ = _client()
+    monkeypatch.setattr(webapp.data, "base_dir", lambda: tmp_path)
+    webapp._audit("sudo fettle -c --yes", 0)
+    logged = (tmp_path / "web-actions.log").read_text()
+    assert "sudo fettle -c --yes" in logged and "exit 0" in logged
 
 
 # -- the action runner streams a subprocess's output + exit code (no nicegui) --
