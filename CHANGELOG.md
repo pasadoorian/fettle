@@ -4,6 +4,13 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.15.1] — web UI: run history
+
+- **Run history (`/history`):** a new page (linked from the toolbar) listing every
+  stored run across all hosts, newest first — `when · host · fettle <argv> · ok/exit`
+  — each expandable to its full transcript. Reads the `fettle.log/1` run-logs the CLI
+  already writes, including web-triggered runs.
+
 ## [0.15.0] — web UI (`fettle web`, beta)
 
 An optional NiceGUI web interface over the fettle CLI. Strictly opt-in and

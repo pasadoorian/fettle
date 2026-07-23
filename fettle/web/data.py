@@ -54,6 +54,27 @@ def hosts(base=None, **kw) -> list[str]:
     return sorted(collect(base, **kw))
 
 
+def run_history(base=None, *, limit: int = 100, **kw) -> list[dict]:
+    """Every stored run-log across all hosts, newest first (capped at ``limit``).
+    Each item: ``{host, timestamp, argv, exit_code, transcript}`` from the
+    ``fettle.log/1`` envelopes the CLI already writes (incl. web-triggered runs)."""
+    tree = collect(base, **kw)
+    rows: list[dict] = []
+    for host, groups in tree.items():
+        for e in groups.get("logs", []):
+            payload = e.get("data") if isinstance(e.get("data"), dict) else {}
+            rows.append({
+                "host": host,
+                "timestamp": e.get("timestamp", ""),
+                "argv": e.get("argv"),
+                "exit_code": e.get("exit_code"),
+                "transcript": (e.get("transcript") or payload.get("transcript")
+                               or payload.get("text") or ""),
+            })
+    rows.sort(key=lambda r: r["timestamp"], reverse=True)
+    return rows[:limit]
+
+
 def remote_groups(config=None) -> dict[str, list[str]]:
     """Configured ``[remote.groups.<name>]`` as ``{name: [hosts...]}`` (empty if
     none). Read-only view for the UI to list what `fettle remote <group>` targets."""

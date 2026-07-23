@@ -731,6 +731,8 @@ fettle web --port 9000        # a different port
   with a sudo password you type on the page (kept in memory, never stored/logged).
 - **Remote** (`/remote`) — run on a configured `[remote.groups.<name>]` or an ad-hoc
   host over SSH; each host's results come back to the dashboard.
+- **History** (`/history`) — every stored run across all hosts, newest first
+  (`when · host · fettle <argv> · ok/exit`), each expandable to its transcript.
 
 > **Localhost-only, single-operator.** `fettle web` binds `127.0.0.1` and rejects any
 > non-localhost `Host` (DNS-rebinding defense). Web-triggered actions are logged to

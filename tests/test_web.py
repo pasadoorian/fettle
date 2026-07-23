@@ -100,6 +100,31 @@ def test_data_remote_groups_empty_without_config():
     assert data.remote_groups(config=Config()) == {}
 
 
+def _write_log(base: Path, host: str, ts: str, argv, code, transcript):
+    d = base / "logs" / host
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"run-{ts}.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": host, "timestamp": ts,
+         "argv": argv, "exit_code": code, "transcript": transcript}))
+
+
+def test_run_history_flattens_and_sorts_newest_first(tmp_path):
+    _write_log(tmp_path, "local", "20260723-010101", ["-A"], 0, "aur audit done")
+    _write_log(tmp_path, "ec1", "20260723-020202", ["remote", "ec1", "-d"], 1, "drift")
+    hist = data.run_history(base=tmp_path)
+    assert [r["timestamp"] for r in hist] == ["20260723-020202", "20260723-010101"]
+    assert hist[0]["host"] == "ec1" and hist[0]["exit_code"] == 1
+    assert hist[1]["transcript"] == "aur audit done"
+
+
+def test_hist_label_formats_a_run():
+    webapp, _ = _client()
+    label = webapp._hist_label({"timestamp": "20260723-101958", "host": "wopr",
+                                "argv": ["-A"], "exit_code": 0})
+    assert "2026-07-23 10:19:58" in label and "wopr" in label
+    assert "fettle -A" in label and "ok" in label
+
+
 def test_report_html_mirrors_the_dashboard(tmp_path):
     # the web UI serves the SAME live HTML as `fettle report`, via the real renderers
     _write(tmp_path, "wopr", "aur-audit", "20260723-010101",

@@ -80,11 +80,12 @@ _BTN = ("font-family:ui-monospace,monospace;font-size:.8rem;background:#0d141e;"
         "color:#4dd0e1;border:1px solid #4dd0e1;border-radius:4px;padding:4px 12px;"
         "cursor:pointer;text-decoration:none")
 
-# Injected into the served report: run + remote + refresh, fixed top-right.
+# Injected into the served report: run + remote + history + refresh, top-right.
 _TOOLBAR = (
     '<div style="position:fixed;top:9px;right:14px;z-index:9999;display:flex;gap:8px">'
     f'<a href="/run" style="{_BTN}">&#x25B6; run</a>'
     f'<a href="/remote" style="{_BTN}">&#x21C4; remote</a>'
+    f'<a href="/history" style="{_BTN}">&#x21BA; history</a>'
     f'<button onclick="location.reload()" style="{_BTN}">&#x27F3; refresh</button></div>')
 
 _ERROR_PAGE = ("<!doctype html><meta charset=utf-8>"
@@ -290,6 +291,36 @@ def _remote_page() -> None:
             .props("flat dense no-caps color=grey")
         ui.button("run", on_click=lambda: _adhoc(True)) \
             .props("flat dense no-caps color=red")
+
+
+def _hist_label(row: dict) -> str:
+    """One-line summary for a run-log: `when · host · fettle <argv> · ok/exit N`."""
+    from ..htmlreport import _fmt_ts, _run_label
+    when = _fmt_ts(row.get("timestamp", "")) or "?"
+    cmd = _run_label(row) or "fettle (run)"
+    code = row.get("exit_code")
+    badge = "ok" if code in (0, None) else f"exit {code}"
+    return f"{when}  ·  {row.get('host', '?')}  ·  {cmd}  ·  {badge}"
+
+
+@ui.page("/history")
+def _history_page() -> None:
+    ui.add_head_html(_PAGE_CSS)
+    with ui.row().classes("fbar items-center"):
+        ui.html('<a class="flink" href="/">&#x2190; dashboard</a>')
+        ui.label("fettle · run history (newest first)").classes("text-sm")
+
+    rows = data.run_history(limit=100)
+    if not rows:
+        ui.label("no run-logs yet — trigger an action to populate.").style(
+            "padding:.9rem;color:#5a6b7d;font-size:.85rem")
+        return
+    with ui.column().classes("w-full").style("gap:3px;padding:.4rem .9rem"):
+        for row in rows:
+            with ui.expansion(_hist_label(row)).classes("w-full").style(
+                    "border:1px solid #14212e;border-radius:4px;font-size:.8rem"):
+                ui.code(row.get("transcript") or "(no transcript)").classes("w-full") \
+                    .style("white-space:pre-wrap;font-size:.75rem;background:#0d141e")
 
 
 def run(*, host: str = "127.0.0.1", port: int = 8080,
