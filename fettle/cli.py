@@ -82,7 +82,7 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
                                                    safety check; needs ANTHROPIC_API_KEY
   -p  ==  fettle aur-precheck [PKG ...]            AUR pre-flight; bare = scan every
                                                    installed AUR pkg (also the yay hook) [arch]
-  fettle remote HOST [actions]                     run maintenance on a remote host
+  fettle remote HOST|GROUP [actions]               run maintenance on a remote host/group
                                                    over ssh (safe set by default; 'remote -h')
   fettle report [--open]                           build ~/.fettle/report.html from all
                                                    stored reports/logs (every host)
@@ -255,7 +255,7 @@ def _reexec_with_sudo(args: argparse.Namespace | None = None) -> None:  # pragma
 
 
 _REMOTE_EPILOG = """\
-fettle remote [--ssh-arg ARG]... HOST [any fettle action/flags...]
+fettle remote [--ssh-arg ARG]... HOST|GROUP [any fettle action/flags...]
 
 Runs fettle on a remote host over SSH: fettle is packaged as a zipapp, scp'd to
 the host, run there (under sudo for changes) over `ssh -t`, and removed. The host
@@ -266,13 +266,18 @@ Everything after HOST is forwarded verbatim to fettle on the remote, so ANY acti
 works remotely. With NO action named, the SAFE set runs: clean, update,
 firmware-check (never orphan/kernel removal unless you name it).
 
+GROUP: if the name matches a [remote.groups.<name>] in your config, fettle runs on
+each host in the group IN ORDER (confirms the list first, continues past a failing
+host, prints a pass/fail summary). A group name wins over a same-named single host.
+
 --dry-run (change nothing; no sudo) and --yes (unattended: auto-confirm +
 non-interactive) are forwarded and interpreted on the remote. NOTE: --yes also
 SKIPS AUR PKGBUILD review.
 
 `upgrade-check` (`-U`) is special: fettle collects a snapshot on the remote (read-
 only, no sudo, no key) and runs the AI analysis LOCALLY with your key — the key
-never leaves this machine. Report saved to ~/upgrade-check-<host>.txt.
+never leaves this machine. Each host's reports and run-log are fetched back to
+~/.fettle/{reports,logs}/<host>/.
 
 examples:
   fettle remote server1                     safe set (clean + update + firmware)
@@ -281,6 +286,7 @@ examples:
   fettle remote server1 -a --yes            the full default set, unattended
   fettle remote server1 -S                  security scan on the host
   fettle remote server1 upgrade-check       AI pre-upgrade check (analysed locally)
+  fettle remote bifrost-lab -a              run `fettle -a` on each host in a group
   fettle remote --ssh-arg=-oConnectTimeout=5 server1 -u
 """
 

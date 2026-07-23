@@ -147,7 +147,8 @@ def _validate(data: dict, snapshot) -> Result:
 
 
 def format_report(result: "Result") -> str:
-    """Full plain-text report (for the screen body and ~/upgrade-check.txt)."""
+    """Full plain-text report (for the screen body and the saved upgrade-check report
+    under ~/.fettle/reports/<host>/)."""
     lines = [f"Verdict: {result.safety_verdict.upper()}  "
              f"(failure likelihood: {result.failure_likelihood})"]
     if result.summary:

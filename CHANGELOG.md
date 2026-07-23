@@ -4,6 +4,15 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.13.3] — `fettle remote -h` docs refresh
+
+- `fettle remote -h` now documents **host groups** (`HOST|GROUP` grammar + how a
+  `[remote.groups.<name>]` runs each host in order) — the help predated the groups
+  feature — and points at the **current** report location
+  (`~/.fettle/{reports,logs}/<host>/`, with the run-log now fetched back too) instead
+  of the stale pre-0.11 `~/upgrade-check-<host>.txt` path. Main `--help` and an
+  internal docstring got the same path correction. No behavior change.
+
 ## [0.13.2] — no ncurses over SSH; show each report's command
 
 - **Debian/Ubuntu upgrades no longer pop a full-screen ncurses dialog.** `apt`'s

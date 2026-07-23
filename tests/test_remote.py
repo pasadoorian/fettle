@@ -346,6 +346,16 @@ def test_fetch_reports_ssh_failure_is_graceful(tmp_path):
     assert remote.fetch_reports("foo", tmp_path, runner=boom) == []
 
 
+def test_remote_help_documents_groups_and_current_paths(capsys):
+    from fettle import cli
+    assert cli._run_remote_maintenance(["-h"]) == 0
+    out = capsys.readouterr().out
+    assert "HOST|GROUP" in out                         # groups are part of the grammar
+    assert "[remote.groups.<name>]" in out             # how a group is defined
+    assert "~/.fettle/" in out                          # current report location
+    assert "~/upgrade-check-" not in out                # not the pre-0.11 path
+
+
 def test_fetch_logs_pulls_from_remote_log_dir(tmp_path):
     # each host's own run-logs come back so a group `-a` shows under that host
     tar = _tar_of({"run-20260722-020202.txt": "session",
