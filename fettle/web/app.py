@@ -1,38 +1,57 @@
-"""The NiceGUI application for ``fettle web`` (Phase 0 skeleton).
+"""The NiceGUI application for ``fettle web``.
 
-This is the only module that imports nicegui. It builds the app, registers pages,
-and exposes :func:`run` for the ``fettle web`` CLI command. Real dashboards and
-action-runners land in later phases; for now it serves a themed health page that
-reads the host list from the stored reports.
+Phase 1: an all-hosts dashboard that mirrors ``fettle report`` exactly by serving
+the *same* live-generated HTML (``data.report_html``) inside an iframe, wrapped in a
+thin NiceGUI shell with a manual refresh. The iframe isolates the report's terminal
+CSS/JS (filter, collapse) from NiceGUI's own styles, so it looks identical to
+report.html. Action-runners land in later phases; this is the only module that
+imports nicegui.
 """
 
 from __future__ import annotations
 
-from nicegui import ui
+from fastapi.responses import HTMLResponse
+from nicegui import app, ui
 
 from .. import __version__
-from . import data, theme
+from . import data
+
+_ERROR_PAGE = ("<!doctype html><meta charset=utf-8>"
+               "<body style='background:#0a0f14;color:#ff6b6b;"
+               "font-family:monospace;padding:1rem'>"
+               "<h3>report unavailable</h3><pre>{}</pre></body>")
 
 
-def _shell(subtitle: str) -> None:
-    """Common page chrome: inject the terminal theme + a prompt-style header."""
-    ui.add_head_html(theme.head_html())
-    with ui.row().classes("items-baseline"):
-        ui.label("paul@fettle:~/.fettle$").classes("text-sm opacity-70")
-        ui.label(f"fettle {subtitle}").classes("text-lg")
+@app.get("/report.html")
+def _report_html() -> HTMLResponse:
+    """Serve the dashboard, regenerated live from current ~/.fettle on each load."""
+    try:
+        return HTMLResponse(data.report_html())
+    except Exception as exc:  # never 500 the iframe; show the reason instead
+        import html as _html
+        return HTMLResponse(_ERROR_PAGE.format(_html.escape(repr(exc))), status_code=200)
+
+
+async def _refresh() -> None:
+    # cache-bust so the route regenerates from the newest reports
+    await ui.run_javascript("document.getElementById('rep').src='/report.html?t='+Date.now()")
 
 
 @ui.page("/")
 def _index() -> None:
-    _shell("web")
-    hosts = data.hosts()
-    with ui.column():
-        ui.label(f"fettle v{__version__} — web UI").classes("text-base")
-        ui.label(f"reports base: {data.base_dir()}").classes("text-sm opacity-70")
-        if hosts:
-            ui.label(f"{len(hosts)} host(s): {', '.join(hosts)}")
-        else:
-            ui.label("no reports yet — run an audit (e.g. `fettle -A`) to populate")
+    ui.add_head_html(
+        "<style>"
+        "body{margin:0;background:#0a0f14;color:#c6d3e2;"
+        "font-family:ui-monospace,Menlo,Consolas,monospace}"
+        ".fbar{display:flex;gap:.8rem;align-items:center;height:46px;padding:0 .9rem;"
+        "border-bottom:1px solid #14212e}"
+        "#rep{width:100%;height:calc(100vh - 47px);border:0;display:block}"
+        "</style>")
+    with ui.row().classes("fbar"):
+        ui.label(f"fettle web · v{__version__}").classes("text-sm")
+        ui.space()
+        ui.button("⟳ refresh", on_click=_refresh).props("flat dense no-caps color=cyan")
+    ui.html('<iframe id="rep" src="/report.html"></iframe>')
 
 
 def run(*, host: str = "127.0.0.1", port: int = 8080,

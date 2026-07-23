@@ -640,13 +640,15 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
 
 
 # -- public API --------------------------------------------------------------
-def build(ctx, *, open_browser: bool = False, now=None) -> Path:
-    """Regenerate `<base>/report.html` from all stored JSON. Returns its path."""
+def render_page(ctx, *, base=None, now=None) -> str:
+    """Build the full dashboard HTML from stored JSON and return it as a string
+    (no disk write). Shared by `build` (writes report.html) and the web UI (serves
+    it live). Pass `base` to read a specific tree, else it's resolved from `ctx`."""
     import datetime as _dt
 
     from . import __version__
-    base, _ = _reports._settings(ctx)
-    hostmap = collect(base)
+    b = Path(base) if base is not None else _reports._settings(ctx)[0]
+    hostmap = collect(b)
     generated = (now or _dt.datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
     user = getattr(ctx, "sudo_user", None) or _current_user()
     try:
@@ -654,10 +656,16 @@ def build(ctx, *, open_browser: bool = False, now=None) -> Path:
         groups = frozenset(remote.remote_groups(getattr(ctx, "config", None)))
     except Exception:
         groups = frozenset()
+    return render(hostmap, generated_at=generated, version=__version__,
+                  user=user, groups=groups)
+
+
+def build(ctx, *, open_browser: bool = False, now=None) -> Path:
+    """Regenerate `<base>/report.html` from all stored JSON. Returns its path."""
+    base, _ = _reports._settings(ctx)
     out_path = base / "report.html"
     base.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render(hostmap, generated_at=generated,
-                               version=__version__, user=user, groups=groups))
+    out_path.write_text(render_page(ctx, base=base, now=now))
     try:
         out_path.chmod(0o600)
     except OSError:

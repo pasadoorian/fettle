@@ -84,3 +84,14 @@ def test_data_collect_reads_scratch_tree(tmp_path):
 def test_data_base_dir_defaults_under_home(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
     assert data.base_dir() == tmp_path / ".fettle"
+
+
+def test_report_html_mirrors_the_dashboard(tmp_path):
+    # the web UI serves the SAME live HTML as `fettle report`, via the real renderers
+    _write(tmp_path, "wopr", "aur-audit", "20260723-010101",
+           {"packages": [{"name": "yay", "maintainer": "j", "age_days": 1, "votes": 9,
+                          "flags": "", "description": "AUR helper", "homepage": "https://x"}]})
+    html = data.report_html(base=tmp_path)
+    assert "<!doctype html>" in html.lower()          # a full self-contained page
+    assert "wopr" in html                              # the host section is present
+    assert "aur.archlinux.org/packages/yay" in html   # real renderer reuse (AUR link)
