@@ -138,13 +138,10 @@ def _run_page() -> None:
         ui.html('<a class="flink" href="/">&#x2190; dashboard</a>')
         ui.label("fettle · run actions").classes("text-sm")
 
-    log = ui.log(max_lines=4000).classes("w-full").style(
-        "height:48vh;background:#0d141e;border:1px solid #14212e;border-radius:6px;"
-        "padding:.5rem;font-size:.8rem;white-space:pre-wrap")
-    log.push("# read-only audits need no sudo; system actions run `sudo fettle …`.")
-
     state = {"busy": False}
 
+    # handlers reference `log`/`pw` (created below the controls) — resolved at
+    # click time, so the controls sit at the TOP and the output streams beneath.
     async def _stream(fargs: list[str], header: str, *, sudo: bool = False,
                       password: str | None = None, footer: str = "done.") -> None:
         if state["busy"]:
@@ -161,23 +158,6 @@ def _run_page() -> None:
         finally:
             state["busy"] = False
 
-    # -- read-only audits (no sudo) ------------------------------------------
-    ui.html('<div class="fsec">read-only audits — no sudo</div>')
-    with ui.row().style("flex-wrap:wrap;gap:8px;padding:0 .9rem"):
-        for flag, label in _READONLY_ACTIONS:
-            ui.button(label, on_click=partial(
-                _stream, [flag], f"fettle {flag}   # {label}",
-                footer="done. Reload the dashboard to see the report.")) \
-                .props("flat dense no-caps color=cyan")
-
-    # -- system maintenance (sudo) -------------------------------------------
-    ui.html('<div class="fsec">system maintenance — needs your sudo password</div>')
-    pw = ui.input("sudo password", password=True, password_toggle_button=True) \
-        .props("dense outlined").classes("q-mx-md").style("max-width:280px")
-    ui.html('<div style="padding:0 .9rem;color:#5a6b7d;font-size:.72rem">'
-            'kept in memory for this page only, never stored or logged. Some flows '
-            '(AUR helpers / pamac) may still prompt separately.</div>')
-
     async def _preview(flag: str, label: str) -> None:
         await _stream([flag, "--dry-run"], f"fettle {flag} --dry-run   # preview: {label}",
                       footer="preview only — nothing changed.")
@@ -193,6 +173,21 @@ def _run_page() -> None:
                       sudo=True, password=pw.value,
                       footer="done. Reload the dashboard to see the changes.")
 
+    # -- controls (top) ------------------------------------------------------
+    ui.html('<div class="fsec">read-only audits — no sudo</div>')
+    with ui.row().style("flex-wrap:wrap;gap:8px;padding:0 .9rem"):
+        for flag, label in _READONLY_ACTIONS:
+            ui.button(label, on_click=partial(
+                _stream, [flag], f"fettle {flag}   # {label}",
+                footer="done. Reload the dashboard to see the report.")) \
+                .props("flat dense no-caps color=cyan")
+
+    ui.html('<div class="fsec">system maintenance — needs your sudo password</div>')
+    pw = ui.input("sudo password", password=True, password_toggle_button=True) \
+        .props("dense outlined").classes("q-mx-md").style("max-width:280px")
+    ui.html('<div style="padding:0 .9rem;color:#5a6b7d;font-size:.72rem">'
+            'kept in memory for this page only, never stored or logged. Some flows '
+            '(AUR helpers / pamac) may still prompt separately.</div>')
     with ui.column().classes("w-full").style("gap:4px;padding:.3rem .9rem"):
         for flag, label in _SUDO_ACTIONS:
             with ui.row().classes("items-center").style("gap:8px"):
@@ -202,6 +197,13 @@ def _run_page() -> None:
                 ui.button("run (sudo)", on_click=partial(_run_sudo, flag, label)) \
                     .props("flat dense no-caps color=red")
 
+    # -- live output (bottom) ------------------------------------------------
+    ui.html('<div class="fsec">output</div>')
+    log = ui.log(max_lines=4000).classes("w-full").style(
+        "height:40vh;background:#0d141e;border:1px solid #14212e;border-radius:6px;"
+        "margin:0 .9rem;padding:.5rem;font-size:.8rem;white-space:pre-wrap")
+    log.push("# read-only audits need no sudo; system actions run `sudo fettle …`.")
+
 
 @ui.page("/remote")
 def _remote_page() -> None:
@@ -210,12 +212,6 @@ def _remote_page() -> None:
         ui.html('<a class="flink" href="/">&#x2190; dashboard</a>')
         ui.html('<a class="flink" href="/run">run &#x2192;</a>')
         ui.label("fettle · remote hosts & groups").classes("text-sm")
-
-    log = ui.log(max_lines=4000).classes("w-full").style(
-        "height:46vh;background:#0d141e;border:1px solid #14212e;border-radius:6px;"
-        "padding:.5rem;font-size:.8rem;white-space:pre-wrap")
-    log.push("# runs over SSH; the remote host elevates itself. `run` uses --yes "
-             "(needs passwordless sudo on the target); `preview` is a safe --dry-run.")
 
     state = {"busy": False}
 
@@ -291,6 +287,13 @@ def _remote_page() -> None:
             .props("flat dense no-caps color=grey")
         ui.button("run", on_click=lambda: _adhoc(True)) \
             .props("flat dense no-caps color=red")
+
+    ui.html('<div class="fsec">output</div>')
+    log = ui.log(max_lines=4000).classes("w-full").style(
+        "height:38vh;background:#0d141e;border:1px solid #14212e;border-radius:6px;"
+        "margin:0 .9rem;padding:.5rem;font-size:.8rem;white-space:pre-wrap")
+    log.push("# runs over SSH; the remote host elevates itself. `run` uses --yes "
+             "(needs passwordless sudo on the target); `preview` is a safe --dry-run.")
 
 
 def _hist_label(row: dict) -> str:

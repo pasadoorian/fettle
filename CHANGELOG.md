@@ -4,6 +4,12 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.15.2] — web UI: controls on top
+
+- The `/run` and `/remote` pages now put the **action controls at the top** of the
+  page with the live **output log below** them (they were under the log before, so
+  the options were pushed off-screen).
+
 ## [0.15.1] — web UI: run history
 
 - **Run history (`/history`):** a new page (linked from the toolbar) listing every
