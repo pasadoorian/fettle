@@ -54,6 +54,14 @@ def hosts(base=None, **kw) -> list[str]:
     return sorted(collect(base, **kw))
 
 
+def remote_groups(config=None) -> dict[str, list[str]]:
+    """Configured ``[remote.groups.<name>]`` as ``{name: [hosts...]}`` (empty if
+    none). Read-only view for the UI to list what `fettle remote <group>` targets."""
+    from .. import remote
+    groups = remote.remote_groups(config if config is not None else _config())
+    return {name: list(g.hosts) for name, g in groups.items()}
+
+
 def report_html(base=None, *, user_home=None, config=None, now=None) -> str:
     """The full dashboard HTML, live-generated from current data (no disk write) —
     identical to ``fettle report``'s output, so the web UI mirrors it exactly."""

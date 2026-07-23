@@ -50,10 +50,11 @@ _BTN = ("font-family:ui-monospace,monospace;font-size:.8rem;background:#0d141e;"
         "color:#4dd0e1;border:1px solid #4dd0e1;border-radius:4px;padding:4px 12px;"
         "cursor:pointer;text-decoration:none")
 
-# Injected into the served report: run + refresh, fixed top-right.
+# Injected into the served report: run + remote + refresh, fixed top-right.
 _TOOLBAR = (
     '<div style="position:fixed;top:9px;right:14px;z-index:9999;display:flex;gap:8px">'
     f'<a href="/run" style="{_BTN}">&#x25B6; run</a>'
+    f'<a href="/remote" style="{_BTN}">&#x21C4; remote</a>'
     f'<button onclick="location.reload()" style="{_BTN}">&#x27F3; refresh</button></div>')
 
 _ERROR_PAGE = ("<!doctype html><meta charset=utf-8>"
@@ -168,6 +169,95 @@ def _run_page() -> None:
                     .props("flat dense no-caps color=grey")
                 ui.button("run (sudo)", on_click=partial(_run_sudo, flag, label)) \
                     .props("flat dense no-caps color=red")
+
+
+@ui.page("/remote")
+def _remote_page() -> None:
+    ui.add_head_html(_PAGE_CSS)
+    with ui.row().classes("fbar items-center"):
+        ui.html('<a class="flink" href="/">&#x2190; dashboard</a>')
+        ui.html('<a class="flink" href="/run">run &#x2192;</a>')
+        ui.label("fettle · remote hosts & groups").classes("text-sm")
+
+    log = ui.log(max_lines=4000).classes("w-full").style(
+        "height:46vh;background:#0d141e;border:1px solid #14212e;border-radius:6px;"
+        "padding:.5rem;font-size:.8rem;white-space:pre-wrap")
+    log.push("# runs over SSH; the remote host elevates itself. `run` uses --yes "
+             "(needs passwordless sudo on the target); `preview` is a safe --dry-run.")
+
+    state = {"busy": False}
+
+    async def _remote(target: str, tokens: list[str], header: str, footer: str) -> None:
+        if state["busy"]:
+            ui.notify("a run is already in progress")
+            return
+        state["busy"] = True
+        log.push(f"\n$ {header}")
+        try:
+            code = await runner.run_action(["remote", target, *tokens], log.push)
+            log.push(f"[exit {code}] — {footer}")
+        except Exception as exc:
+            log.push(f"[error] {exc!r}")
+        finally:
+            state["busy"] = False
+
+    actions = ui.input("actions", value="-a").props("dense outlined") \
+        .classes("q-mx-md").style("max-width:220px")
+    ui.html('<div style="padding:0 .9rem;color:#5a6b7d;font-size:.72rem">'
+            'forwarded to fettle on each host (e.g. <code>-a</code>, <code>-c -u</code>, '
+            '<code>-P</code>).</div>')
+
+    def _tokens() -> list[str]:
+        return (actions.value or "-a").split()
+
+    async def _preview(target: str, hosts_note: str) -> None:
+        await _remote(target, [*_tokens(), "--dry-run"],
+                      f"fettle remote {target} {actions.value} --dry-run   # {hosts_note}",
+                      "preview only — nothing changed.")
+
+    async def _go(target: str, hosts_note: str) -> None:
+        if not await _confirm(f"Run  fettle remote {target} {actions.value} --yes  "
+                              f"on {hosts_note}? This modifies those systems."):
+            return
+        await _remote(target, [*_tokens(), "--yes"],
+                      f"fettle remote {target} {actions.value} --yes   # {hosts_note}",
+                      "done. Reload the dashboard to see each host's results.")
+
+    def _row(target: str, hosts_note: str) -> None:
+        with ui.row().classes("items-center").style("gap:8px"):
+            ui.label(target).style("min-width:150px;font-size:.85rem;color:#4dd0e1")
+            ui.label(hosts_note).style("min-width:280px;font-size:.75rem;color:#5a6b7d")
+            ui.button("preview", on_click=partial(_preview, target, hosts_note)) \
+                .props("flat dense no-caps color=grey")
+            ui.button("run", on_click=partial(_go, target, hosts_note)) \
+                .props("flat dense no-caps color=red")
+
+    groups = data.remote_groups()
+    ui.html('<div class="fsec">configured groups</div>')
+    with ui.column().classes("w-full").style("gap:4px;padding:.2rem .9rem"):
+        if groups:
+            for name, hosts in groups.items():
+                _row(name, ", ".join(hosts))
+        else:
+            ui.label("no [remote.groups.<name>] in your config").style(
+                "color:#5a6b7d;font-size:.8rem")
+
+    ui.html('<div class="fsec">ad-hoc host</div>')
+    with ui.row().classes("items-center").style("gap:8px;padding:.2rem .9rem"):
+        host_in = ui.input("host or user@host").props("dense outlined") \
+            .style("max-width:220px")
+
+        async def _adhoc(run: bool) -> None:
+            target = (host_in.value or "").strip()
+            if not target:
+                log.push("[!] enter a host first.")
+                return
+            await (_go(target, target) if run else _preview(target, target))
+
+        ui.button("preview", on_click=lambda: _adhoc(False)) \
+            .props("flat dense no-caps color=grey")
+        ui.button("run", on_click=lambda: _adhoc(True)) \
+            .props("flat dense no-caps color=red")
 
 
 def run(*, host: str = "127.0.0.1", port: int = 8080,

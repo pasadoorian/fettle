@@ -30,6 +30,13 @@ All notable changes to fettle are recorded here. Newest first.
   page (held in memory only, never stored or logged, never on the command line),
   streaming the output live. The web server itself stays unprivileged. Note: some
   flows (AUR helpers / pamac) may prompt for a password separately.
+- **Remote hosts & groups (Phase 4):** a `/remote` page lists the configured
+  `[remote.groups.<name>]` (with their hosts) and takes an ad-hoc host, with an
+  actions field (default `-a`). **Preview** runs `fettle remote <target> … --dry-run`
+  (safe); **Run** confirms, then `fettle remote <target> … --yes` over SSH, streaming
+  the per-host output. Remote hosts elevate themselves over SSH (no local sudo);
+  `--yes` uses non-tty SSH, so it needs passwordless sudo on the targets. Fetched-back
+  per-host reports then appear under each host on the dashboard.
 
 ## [0.14.0] — AUR reports link packages + say what they are
 

@@ -88,6 +88,18 @@ def test_data_base_dir_defaults_under_home(tmp_path, monkeypatch):
     assert data.base_dir() == tmp_path / ".fettle"
 
 
+def test_data_remote_groups_lists_configured_groups():
+    from fettle.config import Config
+    cfg = Config()
+    cfg.remote = {"groups": {"lab": ["h1", "h2"], "arch": {"hosts": ["wopr"]}}}
+    assert data.remote_groups(config=cfg) == {"lab": ["h1", "h2"], "arch": ["wopr"]}
+
+
+def test_data_remote_groups_empty_without_config():
+    from fettle.config import Config
+    assert data.remote_groups(config=Config()) == {}
+
+
 def test_report_html_mirrors_the_dashboard(tmp_path):
     # the web UI serves the SAME live HTML as `fettle report`, via the real renderers
     _write(tmp_path, "wopr", "aur-audit", "20260723-010101",
