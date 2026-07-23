@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from fettle import cli
 from fettle.web import data
 
@@ -95,3 +97,32 @@ def test_report_html_mirrors_the_dashboard(tmp_path):
     assert "<!doctype html>" in html.lower()          # a full self-contained page
     assert "wopr" in html                              # the host section is present
     assert "aur.archlinux.org/packages/yay" in html   # real renderer reuse (AUR link)
+
+
+# -- the app route serves that HTML with a refresh control (needs the web extra) --
+def _client():
+    pytest.importorskip("nicegui")               # skip in the pure-stdlib dev venv
+    from fastapi.testclient import TestClient
+
+    from fettle.web import app as webapp
+    return webapp, TestClient(webapp.app)
+
+
+def test_dashboard_route_serves_report_with_refresh(monkeypatch):
+    webapp, client = _client()
+    monkeypatch.setattr(webapp.data, "report_html",
+                        lambda: "<html><body>DASHBOARD</body></html>")
+    r = client.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "DASHBOARD" in r.text                        # the live report body
+    assert "location.reload()" in r.text                # injected manual-refresh button
+    assert client.get("/report.html").text == r.text    # both paths serve it
+
+
+def test_dashboard_route_shows_error_instead_of_500(monkeypatch):
+    webapp, client = _client()
+    def boom():
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(webapp.data, "report_html", boom)
+    r = client.get("/")
+    assert r.status_code == 200 and "report unavailable" in r.text and "kaboom" in r.text
