@@ -14,10 +14,15 @@ All notable changes to fettle are recorded here. Newest first.
   hint instead of a traceback.
 - **Live dashboard (Phase 1):** the web UI mirrors `fettle report` exactly — it
   serves the *same* HTML, generated live from the current `~/.fettle` on each load
-  (no disk write), for all hosts at once, via the real report renderers. A thin
-  NiceGUI shell adds a **manual refresh** button; the report renders inside an iframe
-  so its terminal CSS/JS (filter, collapse) are isolated from NiceGUI's styles.
-  Action-runners come in later phases.
+  (no disk write), for all hosts at once, via the real report renderers. Served as a
+  plain page with a small injected toolbar (**run** + **refresh**), so the report's
+  own terminal CSS/JS (filter, collapse) work untouched.
+- **Run read-only audits (Phase 2):** a `/run` page (linked from the dashboard) with
+  a button per read-only audit (`pkg-audit`, `aur-audit`, `aur-ioc-scan`,
+  `hardening-audit`, `config-drift`, `auto-updates`, `only-update`). Clicking one
+  runs it as an unprivileged `python -m fettle <action>` subprocess and **streams the
+  output live**; when it finishes, reload the dashboard to see the new report. No
+  sudo — privileged actions come in a later phase.
 
 ## [0.14.0] — AUR reports link packages + say what they are
 

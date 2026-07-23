@@ -126,3 +126,20 @@ def test_dashboard_route_shows_error_instead_of_500(monkeypatch):
     monkeypatch.setattr(webapp.data, "report_html", boom)
     r = client.get("/")
     assert r.status_code == 200 and "report unavailable" in r.text and "kaboom" in r.text
+
+
+# -- the action runner streams a subprocess's output + exit code (no nicegui) --
+def test_run_action_streams_lines_and_exit_code():
+    import asyncio
+
+    from fettle.web import runner
+    stub = [sys.executable, "-c",
+            "print('scanning'); print('done'); import sys; sys.exit(3)"]
+    lines: list[str] = []
+    code = asyncio.run(runner.run_action([], lines.append, cmd=stub))
+    assert lines == ["scanning", "done"] and code == 3
+
+
+def test_run_action_default_cmd_targets_fettle():
+    from fettle.web import runner
+    assert runner._cmd(["-A"])[1:] == ["-m", "fettle", "-A"]   # `python -m fettle -A`
