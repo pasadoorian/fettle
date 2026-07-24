@@ -17,11 +17,11 @@ from ..util import matches_any
 from . import base, db
 from .arch_source import ArchAdvisorySource
 from .debian_source import DebianAdvisorySource
+from .ubuntu_source import UbuntuAdvisorySource
 
 
 def _providers():
-    # Ubuntu provider joins here in Milestone 3.
-    return [ArchAdvisorySource(), DebianAdvisorySource()]
+    return [ArchAdvisorySource(), DebianAdvisorySource(), UbuntuAdvisorySource()]
 
 
 def _cfg(ctx) -> dict:
@@ -113,6 +113,9 @@ def _render(findings, uncovered, manjaro, sources):
     if "debian" in sources:
         lines += ["", "Note: Debian coverage is by source package from the tracker; "
                   "third-party/local .debs aren't separately flagged yet."]
+    if "ubuntu" in sources:
+        lines += ["", "Note: Ubuntu findings come from the OVAL feed (released fixes). "
+                  "'Vulnerable, no fix yet' data needs the CVE API and isn't shown yet."]
 
     if manjaro and fixable:
         lines += ["", "Note: on Manjaro, 'fix available' can reflect the normal 1–2 week",

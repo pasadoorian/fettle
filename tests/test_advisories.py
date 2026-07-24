@@ -267,6 +267,85 @@ def test_debian_is_present_debian_only():
             assert d.is_present(None) is False       # Ubuntu -> M3 provider, not this one
 
 
+# -- Ubuntu provider (M3, OVAL) ----------------------------------------------
+class _RawResp:
+    def __init__(self, raw):
+        self._raw = raw
+
+    def read(self, *a):
+        return self._raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+_OVAL = """<oval_definitions>
+ <definition class="vulnerability"><metadata>
+   <reference source="Package" ref_id="openssl" />
+   <advisory>
+     <cve href="https://ubuntu.com/security/CVE-2024-1" priority="critical">CVE-2024-1</cve>
+     <cve href="https://ubuntu.com/security/CVE-2024-2" priority="low">CVE-2024-2</cve>
+   </advisory></metadata>
+   <criteria>
+     <criterion comment="(CVE-2024-1) openssl package in noble was vulnerable but has been fixed (note: '3.0.13-1')." />
+     <criterion comment="(CVE-2024-2) openssl package in noble was vulnerable but has been fixed (note: '3.0.12-1')." />
+   </criteria>
+ </definition>
+</oval_definitions>"""
+
+
+def test_ubuntu_refresh_parses_oval_with_severity(tmp_path):
+    import bz2
+
+    from fettle.advisories.ubuntu_source import UbuntuAdvisorySource
+    conn = db.connect(tmp_path / "adv.db")
+    src = UbuntuAdvisorySource()
+    src._codename = lambda ctx=None: "noble"
+    with patch("fettle.advisories.ubuntu_source.urllib.request.urlopen",
+               lambda *a, **k: _RawResp(bz2.compress(_OVAL.encode()))):
+        assert src.refresh(conn) == 2
+    rows = {r[0]: r for r in db.all_rows(conn, "ubuntu")}  # keyed by group_id (CVE)
+    assert rows["CVE-2024-1"][3] == "Critical" and rows["CVE-2024-1"][5] == "3.0.13-1"
+    assert rows["CVE-2024-2"][3] == "Low"
+
+
+def test_ubuntu_findings_flags_critical(tmp_path):
+    import bz2
+
+    from fettle.advisories.ubuntu_source import UbuntuAdvisorySource
+    conn = db.connect(tmp_path / "adv.db")
+    src = UbuntuAdvisorySource()
+    src._codename = lambda ctx=None: "noble"
+    with patch("fettle.advisories.ubuntu_source.urllib.request.urlopen",
+               lambda *a, **k: _RawResp(bz2.compress(_OVAL.encode()))):
+        src.refresh(conn)
+
+    def fake_run(cmd, **kw):
+        if cmd[:2] == ["dpkg-query", "-W"]:
+            return SimpleNamespace(stdout="openssl 3.0.10-1")     # behind both fixes
+        if cmd[:2] == ["dpkg", "--compare-versions"]:
+            return SimpleNamespace(returncode=0)                  # installed < fixed
+        return SimpleNamespace(stdout="", returncode=0)
+
+    with patch("fettle.command.run", side_effect=fake_run):
+        found = {f.cves[0]: f for f in src.findings(None, conn)}
+    assert found["CVE-2024-1"].severity == "Critical"            # Ubuntu can be Critical
+    assert found["CVE-2024-1"].status == base.FIXED_AVAILABLE and found["CVE-2024-1"].fixed_version == "3.0.13-1"
+
+
+def test_ubuntu_is_present_ubuntu_only():
+    from fettle.advisories.ubuntu_source import UbuntuAdvisorySource
+    u = UbuntuAdvisorySource()
+    with patch("fettle.advisories.ubuntu_source.command.which", return_value=True):
+        with patch.object(u, "_osrel", return_value={"ID": "ubuntu"}):
+            assert u.is_present(None) is True
+        with patch.object(u, "_osrel", return_value={"ID": "debian"}):
+            assert u.is_present(None) is False
+
+
 # -- update-flow security gate (best-effort, §19.8) --------------------------
 def test_gate_proceeds_when_no_cache(tmp_path):
     # no advisories.db present -> never blocks a routine update

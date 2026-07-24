@@ -742,7 +742,7 @@ fettle web --port 9000        # a different port
 
 ## Security advisories / CVE tracking — `advisory-check` *(opt-in)*
 
-`fettle advisory-check` (Arch/Manjaro and Debian; Ubuntu planned) tells you, per
+`fettle advisory-check` (Arch/Manjaro, Debian, and Ubuntu) tells you, per
 installed package: CVEs with **a fix you haven't applied yet**, and — the distinctive
 part — CVEs you're **currently vulnerable to with no fix released yet** (a heads-up
 *before* an advisory/patch exists). It bulk-fetches the distro's security tracker into
@@ -770,7 +770,9 @@ lag, not alarm.
 
 > Debian's tracker dump is large (~80 MB); a refresh downloads and parses it once per
 > `cache_ttl`. Coverage is by source package; third-party/local `.deb`s aren't
-> separately flagged yet.
+> separately flagged yet. On **Ubuntu**, findings come from the per-release OVAL feed
+> (released fixes, with Canonical's priority); "vulnerable, no fix yet" data needs the
+> Ubuntu CVE API and isn't shown yet.
 
 ## Previewing an upgrade
 

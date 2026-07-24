@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from pathlib import Path
 
 from .. import command
-from ..distro import parse_os_release
-from . import base, db
+from . import db
+from .apt_base import AptAdvisorySource
 
 _FEED = "https://security-tracker.debian.org/tracker/data/json"
 _CVE_URL = "https://security-tracker.debian.org/tracker/"
@@ -25,18 +24,11 @@ _URGENCY = {"high": "High", "medium": "Medium", "low": "Low",
             "unimportant": "Low", "end-of-life": "Low"}
 
 
-class DebianAdvisorySource(base.AdvisoryProvider):
+class DebianAdvisorySource(AptAdvisorySource):
     source = "debian"
 
-    def _osrel(self, ctx=None) -> dict:
-        root = (getattr(ctx, "root", None) if ctx else None) or "/"
-        try:
-            return parse_os_release(Path(root))
-        except Exception:
-            return {}
-
     def _suite(self, ctx=None) -> str:
-        return self._osrel(ctx).get("VERSION_CODENAME", "") or ""
+        return self._codename(ctx)
 
     def is_present(self, ctx) -> bool:
         # Debian proper only — Ubuntu (ID_LIKE=debian) uses the Ubuntu provider (M3).
@@ -87,45 +79,4 @@ class DebianAdvisorySource(base.AdvisoryProvider):
             return None                            # not affected / fixed pre-release
         return None                                # undetermined -> skip
 
-    # -- classify installed --------------------------------------------------
-    def findings(self, ctx, conn) -> list[base.AdvisoryFinding]:
-        installed = self._installed()
-        if not installed:
-            return []
-        out: list[base.AdvisoryFinding] = []
-        for (group_id, pkg, status, severity, _affected, fixed, cves_json,
-             _advisory_id, url, dclass) in db.all_rows(conn, self.source):
-            iv = installed.get(pkg)
-            if iv is None:
-                continue
-            if status == "pending":
-                norm, fx = base.PENDING_FIX, None
-            elif status == "fixable" and fixed and self._behind(iv, fixed):
-                norm, fx = base.FIXED_AVAILABLE, fixed
-            else:
-                continue                           # patched / not applicable
-            out.append(base.AdvisoryFinding(
-                source=self.source, package=pkg, installed_version=iv, status=norm,
-                severity=severity, cves=json.loads(cves_json) if cves_json else [],
-                fixed_version=fx, group_id=group_id, distro_class=dclass, url=url))
-        return out
-
-    def _installed(self) -> dict[str, str]:
-        proc = command.run(["dpkg-query", "-W", "-f=${source:Package} ${Version}\n"],
-                           capture=True)
-        out = {}
-        for line in proc.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] not in out:
-                out[parts[0]] = parts[1]
-        return out
-
-    def _behind(self, installed: str, fixed: str) -> bool:
-        """True if ``installed`` < ``fixed`` per ``dpkg --compare-versions``."""
-        return command.run(
-            ["dpkg", "--compare-versions", installed, "lt", fixed]).returncode == 0
-
-    def uncovered(self, ctx) -> list[str]:
-        # Debian coverage is by source package from the tracker; reliably flagging
-        # third-party/local .debs is a known limitation (noted in the report). []
-        return []
+    # findings / _installed / _behind / uncovered are inherited from AptAdvisorySource.

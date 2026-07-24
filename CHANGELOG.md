@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.19.0] — advisory-check: Ubuntu provider (Phase 19 M3)
+
+- `fettle advisory-check` now covers **Ubuntu** too (Arch/Manjaro + Debian + Ubuntu).
+  It bulk-fetches Ubuntu's per-release **OVAL** feed
+  (`security-metadata.canonical.com`, `bz2` + `xml`, both stdlib), which carries
+  fix-available data with Canonical's `priority` (**including `critical`**, so the
+  `-u`/`-a` warn-gate works on Ubuntu), and classifies installed source packages via
+  `dpkg` (shared with the Debian provider). Ubuntu-proper only — it tracks its fix
+  state independently of Debian.
+- **Known gap (transparent in the report):** the OVAL feed contains only *fixed*
+  CVEs, so Ubuntu's "vulnerable, no fix yet" (pending) findings aren't surfaced yet —
+  that data lives in Canonical's CVE JSON API, which was returning HTTP 503 when M3
+  landed. Pending will appear when that endpoint is reachable.
+- Refactor: Debian and Ubuntu share an `AptAdvisorySource` base (dpkg-based
+  classification, source mapping); only each tracker's fetch/parse differs.
+
 ## [0.18.0] — advisory-check: Debian provider (Phase 19 M2)
 
 - `fettle advisory-check` now covers **Debian** (in addition to Arch/Manjaro). It
