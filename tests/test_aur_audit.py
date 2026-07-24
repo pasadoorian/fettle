@@ -65,6 +65,54 @@ def test_not_found_and_report_written(tmp_path, capsys):
     assert "ghost" in data["not_found_in_aur"]                   # keeps the missing set
 
 
+def test_reverse_dependents_flags_and_removal_candidates(tmp_path, capsys):
+    import json
+
+    from fettle.command import Proc
+    now = time.time()
+    results = [
+        {"Name": "lib-leftover", "Maintainer": "a", "LastModified": now - 400 * 86400, "NumVotes": 5},
+        {"Name": "used-lib", "Maintainer": "b", "LastModified": now - 400 * 86400, "NumVotes": 5},
+        {"Name": "opt-only", "Maintainer": "c", "LastModified": now - 400 * 86400, "NumVotes": 5},
+    ]
+    foreign = ["lib-leftover", "used-lib", "opt-only"]
+    qi = ("Name            : lib-leftover\nRequired By     : None\nOptional For    : None\n"
+          "\nName            : used-lib\nRequired By     : someapp\nOptional For    : None\n"
+          "\nName            : opt-only\nRequired By     : None\nOptional For    : someapp\n")
+    ql = ("lib-leftover /usr/lib/libleftover.so\nlib-leftover /usr/lib/libleftover.so.1\n"
+          "used-lib /usr/lib/libused.so\nopt-only /usr/bin/opt-only\n")
+
+    def fake_run(cmd, **kw):
+        if "-Qmq" in cmd:
+            return Proc(0, "\n".join(foreign))
+        if "-Qi" in cmd:
+            return Proc(0, qi)
+        if "-Ql" in cmd:
+            return Proc(0, ql)
+        return Proc(0, "")
+
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.aur.audit.aur_meta.fetch_info", return_value=results):
+        audit.run(_ctx(tmp_path))
+    out = capsys.readouterr().out
+    assert "NO-DEPENDENTS" in out and "Candidates for removal" in out
+    assert "sudo pacman -Rns lib-leftover" in out
+
+    d = tmp_path / ".fettle/reports/local"
+    data = json.loads(list(d.glob("aur-audit-*.json"))[0].read_text())["data"]
+    pkgs = {p["name"]: p for p in data["packages"]}
+    # unused library -> NO-DEPENDENTS + LIB, is a removal candidate
+    assert "NO-DEPENDENTS" in pkgs["lib-leftover"]["flags"] and "LIB" in pkgs["lib-leftover"]["flags"]
+    assert pkgs["lib-leftover"]["is_library"] is True
+    # used library -> has a dependent, NOT flagged, NOT a candidate
+    assert pkgs["used-lib"]["required_by"] == ["someapp"]
+    assert "NO-DEPENDENTS" not in pkgs["used-lib"]["flags"]
+    # optional-only -> weaker flag, not a removal candidate
+    assert "NO-HARD-DEPS" in pkgs["opt-only"]["flags"]
+    assert "NO-DEPENDENTS" not in pkgs["opt-only"]["flags"]
+    assert [c["name"] for c in data["removal_candidates"]] == ["lib-leftover"]
+
+
 def test_maintainer_change_section(tmp_path, capsys):
     snap = tmp_path / ".cache/fettle/aur-maintainers.json"
     snap.parent.mkdir(parents=True)

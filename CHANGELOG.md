@@ -4,6 +4,21 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.16.0] — aur-audit: reverse-dependents ("nothing uses this") check
+
+- `-A` (`aur-audit`) now flags foreign packages that **nothing on the system depends
+  on** — the AUR RPC can't surface this, so a healthy-but-leftover clone (e.g. an old
+  `webkit2gtk` that nothing links) previously looked perfectly fine. For every foreign
+  package it reads `pacman -Qi` reverse-deps and adds a graded flag: **`NO-DEPENDENTS`**
+  (nothing requires *or* optionally-needs it), **`NO-HARD-DEPS`** (only an optdep of
+  something), and **`LIB`** when it ships a public `/usr/lib/*.so` — so an unused
+  *library* (the actionable case) reads `NO-DEPENDENTS LIB`. A **"Candidates for
+  removal"** section (text + HTML, libraries first) lists the strong ones with a
+  `sudo pacman -Rns <pkg>` hint and the caveat that **pacman only tracks packaged
+  dependents** (unpackaged software / `dlopen` could still use them — verify first).
+  The JSON gains `required_by`/`optional_for`/`is_library` per package and a
+  `removal_candidates` list. `-A` stays read-only — it advises, never removes.
+
 ## [0.15.2] — web UI: controls on top
 
 - The `/run` and `/remote` pages now put the **action controls at the top** of the

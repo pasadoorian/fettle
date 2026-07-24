@@ -356,10 +356,23 @@ def _render_aur_audit(data: dict) -> str:
     table = (f'<table><tr><th>package</th><th>software</th><th>maintainer</th>'
              f'<th>age(d)</th><th>votes</th><th>flags</th></tr>{rows}</table>') if rows else ""
     missing = data.get("not_found_in_aur") or []
+    removal = data.get("removal_candidates") or []
     changes = data.get("maintainer_changes") or []
     extra = ""
     if missing:
         extra += f'<p><strong>Not in AUR:</strong> {_esc(", ".join(map(str,missing)))}</p>'
+    if removal:
+        items = "".join(
+            f'<li>{_aur_pkg_link(str(c.get("name","")))}'
+            f'{" <span class=badge>LIB</span>" if c.get("is_library") else ""} '
+            f'<code>sudo pacman -Rns {_esc(str(c.get("name","")))}</code></li>'
+            for c in removal)
+        extra += ('<p><strong>Candidates for removal</strong> '
+                  '<span class=muted>(nothing packaged requires them)</span></p>'
+                  f'<ul class=k>{items}</ul>'
+                  '<p class=muted>pacman only tracks packaged dependents — unpackaged '
+                  'software (AppImage, /opt, manually built, dlopen) could still use '
+                  'these. Verify before removing.</p>')
     if changes:
         extra += ('<p><strong>Maintainer changes:</strong></p><ul class=k>'
                   + "".join(f"<li>{_esc(str(c))}</li>" for c in changes) + "</ul>")

@@ -167,6 +167,18 @@ def test_aur_audit_links_name_and_shows_software(tmp_path):
     assert "javascript:alert(1)" not in text                       # unsafe URL blocked
 
 
+def test_aur_audit_renders_removal_candidates(tmp_path):
+    _write_report_json(tmp_path, "local", "aur-audit", "20260723-010101", {
+        "packages": [{"name": "webkit2gtk", "maintainer": "a", "age_days": 1, "votes": 9,
+                      "flags": "NO-DEPENDENTS LIB", "description": "", "homepage": ""}],
+        "removal_candidates": [{"name": "webkit2gtk", "is_library": True}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "Candidates for removal" in text
+    assert "sudo pacman -Rns webkit2gtk" in text
+    assert 'href="https://aur.archlinux.org/packages/webkit2gtk"' in text   # AUR link reused
+    assert "verify before removing" in text.lower()                          # the caveat
+
+
 def test_findings_link_only_aur_packages(tmp_path):
     _write_report_json(tmp_path, "local", "pkg-audit", "20260721-010101",
                        {"findings": [
