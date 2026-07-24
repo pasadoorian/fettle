@@ -16,11 +16,12 @@ from ..distro import parse_os_release
 from ..util import matches_any
 from . import base, db
 from .arch_source import ArchAdvisorySource
+from .debian_source import DebianAdvisorySource
 
 
 def _providers():
-    # Debian/Ubuntu providers join here in Milestones 2/3.
-    return [ArchAdvisorySource()]
+    # Ubuntu provider joins here in Milestone 3.
+    return [ArchAdvisorySource(), DebianAdvisorySource()]
 
 
 def _cfg(ctx) -> dict:
@@ -83,7 +84,7 @@ def _line(f) -> str:
     return f"  [{f.severity:<8}] {f.package} {ver}   {cves}   {f.url}"
 
 
-def _render(findings, uncovered, manjaro):
+def _render(findings, uncovered, manjaro, sources):
     pending = sorted((f for f in findings if f.status == base.PENDING_FIX), key=_sev_key)
     fixable = sorted((f for f in findings if f.status != base.PENDING_FIX), key=_sev_key)
 
@@ -103,18 +104,22 @@ def _render(findings, uncovered, manjaro):
         lines.append("  " + ", ".join(f"{k}: {v}" for k, v in tally.items())
                      + "  (Medium/Low/Unknown — see the full report)")
 
-    unc = uncovered.get("arch", [])
-    lines += ["", f"NOT covered by the tracker (AUR/manual/foreign): {len(unc)} package(s)"]
-    if unc:
-        lines.append("  " + " ".join(sorted(unc)))
-        lines.append("  (their CVEs aren't tracked here — vet via `fettle -A`/`-P`/`-I`)")
+    for src in sources:
+        unc = uncovered.get(src, [])
+        if unc:
+            lines += ["", f"NOT covered by the {src} tracker (AUR/manual/foreign): "
+                      f"{len(unc)} package(s)", "  " + " ".join(sorted(unc)),
+                      "  (their CVEs aren't tracked here — vet via `fettle -A`/`-P`/`-I`)"]
+    if "debian" in sources:
+        lines += ["", "Note: Debian coverage is by source package from the tracker; "
+                  "third-party/local .debs aren't separately flagged yet."]
 
     if manjaro and fixable:
         lines += ["", "Note: on Manjaro, 'fix available' can reflect the normal 1–2 week",
                   "sync lag behind Arch, not special exposure — the fix is likely en route."]
 
     data = {
-        "sources": ["arch"],
+        "sources": sources,
         "findings": [base.advisory_to_dict(f) for f in findings],
         "counts": {"pending": len(pending), "fixed_available": len(fixable)},
         "uncovered": uncovered,
@@ -143,7 +148,7 @@ def run(ctx) -> None:
         conn.close()
 
     findings = _apply_filters(findings, cfg)
-    lines, data = _render(findings, uncovered, _is_manjaro(ctx))
+    lines, data = _render(findings, uncovered, _is_manjaro(ctx), [p.source for p in provs])
     for ln in lines:
         print(ln)
 

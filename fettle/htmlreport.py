@@ -443,12 +443,13 @@ def _render_advisories(data: dict) -> str:
            '<span class=muted>(vulnerable, no fix released yet)</span></p>', _table(pending),
            '<p><strong>Fix available</strong> '
            '<span class=muted>(installed trails a security fix)</span></p>', _table(fixable)]
-    unc = (data.get("uncovered") or {}).get("arch") or []
-    if unc:
-        names = _esc(" ".join(sorted(map(str, unc))[:200]))
-        out.append(f'<p class=muted>Not covered by the tracker (AUR/manual/foreign): '
-                   f'{len(unc)} package(s) — vet via <code>fettle -A/-P/-I</code>.<br>'
-                   f'<span style="font-size:.72rem">{names}</span></p>')
+    for src, unc in (data.get("uncovered") or {}).items():
+        if unc:
+            names = _esc(" ".join(sorted(map(str, unc))[:200]))
+            out.append(f'<p class=muted>Not covered by the {_esc(str(src))} tracker '
+                       f'(AUR/manual/foreign): {len(unc)} package(s) — vet via '
+                       f'<code>fettle -A/-P/-I</code>.<br>'
+                       f'<span style="font-size:.72rem">{names}</span></p>')
     if data.get("manjaro"):
         out.append('<p class=muted>On Manjaro, "fix available" can reflect normal 1&ndash;2 '
                    'week sync lag behind Arch, not special exposure.</p>')

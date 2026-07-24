@@ -11,7 +11,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def db_path(ctx) -> Path:
@@ -38,26 +38,28 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         "DROP TABLE IF EXISTS advisories; DROP TABLE IF EXISTS meta;"
         "CREATE TABLE advisories(source TEXT, group_id TEXT, package TEXT,"
         " status TEXT, severity TEXT, affected TEXT, fixed TEXT, cves TEXT,"
-        " advisory_id TEXT, url TEXT);"
+        " advisory_id TEXT, url TEXT, dclass TEXT);"
         "CREATE INDEX idx_adv_src_pkg ON advisories(source, package);"
         "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);")
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     conn.commit()
 
 
+# columns returned by all_rows (everything but the source filter), in order.
 _COLS = ("group_id", "package", "status", "severity", "affected", "fixed",
-         "cves", "advisory_id", "url")
+         "cves", "advisory_id", "url", "dclass")
 
 
 def replace_source(conn: sqlite3.Connection, source: str, rows, *, now=None) -> None:
     """Replace all rows for ``source`` in one transaction; stamp its update time.
     Each row is ``(source, group_id, package, status, severity, affected, fixed,
-    cves, advisory_id, url)``."""
+    cves, advisory_id, url, dclass)`` — ``dclass`` is the distro class tag used for
+    filtering (Arch status / Debian urgency|nodsa)."""
     with conn:
         conn.execute("DELETE FROM advisories WHERE source=?", (source,))
         conn.executemany(
             "INSERT INTO advisories(source,group_id,package,status,severity,affected,"
-            "fixed,cves,advisory_id,url) VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+            "fixed,cves,advisory_id,url,dclass) VALUES(?,?,?,?,?,?,?,?,?,?,?)", rows)
         conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)",
                      (f"updated_{source}", str(int(now if now is not None else time.time()))))
 

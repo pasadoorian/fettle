@@ -4,7 +4,19 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [0.17.1] — advisory: warn-gate in the update flow (Phase 19 M1)
+## [0.18.0] — advisory-check: Debian provider (Phase 19 M2)
+
+- `fettle advisory-check` now covers **Debian** (in addition to Arch/Manjaro). It
+  bulk-fetches `security-tracker.debian.org`, filters to the **running release**
+  (`VERSION_CODENAME`), and classifies installed **source** packages — pending
+  (`status: open`, or a `no-dsa` won't-fix), or fix-available (compared via
+  `dpkg --compare-versions`; source mapping via `dpkg-query`), into the same shared
+  SQLite cache and report. Each finding carries its Debian **class tag** (`nodsa`,
+  `unimportant`, `end-of-life`, urgency), so `[advisories] exclude_classes =
+  ["nodsa","unimportant","end-of-life"]` cuts the long tail of won't-fix CVEs to the
+  actionable set. Debian assigns no "critical" urgency, so the `-u`/`-a` Critical
+  warn-gate won't fire on Debian-only findings. Ubuntu tracks independently and lands
+  in M3.
 
 - `fettle -u` / `-a` now runs a **best-effort security gate** before a real upgrade:
   it reads the **cached** advisory data (never fetches, never blocks/fails a routine

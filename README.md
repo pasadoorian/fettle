@@ -740,6 +740,38 @@ fettle web --port 9000        # a different port
 > it to a network; put it behind your own auth/VPN if you must. The web server runs
 > unprivileged; only the `sudo` subprocess it spawns is elevated.
 
+## Security advisories / CVE tracking — `advisory-check` *(opt-in)*
+
+`fettle advisory-check` (Arch/Manjaro and Debian; Ubuntu planned) tells you, per
+installed package: CVEs with **a fix you haven't applied yet**, and — the distinctive
+part — CVEs you're **currently vulnerable to with no fix released yet** (a heads-up
+*before* an advisory/patch exists). It bulk-fetches the distro's security tracker into
+a rebuildable **SQLite cache** (`~/.cache/fettle/advisories.db`; `sqlite3` is stdlib,
+so the core stays dependency-free), refreshed on-run when stale or via
+`fettle advisory-update`.
+
+```sh
+fettle advisory-update       # refresh the local advisory cache
+fettle advisory-check        # report pending + fix-available CVEs (read-only)
+```
+
+The report leads with a **Pending fixes** callout (vulnerable, no fix yet), then a
+severity-banded **Fix available** table, then the packages the tracker **doesn't
+cover** (AUR/manual/foreign) so a clean result never over-reassures. Version
+comparison is delegated to `vercmp` (Arch) / `dpkg --compare-versions` (Debian). It's
+**opt-in** (never in the default `-a` set); on `fettle -u`/`-a` a best-effort gate
+warns (and, with `[advisories] warn_gate`, confirms) on unpatched **Critical** CVEs —
+but never blocks a routine update on missing/stale/offline data.
+
+`[advisories]` config: `cache_ttl`, `severity_threshold`, `exclude_packages` (globs),
+`exclude_classes` (hide distro class tags, e.g. Debian `["nodsa","unimportant",
+"end-of-life"]`), `warn_gate`. On Manjaro, "fix available" is phrased as possible sync
+lag, not alarm.
+
+> Debian's tracker dump is large (~80 MB); a refresh downloads and parses it once per
+> `cache_ttl`. Coverage is by source package; third-party/local `.deb`s aren't
+> separately flagged yet.
+
 ## Previewing an upgrade
 
 `fettle -u --dry-run` resolves and lists **every package the upgrade would

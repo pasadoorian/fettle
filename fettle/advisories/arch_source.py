@@ -37,11 +37,13 @@ class ArchAdvisorySource(base.AdvisoryProvider):
         for avg in data:
             name = avg.get("name")
             advs = avg.get("advisories") or []
+            status = avg.get("status") or "Unknown"
             rows.extend(
-                (self.source, name, pkg, avg.get("status") or "Unknown",
+                (self.source, name, pkg, status,
                  avg.get("severity") or "Unknown", avg.get("affected") or "",
                  avg.get("fixed") or None, json.dumps(avg.get("issues") or []),
-                 (advs[0] if advs else None), _TRACKER + str(name) if name else _TRACKER)
+                 (advs[0] if advs else None),
+                 _TRACKER + str(name) if name else _TRACKER, status)  # dclass = raw status
                 for pkg in (avg.get("packages") or []))
         db.replace_source(conn, self.source, rows)
         return len(rows)
@@ -53,7 +55,7 @@ class ArchAdvisorySource(base.AdvisoryProvider):
             return []
         out: list[base.AdvisoryFinding] = []
         for (group_id, pkg, status, severity, _affected, fixed, cves_json,
-             advisory_id, url) in db.all_rows(conn, self.source):
+             advisory_id, url, dclass) in db.all_rows(conn, self.source):
             iv = installed.get(pkg)
             if iv is None:
                 continue
@@ -64,7 +66,7 @@ class ArchAdvisorySource(base.AdvisoryProvider):
                 source=self.source, package=pkg, installed_version=iv, status=norm,
                 severity=severity, cves=json.loads(cves_json) if cves_json else [],
                 fixed_version=fx, group_id=group_id, advisory_id=advisory_id,
-                distro_class=status, url=url))
+                distro_class=dclass, url=url))
         return out
 
     def _classify(self, installed: str, status: str, fixed):

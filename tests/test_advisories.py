@@ -14,11 +14,11 @@ from fettle.output import Output
 def test_db_roundtrip_and_last_updated(tmp_path):
     conn = db.connect(tmp_path / "adv.db")
     rows = [("arch", "AVG-1", "vim", "Fixed", "High", "1-1", "1-2",
-             '["CVE-1"]', None, "http://x")]
+             '["CVE-1"]', None, "http://x", "Fixed")]
     db.replace_source(conn, "arch", rows, now=1000)
     assert db.last_updated(conn, "arch") == 1000
     got = db.all_rows(conn, "arch")
-    assert len(got) == 1 and got[0][1] == "vim" and got[0][5] == "1-2"
+    assert len(got) == 1 and got[0][1] == "vim" and got[0][5] == "1-2" and got[0][9] == "Fixed"
     # replace is a full swap for that source
     db.replace_source(conn, "arch", [], now=2000)
     assert db.all_rows(conn, "arch") == [] and db.last_updated(conn, "arch") == 2000
@@ -28,7 +28,7 @@ def test_db_schema_mismatch_rebuilds(tmp_path):
     p = tmp_path / "adv.db"
     conn = db.connect(p)
     db.replace_source(conn, "arch", [("arch", "A", "p", "Fixed", "Low", "", "1",
-                                      "[]", None, "")], now=1)
+                                      "[]", None, "", "Fixed")], now=1)
     conn.execute("PRAGMA user_version=999")   # simulate an old/foreign schema
     conn.commit()
     conn.close()
@@ -173,7 +173,7 @@ def test_check_run_writes_report(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Pending fixes" in out and "djvulibre" in out
     assert "Fix available" in out and "poppler" in out
-    assert "NOT covered by the tracker" in out and "yay" in out
+    assert "NOT covered by the arch tracker" in out and "yay" in out
     d = tmp_path / ".fettle/reports/local"
     data = json.loads(list(d.glob("advisory-check-*.json"))[0].read_text())["data"]
     assert data["counts"] == {"pending": 1, "fixed_available": 1}
@@ -188,6 +188,83 @@ def test_check_run_no_provider_warns(tmp_path, capsys):
         check.run(_ctx(tmp_path))
     cap = capsys.readouterr()
     assert "no advisory provider" in (cap.out + cap.err).lower()
+
+
+# -- Debian provider (M2) ----------------------------------------------------
+def test_debian_classify_release():
+    from fettle.advisories.debian_source import DebianAdvisorySource
+    d = DebianAdvisorySource()
+    # open -> pending
+    assert d._classify_release({"status": "open", "urgency": "high"}) == ("pending", None, "high")
+    # resolved with a real fix -> fixable
+    assert d._classify_release({"status": "resolved", "fixed_version": "2-1",
+                                "urgency": "medium"}) == ("fixable", "2-1", "medium")
+    # resolved, fixed_version "0", no nodsa -> not affected (skip)
+    assert d._classify_release({"status": "resolved", "fixed_version": "0",
+                                "urgency": "unimportant"}) is None
+    # resolved, no fix, nodsa -> pending, tagged nodsa (won't-fix)
+    assert d._classify_release({"status": "resolved", "fixed_version": "0",
+                                "nodsa": "too intrusive", "urgency": "low"}) == ("pending", None, "nodsa")
+    # undetermined -> skip
+    assert d._classify_release({"status": "undetermined"}) is None
+
+
+_DEB_DATA = {
+    "openssl": {
+        "CVE-A": {"releases": {"bookworm": {"status": "resolved", "fixed_version": "3.0.11-1",
+                                            "urgency": "high"}}},
+        "CVE-B": {"releases": {"bookworm": {"status": "open", "urgency": "unimportant"}}},
+    },
+    "curl": {  # a different suite only -> ignored for bookworm
+        "CVE-C": {"releases": {"sid": {"status": "open", "urgency": "high"}}},
+    },
+}
+
+
+def test_debian_refresh_filters_to_running_suite(tmp_path):
+    from fettle.advisories.debian_source import DebianAdvisorySource
+    conn = db.connect(tmp_path / "adv.db")
+    src = DebianAdvisorySource()
+    src._suite = lambda ctx=None: "bookworm"
+    with patch("fettle.advisories.debian_source.urllib.request.urlopen",
+               lambda *a, **k: _Resp(_DEB_DATA)):
+        n = src.refresh(conn)
+    assert n == 2                                   # only the two bookworm entries
+    pkgs = sorted(r[1] for r in db.all_rows(conn, "debian"))
+    assert pkgs == ["openssl", "openssl"] and "curl" not in pkgs
+
+
+def test_debian_findings_uses_dpkg_compare(tmp_path):
+    from fettle.advisories.debian_source import DebianAdvisorySource
+    conn = db.connect(tmp_path / "adv.db")
+    src = DebianAdvisorySource()
+    src._suite = lambda ctx=None: "bookworm"
+    with patch("fettle.advisories.debian_source.urllib.request.urlopen",
+               lambda *a, **k: _Resp(_DEB_DATA)):
+        src.refresh(conn)
+    installed = {"openssl": "3.0.9-1"}              # behind the 3.0.11-1 fix
+
+    def fake_run(cmd, **kw):
+        if cmd[:2] == ["dpkg-query", "-W"]:
+            return SimpleNamespace(stdout="\n".join(f"{k} {v}" for k, v in installed.items()))
+        if cmd[:2] == ["dpkg", "--compare-versions"]:   # 3.0.9-1 lt 3.0.11-1 -> true
+            return SimpleNamespace(returncode=0)
+        return SimpleNamespace(stdout="", returncode=0)
+
+    with patch("fettle.command.run", side_effect=fake_run):
+        found = {f.cves[0]: f for f in src.findings(None, conn)}
+    assert found["CVE-A"].status == base.FIXED_AVAILABLE and found["CVE-A"].fixed_version == "3.0.11-1"
+    assert found["CVE-B"].status == base.PENDING_FIX and found["CVE-B"].distro_class == "unimportant"
+
+
+def test_debian_is_present_debian_only():
+    from fettle.advisories.debian_source import DebianAdvisorySource
+    d = DebianAdvisorySource()
+    with patch("fettle.advisories.debian_source.command.which", return_value=True):
+        with patch.object(d, "_osrel", return_value={"ID": "debian"}):
+            assert d.is_present(None) is True
+        with patch.object(d, "_osrel", return_value={"ID": "ubuntu", "ID_LIKE": "debian"}):
+            assert d.is_present(None) is False       # Ubuntu -> M3 provider, not this one
 
 
 # -- update-flow security gate (best-effort, §19.8) --------------------------

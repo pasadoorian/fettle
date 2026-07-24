@@ -182,7 +182,7 @@ def test_advisories_render_pending_and_fixable(tmp_path):
     assert "Pending fixes" in text and "Fix available" in text
     assert "djvulibre" in text and "CVE-2025-53367" in text          # pending
     assert "poppler" in text and 'b-Critical' in text                 # banded severity
-    assert "Not covered by the tracker" in text and "yay" in text
+    assert "Not covered by the arch tracker" in text and "yay" in text
     assert "sync lag" in text                                          # Manjaro note
 
 
