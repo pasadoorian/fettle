@@ -34,10 +34,11 @@ class AdvisoryFinding:
     severity: str                                # Critical/High/Medium/Low/Unknown
     cves: list[str] = field(default_factory=list)
     fixed_version: str | None = None
-    group_id: str | None = None                  # AVG-xxxx (Arch)
+    group_id: str | None = None                  # AVG-xxxx (Arch) / CVE / OSV id
     advisory_id: str | None = None               # ASA / DSA / USN, if one exists
-    distro_class: str = ""                       # raw tracker status/class (for filtering)
+    distro_class: str = ""                       # native rating/status tag (for filtering)
     url: str = ""
+    cvss: str = ""                               # CVSS vector (OSV) — the "second opinion"
 
 
 def advisory_to_dict(f: AdvisoryFinding) -> dict:
@@ -48,6 +49,7 @@ def advisory_to_dict(f: AdvisoryFinding) -> dict:
         "severity": f.severity, "cves": list(f.cves),
         "fixed_version": f.fixed_version, "group_id": f.group_id,
         "advisory_id": f.advisory_id, "distro_class": f.distro_class, "url": f.url,
+        "cvss": f.cvss,
     }
 
 

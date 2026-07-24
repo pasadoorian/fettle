@@ -421,13 +421,17 @@ def _render_advisories(data: dict) -> str:
 
     def _row(f: dict) -> str:
         sev = str(f.get("severity", "Unknown"))
+        badge = f'<span class="badge b-{_esc(sev)}">{_esc(sev)}</span>'
+        cvss = f.get("cvss")
+        if cvss:
+            badge += f'<br><span class=muted style="font-size:.68rem" title="CVSS">{_esc(str(cvss))}</span>'
         ver = _esc(str(f.get("installed_version", "")))
         fx = f.get("fixed_version")
         ver += f" &rarr; {_esc(str(fx))}" if fx else ""
         cves = _esc(", ".join(map(str, f.get("cves") or [])))
         link = _ext_link(str(f.get("url", "")), str(f.get("group_id") or "details"))
-        return (f'<tr><td><span class="badge b-{_esc(sev)}">{_esc(sev)}</span></td>'
-                f'<td>{_esc(str(f.get("package", "")))}</td><td>{ver}</td>'
+        pkg = f'<span class=muted>{_esc(str(f.get("source", "")))}/</span>{_esc(str(f.get("package", "")))}'
+        return (f'<tr><td>{badge}</td><td>{pkg}</td><td>{ver}</td>'
                 f'<td>{cves}</td><td>{link}</td></tr>')
 
     def _table(items: list) -> str:

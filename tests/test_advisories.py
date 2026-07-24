@@ -346,6 +346,91 @@ def test_ubuntu_is_present_ubuntu_only():
             assert u.is_present(None) is False
 
 
+# -- OSV client + language provider (M4) -------------------------------------
+_OSV_REC = {
+    "id": "GHSA-xxxx", "aliases": ["CVE-2024-9"],
+    "database_specific": {"severity": "HIGH"},
+    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}],
+    "affected": [{"package": {"ecosystem": "PyPI", "name": "requests"},
+                  "ranges": [{"type": "ECOSYSTEM",
+                              "events": [{"introduced": "0"}, {"fixed": "2.31.0"}]}]}],
+}
+
+
+def test_osv_classify_fixable_vs_pending():
+    from fettle.advisories import osv
+    assert osv.classify(_OSV_REC, "PyPI", "2.25.0") == ("fixable", "2.31.0")
+    no_fix = {"affected": [{"package": {"ecosystem": "PyPI", "name": "x"},
+                            "ranges": [{"events": [{"introduced": "0"}]}]}]}
+    assert osv.classify(no_fix, "PyPI", "1.0") == ("pending", None)
+    assert osv.classify(_OSV_REC, "npm", "2.25.0") is None      # ecosystem mismatch -> skip
+
+
+def test_osv_severity_shows_both():
+    from fettle.advisories import osv
+    band, cvss = osv.severity(_OSV_REC)
+    assert band == "High" and cvss.startswith("CVSS:3.1/")
+
+
+def test_osv_record_caches_incrementally(tmp_path):
+    from fettle.advisories import db, osv
+    conn = db.connect(tmp_path / "adv.db")
+    calls = []
+
+    class _R:
+        def __init__(self, b):
+            self._b = b
+
+        def read(self, *a):
+            return self._b
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_open(req, *a, **k):
+        calls.append(getattr(req, "full_url", req))
+        return _R(json.dumps(_OSV_REC).encode())
+
+    with patch("fettle.advisories.osv.urllib.request.urlopen", fake_open):
+        r1 = osv.record(conn, "GHSA-xxxx", "2024-01-01")   # fetch + cache
+        r2 = osv.record(conn, "GHSA-xxxx", "2024-01-01")   # same modified -> cache hit
+        osv.record(conn, "GHSA-xxxx", "2024-06-01")        # changed modified -> refetch
+    assert r1["id"] == r2["id"] == "GHSA-xxxx"
+    assert len(calls) == 2                                  # not 3 — the middle one was cached
+
+
+def test_osv_language_provider_refresh_and_findings(tmp_path):
+    from fettle.advisories import base, db, osv
+    from fettle.advisories.osv_source import OsvLanguageSource
+    conn = db.connect(tmp_path / "adv.db")
+    src = OsvLanguageSource()
+    src._installed = lambda: [("PyPI", "requests", "2.25.0"), ("PyPI", "clean-pkg", "1.0")]
+    with patch.object(osv, "querybatch",
+                      return_value=[[{"id": "GHSA-xxxx", "modified": "2024-01-01"}], []]), \
+         patch.object(osv, "record", return_value=_OSV_REC):
+        assert src.refresh(conn) == 1                       # only the vulnerable one
+    f = src.findings(None, conn)
+    assert len(f) == 1
+    assert f[0].source == "osv" and f[0].package == "requests"
+    assert f[0].status == base.FIXED_AVAILABLE and f[0].fixed_version == "2.31.0"
+    assert f[0].severity == "High" and f[0].cvss.startswith("CVSS:")
+    assert f[0].cves == ["CVE-2024-9"]
+
+
+def test_osv_dedups_same_cve_across_databases():
+    from fettle.advisories.osv_source import _dedup
+    # same package + CVE from GHSA (High) and PYSEC (Unknown) -> keep the High one
+    ghsa = ("osv", "GHSA-x", "ecdsa", "pending", "High", "0.19.2", None,
+            '["CVE-2024-23342"]', None, "u1", "PyPI", "CVSS:3.1/...")
+    pysec = ("osv", "PYSEC-1", "ecdsa", "pending", "Unknown", "0.19.2", None,
+             '["CVE-2024-23342"]', None, "u2", "PyPI", "")
+    out = _dedup([pysec, ghsa])
+    assert len(out) == 1 and out[0][4] == "High" and out[0][1] == "GHSA-x"
+
+
 # -- update-flow security gate (best-effort, §19.8) --------------------------
 def test_gate_proceeds_when_no_cache(tmp_path):
     # no advisories.db present -> never blocks a routine update

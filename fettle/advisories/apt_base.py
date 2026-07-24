@@ -47,7 +47,7 @@ class AptAdvisorySource(base.AdvisoryProvider):
             return []
         out: list[base.AdvisoryFinding] = []
         for (group_id, pkg, status, severity, _aff, fixed, cves_json,
-             _adv, url, dclass) in db.all_rows(conn, self.source):
+             _adv, url, dclass, _cvss) in db.all_rows(conn, self.source):
             iv = installed.get(pkg)
             if iv is None:
                 continue

@@ -17,11 +17,13 @@ from ..util import matches_any
 from . import base, db
 from .arch_source import ArchAdvisorySource
 from .debian_source import DebianAdvisorySource
+from .osv_source import OsvLanguageSource
 from .ubuntu_source import UbuntuAdvisorySource
 
 
 def _providers():
-    return [ArchAdvisorySource(), DebianAdvisorySource(), UbuntuAdvisorySource()]
+    return [ArchAdvisorySource(), DebianAdvisorySource(), UbuntuAdvisorySource(),
+            OsvLanguageSource()]
 
 
 def _cfg(ctx) -> dict:
@@ -81,7 +83,8 @@ def _sev_key(f):
 def _line(f) -> str:
     ver = f.installed_version + (f" -> {f.fixed_version}" if f.fixed_version else "")
     cves = " ".join(f.cves[:4]) + (" …" if len(f.cves) > 4 else "")
-    return f"  [{f.severity:<8}] {f.package} {ver}   {cves}   {f.url}"
+    cvss = f"  ({f.cvss})" if f.cvss else ""
+    return f"  [{f.severity:<8}] {f.source}/{f.package} {ver}   {cves}   {f.url}{cvss}"
 
 
 def _render(findings, uncovered, manjaro, sources):

@@ -742,7 +742,8 @@ fettle web --port 9000        # a different port
 
 ## Security advisories / CVE tracking — `advisory-check` *(opt-in)*
 
-`fettle advisory-check` (Arch/Manjaro, Debian, and Ubuntu) tells you, per
+`fettle advisory-check` (Arch/Manjaro, Debian, and Ubuntu for OS packages, plus
+**Python/Node packages via OSV** on any distro) tells you, per
 installed package: CVEs with **a fix you haven't applied yet**, and — the distinctive
 part — CVEs you're **currently vulnerable to with no fix released yet** (a heads-up
 *before* an advisory/patch exists). It bulk-fetches the distro's security tracker into

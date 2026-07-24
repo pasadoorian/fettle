@@ -4,6 +4,19 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.20.0] — advisory-check: vulnerable language deps via OSV (Phase 19 M4a)
+
+- `fettle advisory-check` now flags vulnerable **Python (PyPI)** and **Node (npm)**
+  packages installed system-wide — CVEs the OS trackers can't see. It enumerates
+  installed language packages and queries **OSV.dev** (`querybatch`), caching each
+  vuln record in the SQLite DB and syncing **incrementally** off its `modified` time
+  (first run heavier, then only-changed). A missing `fixed` event = pending; a
+  `fixed` event above your version = fix-available. Cross-platform (any distro).
+- **Severity shows both perspectives:** the native GHSA/OSV rating *and* the CVSS
+  vector side by side (they carry different biases). Duplicate advisories for the
+  same CVE across databases (GHSA + PYSEC …) are collapsed to the best-rated one.
+- This is the shared OSV client that will also fill Ubuntu "no fix yet" (M4b).
+
 ## [0.19.0] — advisory-check: Ubuntu provider (Phase 19 M3)
 
 - `fettle advisory-check` now covers **Ubuntu** too (Arch/Manjaro + Debian + Ubuntu).
