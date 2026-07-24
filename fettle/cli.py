@@ -88,6 +88,9 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
                                                    stored reports/logs (every host)
   fettle web [--port N]                            serve the web UI (localhost; needs
                                                    the 'web' extra: pip install fettle[web])
+  fettle advisory-check                            installed pkgs with known CVEs (fix
+                                                   available, or no fix yet) [arch; deb/ubuntu soon]
+  fettle advisory-update                           refresh the advisory cache
 
 which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
   -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap): provenance + tampering
@@ -530,6 +533,42 @@ def _web_runner():
     return run
 
 
+def _run_advisory(cmd: str, argv: list[str]) -> int:
+    """`fettle advisory-check` / `advisory-update` — distro CVE/advisory tracking.
+    Read-only; opt-in (not in the default `-a` set). Uses a rebuildable SQLite cache
+    under ~/.cache/fettle/, refreshed on-run when stale."""
+    from types import SimpleNamespace
+
+    from .advisories import check
+    p = argparse.ArgumentParser(
+        prog=f"fettle {cmd}",
+        description=("Refresh the advisory cache." if cmd == "advisory-update" else
+                     "Report installed packages with known CVEs — a fix you haven't "
+                     "applied, or (the distinctive part) no fix released yet. Read-only."))
+    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--no-config", action="store_true", help="ignore the config file")
+    if cmd == "advisory-check":
+        p.add_argument("--dry-run", action="store_true",
+                       help="print findings but don't write a report")
+    args = p.parse_args(argv)
+
+    out = Output(color=None)
+    cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
+    for w in warnings:
+        out.warn(w)
+    sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    user_home = Path.home()
+    if sudo_user:
+        try:
+            user_home = Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+    ctx = SimpleNamespace(config=cfg, user_home=user_home, sudo_user=sudo_user,
+                          output=out, dry_run=getattr(args, "dry_run", False), root="/")
+    (check.update if cmd == "advisory-update" else check.run)(ctx)
+    return 0
+
+
 def _run_upgrade_check(argv: list[str]) -> int:
     from .ai import snapshot as ai_snapshot
     from .ai import upgrade_check as uc
@@ -791,6 +830,11 @@ def _main(argv: list[str]) -> int:
     # `fettle web` — the NiceGUI web UI (optional, needs the `web` extra).
     if argv and argv[0] == "web":
         return _run_web(argv[1:])
+
+    # `fettle advisory-check` / `advisory-update` — distro CVE/advisory tracking
+    # (opt-in, read-only; NOT in the default `-a` set).
+    if argv and argv[0] in ("advisory-check", "advisory-update"):
+        return _run_advisory(argv[0], argv[1:])
 
     # Dispatch shortcuts: -S / -U / -p are single-flag aliases for the sys-audit,
     # upgrade-check, and aur-precheck runners (Q4: flag = shortcut, subcommand =

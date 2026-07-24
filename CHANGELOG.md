@@ -4,6 +4,25 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.17.0] — security-advisory / CVE tracking, Arch/Manjaro (Phase 19 M1)
+
+- New opt-in **`fettle advisory-check`** (Arch/Manjaro; Debian/Ubuntu planned) — for
+  each installed package it reports known CVEs with **a fix you haven't applied yet**,
+  and — the distinctive part — CVEs it's **currently vulnerable to with no fix released
+  yet** (a heads-up *before* an advisory/patch exists). The AUR RPC / package manager
+  can't surface either.
+- Bulk-fetches `security.archlinux.org` into a **rebuildable SQLite cache**
+  (`~/.cache/fettle/advisories.db`; `sqlite3` is stdlib, so the zero-dependency core
+  holds), refreshed on-run when stale, or on demand via **`fettle advisory-update`**.
+  Version comparison is delegated to `vercmp` (never hand-rolled).
+- Report: a **"Pending fixes"** callout (vulnerable, no fix yet) above a
+  severity-banded **"Fix available"** table, plus the packages the tracker **doesn't
+  cover** (AUR/manual/foreign) so a clean result never over-reassures. Rendered in the
+  HTML dashboard too. On Manjaro, "fix available" is phrased as possible sync-lag, not
+  alarm. New `[advisories]` config (`cache_ttl`, `severity_threshold`,
+  `exclude_packages`, `exclude_classes`, `warn_gate`), all quiet defaults.
+- Read-only, opt-in (never in the default `-a` set).
+
 ## [0.16.0] — aur-audit: reverse-dependents ("nothing uses this") check
 
 - `-A` (`aur-audit`) now flags foreign packages that **nothing on the system depends

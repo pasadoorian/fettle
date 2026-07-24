@@ -167,6 +167,25 @@ def test_aur_audit_links_name_and_shows_software(tmp_path):
     assert "javascript:alert(1)" not in text                       # unsafe URL blocked
 
 
+def test_advisories_render_pending_and_fixable(tmp_path):
+    _write_report_json(tmp_path, "local", "advisory-check", "20260724-010101", {
+        "findings": [
+            {"source": "arch", "package": "djvulibre", "installed_version": "3.5-1",
+             "status": "pending_fix", "severity": "High", "cves": ["CVE-2025-53367"],
+             "fixed_version": None, "group_id": "AVG-2907",
+             "url": "https://security.archlinux.org/AVG-2907"},
+            {"source": "arch", "package": "poppler", "installed_version": "22-1",
+             "status": "fixed_available", "severity": "Critical", "cves": ["CVE-1"],
+             "fixed_version": "22-2", "group_id": "AVG-2812", "url": "https://x"}],
+        "uncovered": {"arch": ["yay"]}, "manjaro": True})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "Pending fixes" in text and "Fix available" in text
+    assert "djvulibre" in text and "CVE-2025-53367" in text          # pending
+    assert "poppler" in text and 'b-Critical' in text                 # banded severity
+    assert "Not covered by the tracker" in text and "yay" in text
+    assert "sync lag" in text                                          # Manjaro note
+
+
 def test_aur_audit_renders_removal_candidates(tmp_path):
     _write_report_json(tmp_path, "local", "aur-audit", "20260723-010101", {
         "packages": [{"name": "webkit2gtk", "maintainer": "a", "age_days": 1, "votes": 9,

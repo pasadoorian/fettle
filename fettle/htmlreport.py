@@ -413,12 +413,54 @@ def _render_log(entry: dict) -> str:
     return f'{meta}<pre>{_esc(str(entry.get("transcript","")))}</pre>'
 
 
+_ADV_SEV = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
+
+
+def _render_advisories(data: dict) -> str:
+    findings = data.get("findings") or []
+
+    def _row(f: dict) -> str:
+        sev = str(f.get("severity", "Unknown"))
+        ver = _esc(str(f.get("installed_version", "")))
+        fx = f.get("fixed_version")
+        ver += f" &rarr; {_esc(str(fx))}" if fx else ""
+        cves = _esc(", ".join(map(str, f.get("cves") or [])))
+        link = _ext_link(str(f.get("url", "")), str(f.get("group_id") or "details"))
+        return (f'<tr><td><span class="badge b-{_esc(sev)}">{_esc(sev)}</span></td>'
+                f'<td>{_esc(str(f.get("package", "")))}</td><td>{ver}</td>'
+                f'<td>{cves}</td><td>{link}</td></tr>')
+
+    def _table(items: list) -> str:
+        items = sorted(items, key=lambda f: -_ADV_SEV.get(f.get("severity"), 0))
+        if not items:
+            return '<div class="muted">none</div>'
+        return ('<table><tr><th>sev</th><th>package</th><th>installed</th>'
+                f'<th>CVEs</th><th></th></tr>{"".join(_row(f) for f in items)}</table>')
+
+    pending = [f for f in findings if f.get("status") == "pending_fix"]
+    fixable = [f for f in findings if f.get("status") != "pending_fix"]
+    out = ['<p><strong>Pending fixes</strong> '
+           '<span class=muted>(vulnerable, no fix released yet)</span></p>', _table(pending),
+           '<p><strong>Fix available</strong> '
+           '<span class=muted>(installed trails a security fix)</span></p>', _table(fixable)]
+    unc = (data.get("uncovered") or {}).get("arch") or []
+    if unc:
+        names = _esc(" ".join(sorted(map(str, unc))[:200]))
+        out.append(f'<p class=muted>Not covered by the tracker (AUR/manual/foreign): '
+                   f'{len(unc)} package(s) — vet via <code>fettle -A/-P/-I</code>.<br>'
+                   f'<span style="font-size:.72rem">{names}</span></p>')
+    if data.get("manjaro"):
+        out.append('<p class=muted>On Manjaro, "fix available" can reflect normal 1&ndash;2 '
+                   'week sync lag behind Arch, not special exposure.</p>')
+    return "".join(out)
+
+
 _RENDERERS = {
     "hardening-audit": _render_hardening,
     "pkg-audit": _render_findings, "aur-ioc-scan": _render_findings,
     "upgrade-check": _render_upgrade, "aur-audit": _render_aur_audit,
     "alien-pkgs": _render_pkglist, "obsolete-pkgs": _render_pkglist,
-    "sys-audit": _render_sysaudit,
+    "sys-audit": _render_sysaudit, "advisory-check": _render_advisories,
 }
 
 
@@ -460,6 +502,8 @@ def _is_empty(entry: dict) -> bool:
                     or data.get("maintainer_changes"))
     if tool == "sys-audit":
         return not (data.get("categories") or data.get("text"))
+    if tool == "advisory-check":
+        return not data.get("findings")
     return False                                    # upgrade-check / unknown: keep
 
 
@@ -487,6 +531,7 @@ _SECTION_LABELS = {
     "obsolete-pkgs": "Obsolete Packages",
     "upgrade-check": "AI Upgrade Check",
     "sys-audit": "System Security Scan",
+    "advisory-check": "Security Advisories",
     "run-log": "Session Transcripts",
     "group-run": "Group Orchestration",
 }

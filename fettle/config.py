@@ -63,6 +63,13 @@ class Config:
     # `fettle remote <group>` runs on each host in order. A bare list is shorthand
     # for {hosts = [...]}.
     remote: dict = field(default_factory=dict)
+    # Security-advisory / CVE tracking (fettle advisory-check). Keys: cache_ttl
+    # (seconds before the SQLite cache is refreshed on a run, default 21600),
+    # severity_threshold ("" = all, else Critical/High/Medium/Low), exclude_packages
+    # (name globs), exclude_classes (distro status/class tags to hide, e.g. Debian
+    # "unimportant"/"no-dsa"), warn_gate (bool, default true — extra confirm before
+    # `-u`/`-a` when Critical CVEs are unpatched). All ship EMPTY/quiet.
+    advisories: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True
