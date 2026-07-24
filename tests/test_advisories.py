@@ -336,6 +336,29 @@ def test_ubuntu_findings_flags_critical(tmp_path):
     assert found["CVE-2024-1"].status == base.FIXED_AVAILABLE and found["CVE-2024-1"].fixed_version == "3.0.13-1"
 
 
+def test_ubuntu_osv_pending_via_shared_client(tmp_path):
+    from fettle.advisories import db, osv
+    from fettle.advisories.ubuntu_source import UbuntuAdvisorySource
+    conn = db.connect(tmp_path / "adv.db")
+    src = UbuntuAdvisorySource()
+    src._installed = lambda: {"dovecot": "1:2.3.21+dfsg1-2ubuntu6"}
+    src._osv_ecosystem = lambda ctx=None: "Ubuntu:24.04:LTS"
+    rec = {"id": "UBUNTU-CVE-2026-0394", "aliases": ["CVE-2026-0394"],
+           "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
+                        {"type": "Ubuntu", "score": "medium"}],
+           "affected": [{"package": {"ecosystem": "Ubuntu:24.04:LTS", "name": "dovecot"},
+                         "ranges": [{"events": [{"introduced": "0"}]}]}]}   # no fix -> pending
+    with patch.object(osv, "querybatch",
+                      return_value=[[{"id": "UBUNTU-CVE-2026-0394", "modified": "m"}]]), \
+         patch.object(osv, "record", return_value=rec):
+        rows = src._osv_pending(conn)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r[2] == "dovecot" and r[3] == "pending"
+    assert r[4] == "Medium"                              # native Ubuntu priority, not CVSS
+    assert r[7] == '["CVE-2026-0394"]' and r[11].startswith("CVSS")   # cvss carried too
+
+
 def test_ubuntu_is_present_ubuntu_only():
     from fettle.advisories.ubuntu_source import UbuntuAdvisorySource
     u = UbuntuAdvisorySource()
@@ -421,7 +444,7 @@ def test_osv_language_provider_refresh_and_findings(tmp_path):
 
 
 def test_osv_dedups_same_cve_across_databases():
-    from fettle.advisories.osv_source import _dedup
+    from fettle.advisories.osv import dedup_rows as _dedup
     # same package + CVE from GHSA (High) and PYSEC (Unknown) -> keep the High one
     ghsa = ("osv", "GHSA-x", "ecdsa", "pending", "High", "0.19.2", None,
             '["CVE-2024-23342"]', None, "u1", "PyPI", "CVSS:3.1/...")

@@ -19,7 +19,7 @@ import re
 import urllib.request
 
 from .. import command
-from . import db
+from . import db, osv
 from .apt_base import AptAdvisorySource
 
 _OVAL = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.pkg.oval.xml.bz2"
@@ -58,5 +58,46 @@ class UbuntuAdvisorySource(AptAdvisorySource):
             p = prio.get(cve, "")
             rows.append((self.source, cve, pkg, "fixable", _PRIO.get(p, "Unknown"),
                          "", ver, json.dumps([cve]), None, _CVE_URL + cve, p or "unknown"))
+        # OVAL is fixed-only. `_osv_pending()` (below) can fill "vulnerable, no fix
+        # yet" via OSV, but it's NOT wired in by default: on a real box OSV returns
+        # ~1315 pending Ubuntu CVEs (mostly negligible/won't-fix) — too slow to fetch
+        # and too noisy to show unfiltered. Needs a severity floor + opt-in first
+        # (PLAN.md §19.10). The engine is built + tested, ready to enable.
         db.replace_source(conn, self.source, rows)
         return len(rows)
+
+    def _osv_ecosystem(self, ctx=None) -> str:
+        rel = self._osrel(ctx)
+        vid = rel.get("VERSION_ID", "")
+        if not vid:
+            return ""
+        return f"Ubuntu:{vid}:LTS" if "LTS" in (rel.get("VERSION", "") or "") \
+            else f"Ubuntu:{vid}"
+
+    def _osv_pending(self, conn) -> list:
+        """OSV pending findings for the running release — packages *affected with no
+        fix event* (OVAL already covers the fixed ones, so we keep only `pending`)."""
+        eco = self._osv_ecosystem()
+        installed = self._installed()
+        if not eco or not installed:
+            return []
+        queries = [{"package": {"ecosystem": eco, "name": n}, "version": v}
+                   for n, v in installed.items()]
+        try:
+            batches = osv.querybatch(queries)
+        except (OSError, ValueError):
+            return []
+        rows = []
+        for name, vulns in zip(list(installed), batches):
+            for vln in vulns:
+                rec = osv.record(conn, vln.get("id"), vln.get("modified"))
+                cl = osv.classify(rec, eco, installed[name]) if rec else None
+                if cl is None or cl[0] != "pending":     # OVAL owns the fixed ones
+                    continue
+                band, cvss = osv.severity(rec)
+                cves = osv.cve_ids(rec)
+                rows.append((self.source, vln.get("id"), name, "pending", band, "",
+                             None, json.dumps(cves), None,
+                             _CVE_URL + (cves[0] if cves else ""), band, cvss))
+        conn.commit()                                    # persist cached osv records
+        return rows

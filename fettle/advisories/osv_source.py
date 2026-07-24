@@ -19,19 +19,6 @@ def _pypi_norm(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _dedup(rows):
-    """OSV surfaces the same CVE from several databases (GHSA + PYSEC …). Collapse to
-    one row per (package, CVE set), keeping the best-rated (and CVSS-carrying) copy."""
-    best: dict = {}
-    for r in rows:
-        key = (r[2], r[7])                        # package, cves json
-        cur = best.get(key)
-        if cur is None or base.severity_rank(r[4]) > base.severity_rank(cur[4]) \
-                or (base.severity_rank(r[4]) == base.severity_rank(cur[4]) and r[11] and not cur[11]):
-            best[key] = r
-    return list(best.values())
-
-
 class OsvLanguageSource(base.AdvisoryProvider):
     source = "osv"
 
@@ -63,7 +50,7 @@ class OsvLanguageSource(base.AdvisoryProvider):
                 rows.append((self.source, v.get("id"), name, status, band, ver, fixed,
                              json.dumps(osv.cve_ids(rec)), None,
                              f"https://osv.dev/vulnerability/{v.get('id')}", eco, cvss))
-        db.replace_source(conn, self.source, _dedup(rows))
+        db.replace_source(conn, self.source, osv.dedup_rows(rows))
         conn.commit()                            # persist osv_vulns cached during record()
         return len(rows)
 

@@ -47,7 +47,7 @@ class AptAdvisorySource(base.AdvisoryProvider):
             return []
         out: list[base.AdvisoryFinding] = []
         for (group_id, pkg, status, severity, _aff, fixed, cves_json,
-             _adv, url, dclass, _cvss) in db.all_rows(conn, self.source):
+             _adv, url, dclass, cvss) in db.all_rows(conn, self.source):
             iv = installed.get(pkg)
             if iv is None:
                 continue
@@ -60,7 +60,8 @@ class AptAdvisorySource(base.AdvisoryProvider):
             out.append(base.AdvisoryFinding(
                 source=self.source, package=pkg, installed_version=iv, status=norm,
                 severity=severity, cves=json.loads(cves_json) if cves_json else [],
-                fixed_version=fx, group_id=group_id, distro_class=dclass, url=url))
+                fixed_version=fx, group_id=group_id, distro_class=dclass, url=url,
+                cvss=cvss))
         return out
 
     def uncovered(self, ctx) -> list[str]:

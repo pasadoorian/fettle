@@ -73,17 +73,35 @@ def classify(rec: dict, ecosystem: str, version: str):
 
 
 def severity(rec: dict) -> tuple[str, str]:
-    """(band, cvss_vector) — the two perspectives. ``band`` comes from the native
-    rating (GHSA/Canonical word in ``database_specific.severity``); ``cvss_vector`` is
-    the raw CVSS string. Either may be empty."""
-    ds = rec.get("database_specific") or {}
-    band = _SEV_WORD.get(str(ds.get("severity", "")).upper(), "Unknown")
-    cvss = ""
+    """(band, cvss_vector) — the two perspectives. ``band`` is the native rating
+    (Ubuntu's ``{type:"Ubuntu", score:"medium"}`` / GHSA's ``database_specific.
+    severity`` word); ``cvss_vector`` is the raw CVSS string. Either may be empty."""
+    native, cvss = "", ""
     for s in rec.get("severity") or []:
-        if "CVSS" in str(s.get("type", "")):
-            cvss = str(s.get("score", ""))
-            break
-    return band, cvss
+        score = str(s.get("score", ""))
+        if "CVSS" in str(s.get("type", "")).upper():
+            cvss = cvss or score
+        elif score:
+            native = native or score             # e.g. Ubuntu "medium"
+    if not native:
+        native = str((rec.get("database_specific") or {}).get("severity", ""))  # GHSA
+    return _SEV_WORD.get(native.upper(), "Unknown"), cvss
+
+
+def dedup_rows(rows):
+    """OSV surfaces the same CVE from several databases (GHSA/PYSEC/UBUNTU-CVE …).
+    Collapse to one row per (package, CVE set), keeping the best-rated + CVSS-carrying
+    copy. Rows are the advisories-table tuples (severity at [4], cves at [7], cvss at
+    [11])."""
+    from .base import severity_rank
+    best: dict = {}
+    for r in rows:
+        key = (r[2], r[7])
+        cur = best.get(key)
+        if cur is None or severity_rank(r[4]) > severity_rank(cur[4]) \
+                or (severity_rank(r[4]) == severity_rank(cur[4]) and r[11] and not cur[11]):
+            best[key] = r
+    return list(best.values())
 
 
 def cve_ids(rec: dict) -> list[str]:
