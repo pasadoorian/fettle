@@ -26,7 +26,7 @@ class ArchAdvisorySource(base.AdvisoryProvider):
         return bool(command.which("pacman") and command.which("vercmp"))
 
     # -- fetch ---------------------------------------------------------------
-    def refresh(self, conn) -> int:
+    def refresh(self, conn, ctx=None) -> int:
         try:
             req = urllib.request.Request(_FEED, headers={"User-Agent": "fettle"})
             with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 (fixed https)

@@ -26,7 +26,7 @@ class OsvLanguageSource(base.AdvisoryProvider):
         return True                              # queries OSV.dev; enumerates what's installed
 
     # -- fetch/classify (querybatch installed pkgs -> classified rows) --------
-    def refresh(self, conn) -> int:
+    def refresh(self, conn, ctx=None) -> int:
         meta, queries = [], []                   # meta[i] = (ecosystem, name, version)
         for eco, name, ver in self._installed():
             meta.append((eco, name, ver))

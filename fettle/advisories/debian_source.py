@@ -35,7 +35,7 @@ class DebianAdvisorySource(AptAdvisorySource):
         return self._osrel(ctx).get("ID") == "debian" and bool(command.which("dpkg"))
 
     # -- fetch (filtered to the running release) -----------------------------
-    def refresh(self, conn) -> int:
+    def refresh(self, conn, ctx=None) -> int:
         suite = self._suite()
         if not suite:
             return -1

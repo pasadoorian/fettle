@@ -4,6 +4,21 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.21.0] — advisory-check: Ubuntu "no fix yet" via OSV, opt-in (Phase 19 M4b)
+
+- Ubuntu's **"vulnerable, no fix yet"** (pending) findings — which the OVAL feed can't
+  provide — are now available via the shared OSV client, keyed on your installed
+  source packages. It's **opt-in and floored** because a real box returns ~1300
+  pending Ubuntu CVEs, the vast majority negligible/won't-fix:
+  - `[advisories] ubuntu_pending = true|false` (default **false**)
+  - `[advisories] ubuntu_pending_severity = low|medium|high|critical` (default
+    **high**) — only pending at/above this floor is kept, so it's the actionable few.
+  OVAL remains the default Ubuntu source for fix-available; enabling `ubuntu_pending`
+  adds the pending layer on top (records cached + synced incrementally; the first
+  refresh is heavier).
+- Ubuntu OSV findings carry Canonical's native `priority` (from the OSV `severity`
+  list) as the band plus the CVSS vector — both perspectives.
+
 ## [0.20.0] — advisory-check: vulnerable language deps via OSV (Phase 19 M4a)
 
 - `fettle advisory-check` now flags vulnerable **Python (PyPI)** and **Node (npm)**

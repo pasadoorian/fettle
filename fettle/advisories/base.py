@@ -64,10 +64,11 @@ class AdvisoryProvider(abc.ABC):
         """True if this distro's tracker applies to the running system."""
 
     @abc.abstractmethod
-    def refresh(self, conn) -> int:
+    def refresh(self, conn, ctx=None) -> int:
         """Bulk-fetch the tracker into ``conn`` (replacing this source's rows).
-        Returns the row count stored, or ``-1`` on a fetch/parse failure (the caller
-        keeps whatever was already cached — best-effort, never destructive)."""
+        ``ctx`` (optional) gives config access for providers that need it. Returns the
+        row count stored, or ``-1`` on a fetch/parse failure (the caller keeps
+        whatever was already cached — best-effort, never destructive)."""
 
     @abc.abstractmethod
     def findings(self, ctx, conn) -> list[AdvisoryFinding]:

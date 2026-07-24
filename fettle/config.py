@@ -68,7 +68,10 @@ class Config:
     # severity_threshold ("" = all, else Critical/High/Medium/Low), exclude_packages
     # (name globs), exclude_classes (distro status/class tags to hide, e.g. Debian
     # "unimportant"/"no-dsa"), warn_gate (bool, default true — extra confirm before
-    # `-u`/`-a` when Critical CVEs are unpatched). All ship EMPTY/quiet.
+    # `-u`/`-a` when Critical CVEs are unpatched). Ubuntu "no fix yet" (pending) is
+    # opt-in via ubuntu_pending (bool, default false) with ubuntu_pending_severity
+    # (low|medium|high|critical, default high) as its floor — a real box has ~1300
+    # pending Ubuntu CVEs, mostly negligible. All ship EMPTY/quiet.
     advisories: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.

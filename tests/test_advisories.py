@@ -149,7 +149,7 @@ class _StubProvider:
     def is_present(self, ctx):
         return True
 
-    def refresh(self, conn):
+    def refresh(self, conn, ctx=None):
         return 2
 
     def findings(self, ctx, conn):
@@ -351,12 +351,18 @@ def test_ubuntu_osv_pending_via_shared_client(tmp_path):
     with patch.object(osv, "querybatch",
                       return_value=[[{"id": "UBUNTU-CVE-2026-0394", "modified": "m"}]]), \
          patch.object(osv, "record", return_value=rec):
-        rows = src._osv_pending(conn)
+        rows = src._osv_pending(conn, floor=0)           # no floor -> keep the Medium one
     assert len(rows) == 1
     r = rows[0]
     assert r[2] == "dovecot" and r[3] == "pending"
     assert r[4] == "Medium"                              # native Ubuntu priority, not CVSS
     assert r[7] == '["CVE-2026-0394"]' and r[11].startswith("CVSS")   # cvss carried too
+    # the severity floor drops it: Medium (rank 2) < High (rank 3)
+    with patch.object(osv, "querybatch",
+                      return_value=[[{"id": "UBUNTU-CVE-2026-0394", "modified": "m"}]]), \
+         patch.object(osv, "record", return_value=rec):
+        from fettle.advisories.base import severity_rank
+        assert src._osv_pending(conn, floor=severity_rank("High")) == []
 
 
 def test_ubuntu_is_present_ubuntu_only():

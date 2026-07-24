@@ -48,13 +48,13 @@ def _is_manjaro(ctx) -> bool:
 
 
 # -- refresh (best-effort) ---------------------------------------------------
-def _ensure_fresh(conn, provider, ttl, out, *, force=False) -> None:
+def _ensure_fresh(conn, provider, ttl, out, ctx=None, *, force=False) -> None:
     last = db.last_updated(conn, provider.source)
     if not force and last is not None and (time.time() - last) <= ttl:
         return
     if out:
         out.note(f"refreshing {provider.source} advisory data…")
-    n = provider.refresh(conn)
+    n = provider.refresh(conn, ctx)
     if n < 0 and out:
         out.warn(f"could not fetch {provider.source} advisory data"
                  + ("; using the cached copy." if last is not None
@@ -147,7 +147,7 @@ def run(ctx) -> None:
     findings, uncovered = [], {}
     try:
         for p in provs:
-            _ensure_fresh(conn, p, cfg["cache_ttl"], out)
+            _ensure_fresh(conn, p, cfg["cache_ttl"], out, ctx)
             findings += p.findings(ctx, conn)
             uncovered[p.source] = p.uncovered(ctx)
     finally:
@@ -180,7 +180,7 @@ def update(ctx) -> None:
     try:
         for p in provs:
             out.note(f"fetching {p.source} advisory data…")
-            n = p.refresh(conn)
+            n = p.refresh(conn, ctx)
             if n < 0:
                 out.err(f"failed to fetch {p.source} advisory data.")
             else:

@@ -5,10 +5,10 @@ which carries fix-available data — each CVE + affected source package + the fi
 version — with Canonical's ``priority`` (incl. ``critical``, unlike Debian). Installed
 source packages are classified via dpkg (shared :class:`AptAdvisorySource`).
 
-NOTE: the ``pkg`` OVAL contains only *fixed* CVEs, so Ubuntu's "vulnerable, no fix
-yet" (pending) findings aren't surfaced here — that data lives in Canonical's CVE
-JSON API (``ubuntu.com/security/cves.json``), which was returning HTTP 503 when M3
-landed. The report says so; pending will light up when that API is reachable.
+The ``pkg`` OVAL is fixed-only. Ubuntu's "vulnerable, no fix yet" (pending) is
+available via OSV but is **opt-in** (``[advisories] ubuntu_pending``) with a severity
+floor (``ubuntu_pending_severity``), because a real box returns ~1315 pending CVEs,
+the vast majority negligible/won't-fix (PLAN.md §19.11).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import re
 import urllib.request
 
 from .. import command
-from . import db, osv
+from . import base, db, osv
 from .apt_base import AptAdvisorySource
 
 _OVAL = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.pkg.oval.xml.bz2"
@@ -41,7 +41,7 @@ class UbuntuAdvisorySource(AptAdvisorySource):
     def is_present(self, ctx) -> bool:
         return self._osrel(ctx).get("ID") == "ubuntu" and bool(command.which("dpkg"))
 
-    def refresh(self, conn) -> int:
+    def refresh(self, conn, ctx=None) -> int:
         codename = self._codename()
         if not codename:
             return -1
@@ -58,12 +58,15 @@ class UbuntuAdvisorySource(AptAdvisorySource):
             p = prio.get(cve, "")
             rows.append((self.source, cve, pkg, "fixable", _PRIO.get(p, "Unknown"),
                          "", ver, json.dumps([cve]), None, _CVE_URL + cve, p or "unknown"))
-        # OVAL is fixed-only. `_osv_pending()` (below) can fill "vulnerable, no fix
-        # yet" via OSV, but it's NOT wired in by default: on a real box OSV returns
-        # ~1315 pending Ubuntu CVEs (mostly negligible/won't-fix) — too slow to fetch
-        # and too noisy to show unfiltered. Needs a severity floor + opt-in first
-        # (PLAN.md §19.10). The engine is built + tested, ready to enable.
-        db.replace_source(conn, self.source, rows)
+        # OVAL is fixed-only. `[advisories] ubuntu_pending` (opt-in, default off) adds
+        # "vulnerable, no fix yet" via OSV — gated + floored because a real box returns
+        # ~1315 pending Ubuntu CVEs (mostly negligible/won't-fix); `ubuntu_pending_
+        # severity` (default high) keeps it to the actionable few.
+        adv = getattr(getattr(ctx, "config", None), "advisories", None) or {}
+        if adv.get("ubuntu_pending"):
+            floor = base.severity_rank(str(adv.get("ubuntu_pending_severity", "high")).capitalize())
+            rows += self._osv_pending(conn, floor)
+        db.replace_source(conn, self.source, osv.dedup_rows(rows))
         return len(rows)
 
     def _osv_ecosystem(self, ctx=None) -> str:
@@ -74,9 +77,10 @@ class UbuntuAdvisorySource(AptAdvisorySource):
         return f"Ubuntu:{vid}:LTS" if "LTS" in (rel.get("VERSION", "") or "") \
             else f"Ubuntu:{vid}"
 
-    def _osv_pending(self, conn) -> list:
-        """OSV pending findings for the running release — packages *affected with no
-        fix event* (OVAL already covers the fixed ones, so we keep only `pending`)."""
+    def _osv_pending(self, conn, floor: int = 3) -> list:
+        """OSV pending rows for the running release — packages *affected with no fix
+        event* (OVAL owns the fixed ones), kept only at/above the ``floor`` severity
+        rank (default High) so the ~1315-CVE tail doesn't flood the report."""
         eco = self._osv_ecosystem()
         installed = self._installed()
         if not eco or not installed:
@@ -95,6 +99,8 @@ class UbuntuAdvisorySource(AptAdvisorySource):
                 if cl is None or cl[0] != "pending":     # OVAL owns the fixed ones
                     continue
                 band, cvss = osv.severity(rec)
+                if base.severity_rank(band) < floor:     # drop the low-priority tail
+                    continue
                 cves = osv.cve_ids(rec)
                 rows.append((self.source, vln.get("id"), name, "pending", band, "",
                              None, json.dumps(cves), None,
