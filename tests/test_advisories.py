@@ -460,6 +460,16 @@ def test_osv_dedups_same_cve_across_databases():
     assert len(out) == 1 and out[0][4] == "High" and out[0][1] == "GHSA-x"
 
 
+def test_osv_dedup_tolerates_short_rows_on_collision():
+    # OVAL rows are 11-element (no cvss yet); a same-(pkg,cve) tie must NOT IndexError
+    from fettle.advisories.osv import dedup_rows
+    r1 = ("ubuntu", "CVE-1", "openssl", "fixable", "High", "", "3-1",
+          '["CVE-1"]', None, "u", "high")           # 11 elements, no cvss
+    r2 = ("ubuntu", "CVE-1", "openssl", "fixable", "High", "", "3-1",
+          '["CVE-1"]', None, "u", "high")
+    assert len(dedup_rows([r1, r2])) == 1            # collapses, no crash
+
+
 # -- update-flow security gate (best-effort, §19.8) --------------------------
 def test_gate_proceeds_when_no_cache(tmp_path):
     # no advisories.db present -> never blocks a routine update

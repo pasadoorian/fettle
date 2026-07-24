@@ -4,6 +4,13 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.21.1] — fix: advisory-check crash on Ubuntu
+
+- Fix an `IndexError` that crashed `advisory-check` on Ubuntu (introduced in 0.21.0):
+  the OSV dedup accessed a `cvss` column on the bulk providers' shorter rows (padded
+  only later), tripping on a duplicate-CVE severity tie in real OVAL data — which the
+  unit test's collision-free fixture missed. `dedup_rows` now tolerates short rows.
+
 ## [0.21.0] — advisory-check: Ubuntu "no fix yet" via OSV, opt-in (Phase 19 M4b)
 
 - Ubuntu's **"vulnerable, no fix yet"** (pending) findings — which the OVAL feed can't

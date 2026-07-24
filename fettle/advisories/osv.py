@@ -91,15 +91,19 @@ def severity(rec: dict) -> tuple[str, str]:
 def dedup_rows(rows):
     """OSV surfaces the same CVE from several databases (GHSA/PYSEC/UBUNTU-CVE …).
     Collapse to one row per (package, CVE set), keeping the best-rated + CVSS-carrying
-    copy. Rows are the advisories-table tuples (severity at [4], cves at [7], cvss at
-    [11])."""
+    copy. Rows are advisories-table tuples (severity at [4], cves at [7], optional
+    cvss at [11] — short rows from the bulk providers have no cvss yet)."""
     from .base import severity_rank
+
+    def _cvss(r):
+        return r[11] if len(r) > 11 else ""
+
     best: dict = {}
     for r in rows:
         key = (r[2], r[7])
         cur = best.get(key)
         if cur is None or severity_rank(r[4]) > severity_rank(cur[4]) \
-                or (severity_rank(r[4]) == severity_rank(cur[4]) and r[11] and not cur[11]):
+                or (severity_rank(r[4]) == severity_rank(cur[4]) and _cvss(r) and not _cvss(cur)):
             best[key] = r
     return list(best.values())
 
