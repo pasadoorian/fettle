@@ -190,6 +190,61 @@ def test_check_run_no_provider_warns(tmp_path, capsys):
     assert "no advisory provider" in (cap.out + cap.err).lower()
 
 
+# -- update-flow security gate (best-effort, §19.8) --------------------------
+def test_gate_proceeds_when_no_cache(tmp_path):
+    # no advisories.db present -> never blocks a routine update
+    assert check.security_gate(_ctx(tmp_path)) is True
+
+
+def test_gate_confirms_on_critical(tmp_path):
+    findings = [_f("openssl", "Critical")]
+    with patch("fettle.advisories.check._providers",
+               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
+        ctx = _ctx(tmp_path, Config())
+        db.connect(db.db_path(ctx)).close()
+        ctx.assume_yes = False
+        ctx.confirm = lambda *a, **k: False          # user says no
+        assert check.security_gate(ctx) is False     # -> abort
+        ctx.confirm = lambda *a, **k: True           # user says yes
+        assert check.security_gate(ctx) is True
+
+
+def test_gate_no_critical_proceeds(tmp_path):
+    findings = [_f("vim", "High")]                   # High, not Critical -> no gate
+    with patch("fettle.advisories.check._providers",
+               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
+        ctx = _ctx(tmp_path, Config())
+        db.connect(db.db_path(ctx)).close()
+        ctx.assume_yes = False
+        ctx.confirm = lambda *a, **k: False          # would abort IF asked
+        assert check.security_gate(ctx) is True       # not asked -> proceeds
+
+
+def test_gate_under_assume_yes_never_blocks(tmp_path):
+    findings = [_f("openssl", "Critical")]
+    with patch("fettle.advisories.check._providers",
+               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
+        ctx = _ctx(tmp_path, Config())
+        db.connect(db.db_path(ctx)).close()
+        ctx.assume_yes = True
+        ctx.confirm = lambda *a, **k: False          # must NOT be consulted
+        assert check.security_gate(ctx) is True
+
+
+def test_update_action_aborts_when_gate_false():
+    from unittest.mock import MagicMock
+
+    from fettle import actions
+    backend, ctx = MagicMock(), MagicMock()
+    ctx.dry_run = False
+    with patch("fettle.advisories.check.security_gate", return_value=False):
+        actions._update(backend, ctx)
+    backend.update_system.assert_not_called()        # gate aborted -> no upgrade
+    with patch("fettle.advisories.check.security_gate", return_value=True):
+        actions._update(backend, ctx)
+    backend.update_system.assert_called_once()
+
+
 # -- CLI dispatch ------------------------------------------------------------
 def test_cli_routes_advisory_subcommands():
     from fettle import cli

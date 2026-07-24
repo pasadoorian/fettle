@@ -176,3 +176,43 @@ def update(ctx) -> None:
                 out.ok(f"{p.source}: cached {n} advisory rows.")
     finally:
         conn.close()
+
+
+def security_gate(ctx) -> bool:
+    """Best-effort pre-update advisory gate (§19.8). Uses ONLY the cached DB — it
+    never fetches, and MUST never block or fail a routine update on missing/stale/
+    offline data. Prints a short security summary; if ``warn_gate`` is on and Critical
+    CVEs are unpatched, asks one extra confirm. Returns ``False`` only to ABORT the
+    update. Never raises."""
+    out = getattr(ctx, "output", None)
+    try:
+        path = db.db_path(ctx)
+        if not path.exists():
+            return True                              # no cached data -> proceed
+        cfg = _cfg(ctx)
+        conn = db.connect(path)
+        try:
+            findings = [f for p in _providers() if p.is_present(ctx)
+                        for f in p.findings(ctx, conn)]
+        finally:
+            conn.close()
+        findings = _apply_filters(findings, cfg)
+        if not findings:
+            return True
+        crit = sorted({f.package for f in findings if f.severity == "Critical"})
+        if out:
+            out.note(f"security: {len(findings)} advisory finding(s) affect installed "
+                     f"packages, {len(crit)} Critical — see `fettle advisory-check`")
+        if not (cfg["warn_gate"] and crit):
+            return True
+        if getattr(ctx, "assume_yes", False):
+            if out:
+                out.warn("proceeding despite unpatched Critical CVEs (--yes): "
+                         + ", ".join(crit))
+            return True
+        if out:
+            out.warn("unpatched Critical CVEs: " + ", ".join(crit))
+        return ctx.confirm("Continue with the update despite unpatched Critical CVEs?",
+                           default=True)
+    except Exception:                                # never let advisory logic break an update
+        return True

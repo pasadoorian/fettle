@@ -44,6 +44,13 @@ def _clean(backend: "PackageBackend", ctx: "Context") -> None:
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
     if ctx.dry_run:
         _preview_transaction(backend, ctx)
+    else:
+        # Best-effort security gate (Phase 19): warn (and, if enabled, confirm) on
+        # unpatched Critical CVEs before a real upgrade. Never blocks on missing data.
+        from .advisories.check import security_gate
+        if not security_gate(ctx):
+            ctx.output.warn("update skipped — review with `fettle advisory-check`.")
+            return
     backend.update_system(ctx)
     backend.update_extras(ctx)
 

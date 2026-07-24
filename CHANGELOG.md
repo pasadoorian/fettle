@@ -4,6 +4,15 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.17.1] — advisory: warn-gate in the update flow (Phase 19 M1)
+
+- `fettle -u` / `-a` now runs a **best-effort security gate** before a real upgrade:
+  it reads the **cached** advisory data (never fetches, never blocks/fails a routine
+  update on missing/stale/offline data), prints a one-line security summary, and — if
+  `[advisories] warn_gate` is on (default) and **Critical** CVEs are currently
+  unpatched — asks one extra confirmation before proceeding. Skipped under `--yes`
+  (unattended never stalls) and on `--dry-run`.
+
 ## [0.17.0] — security-advisory / CVE tracking, Arch/Manjaro (Phase 19 M1)
 
 - New opt-in **`fettle advisory-check`** (Arch/Manjaro; Debian/Ubuntu planned) — for
