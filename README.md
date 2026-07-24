@@ -766,14 +766,18 @@ but never blocks a routine update on missing/stale/offline data.
 
 `[advisories]` config: `cache_ttl`, `severity_threshold`, `exclude_packages` (globs),
 `exclude_classes` (hide distro class tags, e.g. Debian `["nodsa","unimportant",
-"end-of-life"]`), `warn_gate`. On Manjaro, "fix available" is phrased as possible sync
-lag, not alarm.
+"end-of-life"]`), `warn_gate`, plus `ubuntu_pending` / `ubuntu_pending_severity`
+(opt-in Ubuntu "no fix yet", below). On Manjaro, "fix available" is phrased as possible
+sync lag, not alarm.
 
 > Debian's tracker dump is large (~80 MB); a refresh downloads and parses it once per
 > `cache_ttl`. Coverage is by source package; third-party/local `.deb`s aren't
-> separately flagged yet. On **Ubuntu**, findings come from the per-release OVAL feed
-> (released fixes, with Canonical's priority); "vulnerable, no fix yet" data needs the
-> Ubuntu CVE API and isn't shown yet.
+> separately flagged yet. On **Ubuntu**, fix-available findings come from the per-release
+> OVAL feed (with Canonical's priority); "vulnerable, no fix yet" (pending) is **opt-in**
+> via `[advisories] ubuntu_pending = true` + `ubuntu_pending_severity` (`high` by
+> default), sourced from OSV — a real box carries ~1300 pending Ubuntu CVEs, so the
+> severity floor keeps it to a few actionable items. **Python/Node** packages are
+> checked against OSV on any distro (system-wide `pip`/`npm ls -g`).
 
 ## Previewing an upgrade
 

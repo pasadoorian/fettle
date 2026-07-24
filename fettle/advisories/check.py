@@ -117,8 +117,9 @@ def _render(findings, uncovered, manjaro, sources):
         lines += ["", "Note: Debian coverage is by source package from the tracker; "
                   "third-party/local .debs aren't separately flagged yet."]
     if "ubuntu" in sources:
-        lines += ["", "Note: Ubuntu findings come from the OVAL feed (released fixes). "
-                  "'Vulnerable, no fix yet' data needs the CVE API and isn't shown yet."]
+        lines += ["", "Note: Ubuntu fix-available findings come from the OVAL feed. "
+                  "'Vulnerable, no fix yet' (pending) is opt-in via [advisories] "
+                  "ubuntu_pending + ubuntu_pending_severity (OSV-sourced)."]
 
     if manjaro and fixable:
         lines += ["", "Note: on Manjaro, 'fix available' can reflect the normal 1–2 week",

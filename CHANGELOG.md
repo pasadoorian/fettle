@@ -4,6 +4,17 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.21.2] — Phase 19 complete: docs sync
+
+- Mark the security-advisory / CVE-tracking feature (Phase 19) complete: Arch, Debian,
+  and Ubuntu native feeds (fix-available + pending, Ubuntu pending opt-in via OSV) plus
+  Python/Node language deps via OSV — all live-verified end-to-end.
+- Fix two stale notes that claimed Ubuntu "no fix yet" data "isn't shown yet" — it *is*,
+  opt-in via `[advisories] ubuntu_pending` + `ubuntu_pending_severity` (the
+  `advisory-check` report footer and the README both said otherwise).
+- README: document `ubuntu_pending` / `ubuntu_pending_severity` and the OSV language-dep
+  coverage under `[advisories]`.
+
 ## [0.21.1] — fix: advisory-check crash on Ubuntu
 
 - Fix an `IndexError` that crashed `advisory-check` on Ubuntu (introduced in 0.21.0):
