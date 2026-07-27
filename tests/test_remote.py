@@ -516,3 +516,26 @@ def test_group_confirm_accept_runs(monkeypatch):
          patch("fettle.cli._fetch_remote_reports"):
         rc = cli._run_group(remote.RemoteGroup(name="g", hosts=["a"]), [], ["-a"])
     assert rc == 0 and run.called                         # accepted -> ran
+
+
+# -- host validation ---------------------------------------------------------
+# Defence-in-depth: the host comes from your own config/CLI, but a value like
+# `-oProxyCommand=...` would be parsed by ssh as an option and run a command.
+def test_run_refuses_host_that_would_parse_as_an_ssh_option(capsys):
+    rec = _Rec()
+    rc = remote.run("-oProxyCommand=touch /tmp/pwned", ["clean"], runner=rec)
+    assert rc == 1
+    assert rec.calls == []                       # nothing was ever executed
+    assert "refusing invalid remote host" in capsys.readouterr().err
+
+
+def test_fetch_refuses_option_like_host(tmp_path):
+    rec = _Rec()
+    assert remote._fetch_remote_dir("-oProxyCommand=x", "~/d", tmp_path, runner=rec) == []
+    assert rec.calls == []
+
+
+def test_valid_host_still_runs():
+    rec = _Rec()
+    assert remote.run("server1", ["clean"], runner=rec) == 0
+    assert any(c[0] == "ssh" for c in rec.calls)

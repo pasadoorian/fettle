@@ -82,6 +82,20 @@ def build_zipapp(dest: Path) -> None:
         zipapp.create_archive(stage, dest, main="fettle.cli:main")
 
 
+def _valid_host(host: str) -> bool:
+    """Reject a host ssh/scp would read as an option rather than a destination.
+
+    The value comes from your own config or CLI, so this is defence-in-depth, not
+    a trust boundary — but an entry like ``-oProxyCommand=...`` would otherwise be
+    parsed as an option and run a command locally.
+    """
+    if not host or host.startswith("-"):
+        print(f"Error: refusing invalid remote host {host!r} "
+              "(a leading '-' would be read as an ssh option)", file=sys.stderr)
+        return False
+    return True
+
+
 def _upload_zipapp(host: str, runner) -> str | None:
     """Build the fettle zipapp and scp it to the remote user's ``$HOME`` under a
     random, unpredictable name (not world-writable ``/tmp``, so another local user
@@ -121,6 +135,8 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     unattended run. ``runner`` is the subprocess entry point (injected for tests).
     Returns the remote exit code (or 1 if the upload fails).
     """
+    if not _valid_host(host):
+        return 1
     print(f"Remote target: {host}  (sudo={'on' if sudo else 'off'})")
     remote_name = _upload_zipapp(host, runner)
     if remote_name is None:
@@ -165,6 +181,8 @@ def _fetch_remote_dir(host: str, remote_dir: str, dest_dir, *,
     import tarfile
     from pathlib import Path
 
+    if not _valid_host(host):
+        return []
     remote_cmd = (f"cd {remote_dir} 2>/dev/null && "
                   "tar cf - -- *.txt *.json 2>/dev/null || true")
     try:

@@ -71,7 +71,9 @@ class FlatpakSource(SourceProvider):
         return out
 
     def _permission_findings(self, appid: str) -> list[Finding]:
-        perms = command.run(["flatpak", "info", "--show-permissions", appid], capture=True).stdout
+        # `--` so an app id can never be read as an option (matches aur/audit.py).
+        perms = command.run(["flatpak", "info", "--show-permissions", "--", appid],
+                            capture=True).stdout
         out: list[Finding] = []
         fs = _perm_field(perms, "Context", "filesystems")
         broad = [x for x in fs if x in _BROAD_FS or x.startswith("/")]

@@ -4,6 +4,17 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.22.1] — argument-parsing hardening (defence in depth)
+
+Neither of these has a known attack path — both values come from your own config
+or CLI — but both are one-line guards.
+
+- `fettle remote` refuses a host that ssh/scp would parse as an option rather than
+  a destination (e.g. `-oProxyCommand=...`, which would run a command locally)
+  instead of passing it through. Applies to the run and report/log-fetch paths.
+- `flatpak info --show-permissions` now passes `--` before the app id, matching the
+  end-of-options guard `aur/audit.py` already uses.
+
 ## [0.22.0] — sys-audit: a check that could not run now says so
 
 `Scan.run_text()` discarded the exit code, so checks that derive a verdict by

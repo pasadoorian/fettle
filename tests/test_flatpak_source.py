@@ -25,7 +25,7 @@ def _run(*, apps, remotes="", perms=None):
         if c[:2] == ["flatpak", "remotes"]:
             return command.Proc(0, remotes, "")
         if c[:3] == ["flatpak", "info", "--show-permissions"]:
-            return command.Proc(0, perms.get(c[3], ""), "")
+            return command.Proc(0, perms.get(c[-1], ""), "")   # app id is last, after `--`
         return command.Proc(0, "", "")
     with patch("fettle.command.run", side_effect=fake_run):
         return FlatpakSource().findings(_ctx())
@@ -63,3 +63,20 @@ def test_narrow_permissions_clean():
 def test_http_remote_flagged():
     findings = _run(apps="", remotes="myremote\thttp://repo.example/flat\n")
     assert any(f.question == INSECURE_TRANSPORT and f.package == "myremote" for f in findings)
+
+
+def test_app_id_passed_after_end_of_options_guard():
+    """`--` so an app id can never be parsed as a flatpak option."""
+    seen = []
+
+    def fake_run(cmd, **k):
+        c = list(cmd)
+        seen.append(c)
+        if c[:2] == ["flatpak", "list"]:
+            return command.Proc(0, "org.x.App\tflathub\n", "")
+        return command.Proc(0, "", "")
+
+    with patch("fettle.command.run", side_effect=fake_run):
+        FlatpakSource().findings(_ctx())
+    info = next(c for c in seen if c[:3] == ["flatpak", "info", "--show-permissions"])
+    assert info[-2:] == ["--", "org.x.App"]
