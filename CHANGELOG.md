@@ -4,6 +4,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.22.2] — docs
+
+- **README table of contents rebuilt.** It was missing the whole `advisory-check`
+  section, and three subcommands were invisible in it because they are documented as
+  subsections: `hardening-audit`, `fettle report`, and `fettle web` (the last two
+  filed under *Configuration*). The ToC is now two levels deep and every anchor is
+  verified to resolve.
+- **README overview covered three feature families; there are four.** Security
+  advisories / CVE tracking was absent from *What it does* and from the topgrade
+  comparison table despite being a headline feature.
+- Document the v0.22.0 sys-audit behaviour in the sys-audit section: a check that
+  could not run reports `UNKNOWN` (an un-run security check is a finding), a check
+  that ran but reported no verdict is a neutral `Unknown`, and the Secure Boot
+  certificate matrix skips rather than claiming "Not present" when a UEFI variable
+  can't be read.
+- Drop a stale `v0.13.0` version reference from the comparison table (it now says
+  "beta" rather than pinning a number that goes stale every release).
+
 ## [0.22.1] — argument-parsing hardening (defence in depth)
 
 Neither of these has a known attack path — both values come from your own config

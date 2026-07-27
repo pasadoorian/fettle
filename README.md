@@ -29,13 +29,22 @@ real unit-test coverage the bash originals never had.
 - [Supported distributions](#supported-distributions)
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
 - [Quick start](#quick-start)
 - [Maintenance actions](#maintenance-actions)
 - [Package supply-chain](#package-supply-chain)
+  - [Pre-upgrade gate](#pre-upgrade-gate)
+  - [Binary hardening audit — `-H` / `hardening-audit`](#binary-hardening-audit---h--hardening-audit)
 - [System supply-chain — `sys-audit`](#system-supply-chain--sys-audit)
+  - [Remote scanning](#remote-scanning)
 - [Remote maintenance](#remote-maintenance)
-- [Upgrade Checker (AI)](#upgrade-checker-ai--experimental)
+  - [Host groups](#host-groups)
+- [Upgrade Checker (AI) — experimental](#upgrade-checker-ai--experimental)
 - [Configuration](#configuration)
+  - [Reports & run logs](#reports--run-logs)
+  - [HTML report — `fettle report` (beta)](#html-report--fettle-report-beta)
+  - [Web UI — `fettle web` (beta, optional)](#web-ui--fettle-web-beta-optional)
+- [Security advisories / CVE tracking — `advisory-check` (opt-in)](#security-advisories--cve-tracking--advisory-check-opt-in)
 - [Previewing an upgrade](#previewing-an-upgrade)
 - [Common options](#common-options)
 - [How elevation works](#how-elevation-works)
@@ -49,7 +58,7 @@ real unit-test coverage the bash originals never had.
 
 ## What it does
 
-fettle has three feature families:
+fettle has four feature families:
 
 1. **Maintenance** — update packages, clean caches, prune orphans, check for
    rebuilds/service-restarts, review config-file drift, report whether automatic
@@ -63,6 +72,10 @@ fettle has three feature families:
    Secure Boot, BIOS/UEFI, TPM, Intel ME, CPU microcode, package integrity,
    hardware and storage firmware. Exposed as `sys-audit`, runnable locally or over
    SSH.
+4. **Security advisories** — *is what you have installed known-vulnerable?*
+   Per-package CVEs from your distro's own tracker, including the ones you're
+   vulnerable to with **no fix released yet**, plus Python/Node packages via OSV.
+   Exposed as `advisory-check`.
 
 The two supply-chain families are deliberately kept distinct in code, docs, and
 CLI: "where did this software come from / is it tampered?" → **Package**
@@ -440,6 +453,15 @@ sudo/`--all` for the fullest results — many checks only produce real output as
 | `packages` | installed-file integrity (`paccheck`/`pacman -Qkk`, or `debsums`/`dpkg --verify`) |
 | `hardware` | inxi/lspci hardware inventory, memory modules |
 | `storage` | per-device model / firmware / serial via `smartctl` |
+
+**A check that could not run says so.** Several verdicts are derived from a tool's
+output, so fettle distinguishes three outcomes: a real result; **`UNKNOWN — <tool>
+failed`** (an error, because a security check that didn't run is a finding, not a
+pass); and a neutral **`Unknown`** when the tool ran fine but reported no verdict —
+e.g. a chipsec module that doesn't apply to your hardware, which shouldn't be red.
+Likewise the Secure Boot certificate matrix **skips rather than reporting "Not
+present"** when a UEFI variable can't be read, since absent and unreadable are not
+the same thing.
 
 ### Remote scanning
 
@@ -903,12 +925,13 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (v0.13.0, beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | young (beta), two distro families |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
 | **Package-file integrity verification** | ❌ | ✅ via `sys-audit` (paccheck / debsums) |
+| **Security advisories / CVE tracking** (incl. *vulnerable, no fix released yet*) | ❌ | ✅ `advisory-check` (distro feeds + OSV for Python/Node) |
 | **AI pre-upgrade advisor** | ❌ | ✅ `upgrade-check` (local **and** remote) |
 
 **Which should you use?**
