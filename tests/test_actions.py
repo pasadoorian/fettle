@@ -1,8 +1,15 @@
+import time
+from unittest.mock import patch
+
+import pytest
+
 from fettle import actions
 from fettle.backends.arch import ArchBackend
 from fettle.backends.base import Context
+from fettle.command import Proc
 from fettle.config import Config
 from fettle.output import Output
+from fettle.cli import READ_ONLY_ACTIONS
 
 
 def _ctx(**kw):
@@ -80,3 +87,41 @@ def test_only_update_refreshes_then_reports(capsys):
     assert b.refreshed == 1                      # refreshed before reporting
     assert "Refreshing metadata" in out          # section title
     assert "bash  5.2-1 -> 5.3-1" in out          # upgradable report
+
+
+# -- read-only actions under --dry-run ---------------------------------------
+# Regression guard for the whole class: `fettle -A --dry-run` crashed with
+# UnboundLocalError because a report path bound inside `if not ctx.dry_run:`
+# was read outside it. --dry-run is supported for every READ_ONLY_ACTION, so
+# each one must survive a dry run rather than only the one that broke.
+@pytest.mark.parametrize("action", sorted(READ_ONLY_ACTIONS))
+def test_read_only_actions_survive_dry_run(action, tmp_path):
+    """Each read-only action completes under --dry-run without raising.
+
+    The stubs must return *data*, not empties: with an empty AUR result the audit
+    bails at "RPC returned no data" and never reaches the report/summary code that
+    actually crashed, so the guard would pass while the bug was present.
+    """
+    info = [{"Name": "somepkg", "Maintainer": "bob", "LastModified": time.time(),
+             "NumVotes": 5}]
+    with patch("fettle.command.run", return_value=Proc(0, stdout="somepkg")), \
+         patch("fettle.aur.meta.fetch_info", return_value=info), \
+         patch("fettle.aur.ioc._fetch", return_value=""):
+        ctx = Context(output=Output(color=False), config=Config(), dry_run=True,
+                      sudo_user="paul", user_home=tmp_path)
+        actions.run([action], ArchBackend(), ctx)   # must not raise
+
+
+def test_aur_audit_dry_run_summary_omits_report_path(tmp_path, capsys):
+    """The dry-run summary reports the audit without claiming a written report."""
+    info = [{"Name": "somepkg", "Maintainer": "bob", "LastModified": time.time(),
+             "NumVotes": 5}]
+    with patch("fettle.command.run", return_value=Proc(0, stdout="somepkg")), \
+         patch("fettle.aur.meta.fetch_info", return_value=info):
+        ctx = Context(output=Output(color=False), config=Config(), dry_run=True,
+                      sudo_user="paul", user_home=tmp_path)
+        actions.run(["aur_audit"], ArchBackend(), ctx)
+    out = capsys.readouterr().out
+    assert "AUR audit of 1 package(s)" in out
+    assert "written to" not in out                  # nothing was written
+    assert "None" not in out                        # and no stringified None

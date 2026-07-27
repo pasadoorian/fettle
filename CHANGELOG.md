@@ -4,6 +4,17 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.21.3] — fix: `-A --dry-run` crashed
+
+- Fix an `UnboundLocalError` that crashed `fettle -A --dry-run`: the aur-audit summary
+  line read the report path outside the `if not ctx.dry_run:` block that binds it. The
+  same line also crashed the `except OSError` path (unwritable/full `~/.fettle`), so a
+  failed report write took the whole run down instead of warning. Present since
+  2026-07-07; the summary now names the report only when one was actually written.
+- Add a regression guard over the whole class: every `READ_ONLY_ACTIONS` member is now
+  exercised under `--dry-run`, since `--dry-run` is supported for all of them and only
+  aur-audit happened to be broken.
+
 ## [0.21.2] — Phase 19 complete: docs sync
 
 - Mark the security-advisory / CVE-tracking feature (Phase 19) complete: Arch, Debian,

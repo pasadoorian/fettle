@@ -98,6 +98,7 @@ def run(ctx) -> None:
     for ln in lines:
         print(ln)
 
+    report = None                     # stays None on --dry-run and on a write failure
     if not ctx.dry_run:
         try:
             data = {
@@ -117,7 +118,8 @@ def run(ctx) -> None:
             out.note(f"full report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write aur-audit report: {exc}")
-    out.summary_add(f"AUR audit of {len(foreign)} package(s) written to {report}")
+    summary = f"AUR audit of {len(foreign)} package(s)"
+    out.summary_add(f"{summary} written to {report}" if report else summary)
 
 
 def _append_dep_flags(flags: list[str], name, deps: dict, libs: set) -> None:
