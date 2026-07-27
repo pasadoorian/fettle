@@ -37,11 +37,18 @@ def _efi_reader(scan):
     def get(store: str) -> str:
         if store in cache:
             return cache[store]
-        out = ""
+        out, rc = "", 0
         if scan.which("efi-readvar"):
-            out = scan.run_text(["efi-readvar", "-v", store])
+            out, rc = scan.run_text_rc(["efi-readvar", "-v", store])
         elif scan.which("mokutil"):
-            out = scan.run_text(["mokutil", flags[store]])
+            out, rc = scan.run_text_rc(["mokutil", flags[store]])
+        # A failed read must come back EMPTY, not as its own error text: stderr is
+        # merged into the output, so the error message is a non-empty string that
+        # simply contains no certificate names. Left as-is it would sail past the
+        # caller's emptiness guard and render every cert as "Not present" — i.e. a
+        # failed UEFI variable read displayed as a healthy Secure Boot posture.
+        if rc != 0:
+            out = ""
         cache[store] = out
         return out
 
@@ -67,14 +74,16 @@ def check(scan, *, now: datetime | None = None) -> None:
 
     scan.sub("Secure Boot State (mokutil)")
     if scan.which("mokutil"):
-        state = scan.run_text(["mokutil", "--sb-state"])
+        state, rc = scan.run_text_rc(["mokutil", "--sb-state"])
         low = state.lower()
         if "enabled" in low:
             scan.status("Secure Boot", "Enabled", "ok")
         elif "disabled" in low:
             scan.status("Secure Boot", "Disabled", "warn")
+        elif rc != 0:
+            scan.status("Secure Boot", f"UNKNOWN — mokutil failed (exit {rc})", "error")
         else:
-            scan.status("Secure Boot", state, "info")
+            scan.status("Secure Boot", state or "Unknown (no state reported)", "info")
         if scan.verbose:
             scan.result(state)
     else:
@@ -104,7 +113,11 @@ def _cert_expiry(scan, now: datetime) -> None:
         return
     get = _efi_reader(scan)
     kek_data, db_data = get("KEK"), get("db")
-    if not kek_data and not db_data:
+    # `or`, not `and`: every row below is a substring test against one of these two
+    # stores, so if EITHER failed to read, that store's certs all report "Not
+    # present" — which _report_cert_row renders green for the 2011 certs. Skipping
+    # is the honest answer; a partial read can't tell absent from unreadable.
+    if not kek_data or not db_data:
         scan.status("Skipped", "Could not read UEFI variables (try as root)", "warn")
         return
 

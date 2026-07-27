@@ -15,6 +15,22 @@ from pathlib import Path
 _TOOL_DIRS = ("/opt", "/usr/share")
 
 
+def _ran(scan, label: str, rc: int, tool: str) -> bool:
+    """Report (loudly) a security check whose tool failed, and return False so the
+    caller skips its verdict branches.
+
+    A check that could not run is a finding, not a pass: silence — or a "no
+    problems found" verdict derived from an error message — reads to a human as
+    "this machine is fine". Callers pair this with a neutral "Unknown" for the
+    tool ran-but-reported-nothing case, so hardware where a module simply doesn't
+    apply isn't flagged red.
+    """
+    if rc != 0:
+        scan.status(label, f"UNKNOWN — {tool} failed (exit {rc})", "error")
+        return False
+    return True
+
+
 def _find_tool(scan, subdir: str, marker: str):
     """Return the path to ``<dir>/<subdir>/<marker>`` for the first dir that has it."""
     candidates = [scan.path(f"{d}/{subdir}") for d in _TOOL_DIRS]
@@ -72,18 +88,26 @@ def firmware(scan) -> None:
         return
 
     scan.sub("Intel ME Manufacturing Mode")
-    me = scan.run_text(["python3", str(chipsec), "-m", "common.me_mfg_mode"]).lower()
-    if "passed" in me:
-        scan.status("ME Manufacturing Mode", "Disabled (PASSED)", "ok")
-    elif "failed" in me:
-        scan.status("ME Manufacturing Mode", "Enabled (FAILED)", "error")
+    me, rc = scan.run_text_rc(["python3", str(chipsec), "-m", "common.me_mfg_mode"])
+    if _ran(scan, "ME Manufacturing Mode", rc, "chipsec"):
+        me = me.lower()
+        if "passed" in me:
+            scan.status("ME Manufacturing Mode", "Disabled (PASSED)", "ok")
+        elif "failed" in me:
+            scan.status("ME Manufacturing Mode", "Enabled (FAILED)", "error")
+        else:
+            scan.status("ME Manufacturing Mode", "Unknown (no verdict reported)", "info")
 
     scan.sub("BIOS Write Protection")
-    wp = scan.run_text(["python3", str(chipsec), "-m", "common.bios_wp"]).lower()
-    if "passed" in wp:
-        scan.status("BIOS Write Protection", "Enabled (PASSED)", "ok")
-    elif "failed" in wp:
-        scan.status("BIOS Write Protection", "Disabled (FAILED)", "error")
+    wp, rc = scan.run_text_rc(["python3", str(chipsec), "-m", "common.bios_wp"])
+    if _ran(scan, "BIOS Write Protection", rc, "chipsec"):
+        wp = wp.lower()
+        if "passed" in wp:
+            scan.status("BIOS Write Protection", "Enabled (PASSED)", "ok")
+        elif "failed" in wp:
+            scan.status("BIOS Write Protection", "Disabled (FAILED)", "error")
+        else:
+            scan.status("BIOS Write Protection", "Unknown (no verdict reported)", "info")
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +126,15 @@ def fwupd(scan) -> None:
                 print(f"    {ln}")
 
     scan.sub("Available Updates")
-    updates = scan.run_text(["fwupdmgr", "get-updates", "--no-unreported-check"])
+    # fwupdmgr exits non-zero when there is nothing to do as well as when it
+    # fails, so "no updates" is checked first and the exit code only decides the
+    # remaining case (otherwise an up-to-date system would report as an error).
+    updates, rc = scan.run_text_rc(["fwupdmgr", "get-updates", "--no-unreported-check"])
     if "no updates" in updates.lower():
         scan.status("Firmware Updates", "System is up to date", "ok")
+    elif rc != 0:
+        scan.status("Firmware Updates", f"UNKNOWN — fwupdmgr failed (exit {rc})", "error")
+        scan.result(updates)
     else:
         scan.status("Firmware Updates", "Updates available", "warn")
         scan.result(updates)

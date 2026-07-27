@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.22.0] — sys-audit: a check that could not run now says so
+
+`Scan.run_text()` discarded the exit code, so checks that derive a verdict by
+substring-matching a tool's output could not tell "no problem found" from "never
+ran". Minor bump: sys-audit output changes on affected systems.
+
+- **Secure Boot cert expiry no longer reports a failed read as a healthy state.**
+  stderr is merged into the command output, so a failed `efi-readvar` returned its
+  own error message — a non-empty string containing no certificate names. That
+  slipped past the emptiness guard and rendered every certificate "Not present",
+  which for the 2011 certs prints green/ok. A failed UEFI variable read was
+  displayed as a fully-migrated Secure Boot posture. Failed reads now return empty,
+  and a *partial* read (one store readable, the other not) skips instead of
+  half-reporting.
+- **chipsec failures are now visible.** ME Manufacturing Mode and BIOS Write
+  Protection matched neither "passed" nor "failed" when chipsec crashed, so they
+  printed nothing at all — and a missing line reads as "no problem here". A failed
+  tool is now a loud `UNKNOWN`, while a clean run that reports no verdict (module
+  not applicable to the hardware) is a neutral `Unknown` rather than an error.
+- **`fwupdmgr` failures are no longer reported as "Updates available".** Note that
+  fwupdmgr also exits non-zero when there is nothing to do, so "no updates" is
+  still matched first and an up-to-date system stays `ok`.
+- `mokutil --sb-state` failure is reported instead of printing a blank status.
+- New `Scan.run_text_rc()` returns `(text, returncode)`; `run_text()` is unchanged,
+  so the verbose-dump call sites are untouched.
+
 ## [0.21.3] — fix: `-A --dry-run` crashed
 
 - Fix an `UnboundLocalError` that crashed `fettle -A --dry-run`: the aur-audit summary

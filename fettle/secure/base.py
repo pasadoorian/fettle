@@ -47,6 +47,14 @@ class Scan:
         p = self.run(cmd)
         return (p.stdout + p.stderr).strip()
 
+    def run_text_rc(self, cmd) -> tuple[str, int]:
+        """``run_text`` plus the exit code — for checks whose verdict is derived
+        from the output. A failed tool must not read as a clean result: because
+        stderr is merged in, its error message is a non-empty string, so an
+        emptiness test alone can't tell "no findings" from "never ran"."""
+        p = self.run(cmd)
+        return (p.stdout + p.stderr).strip(), p.returncode
+
     # -- filesystem reads (root-injected) ------------------------------------
     def path(self, rel: str) -> Path:
         return self.root / rel.lstrip("/")

@@ -18,7 +18,10 @@ def _run(*, tools, cmd_out, capsys, verbose=False):
     out = Output(color=False, verbose=verbose)
 
     def fake_run(cmd, *, as_user=None, capture=False):
-        return command.Proc(0, cmd_out.get(tuple(cmd), ""), "")
+        # A response may be "text" (exit 0) or ("text", rc) to drive failures.
+        val = cmd_out.get(tuple(cmd), "")
+        text, rc = val if isinstance(val, tuple) else (val, 0)
+        return command.Proc(rc, text, "")
 
     scan = Scan(output=out, root=Path("/"), verbose=verbose)
     with patch("fettle.command.run", side_effect=fake_run), \
@@ -102,3 +105,67 @@ def test_efi_readvar_preferred_over_mokutil(capsys):
         secureboot.check(scan, now=_NOW)
     assert any(c[:2] == ("efi-readvar", "-v") for c in calls)
     assert not any(c[0] == "mokutil" and c[1] in ("--kek", "--db") for c in calls)
+
+
+# -- failed UEFI variable reads must not read as a healthy posture -----------
+# Regression guard: stderr is merged into the command output, so a failed
+# efi-readvar returns its own error message -- a non-empty string containing no
+# certificate names. That sailed past the emptiness guard and rendered every row
+# "Not present", which for the 2011 certs is printed green/ok. A failed read was
+# displayed as a fully-migrated, healthy Secure Boot state.
+def test_failed_cert_read_skips_instead_of_greening_every_row(capsys):
+    out = _run(
+        tools={"efi-readvar", "mokutil"},
+        cmd_out={
+            ("mokutil", "--sb-state"): "SecureBoot enabled",
+            ("efi-readvar", "-v", "KEK"): ("Failed to read KEK: permission denied", 1),
+            ("efi-readvar", "-v", "db"): ("Failed to read db: permission denied", 1),
+        },
+        capsys=capsys,
+    )
+    assert "Could not read UEFI variables" in out
+    assert "Not present" not in out          # nothing may be asserted absent
+    assert "Migration Status" not in out     # and no verdict derived from nothing
+
+
+def test_partial_cert_read_skips_rather_than_half_reporting(capsys):
+    """One store readable, the other not — the failed store's certs would all
+    report "Not present", so the honest answer is to skip."""
+    out = _run(
+        tools={"efi-readvar", "mokutil"},
+        cmd_out={
+            ("mokutil", "--sb-state"): "SecureBoot enabled",
+            ("efi-readvar", "-v", "KEK"): "Microsoft Corporation KEK CA 2011\n",
+            ("efi-readvar", "-v", "db"): ("Failed to read db: permission denied", 1),
+        },
+        capsys=capsys,
+    )
+    assert "Could not read UEFI variables" in out
+    assert "UEFI CA 2011 (db)" not in out
+
+
+def test_successful_read_still_reports_normally(capsys):
+    """The guard must not fire on a healthy read (regression on the fix itself)."""
+    out = _run(
+        tools={"efi-readvar", "mokutil"},
+        cmd_out={
+            ("mokutil", "--sb-state"): "SecureBoot enabled",
+            ("efi-readvar", "-v", "KEK"): "Microsoft Corporation KEK CA 2023\n",
+            ("efi-readvar", "-v", "db"): ("Microsoft UEFI CA 2023\n"
+                                          "Windows UEFI CA 2023\n"),
+        },
+        capsys=capsys,
+    )
+    assert "Could not read UEFI variables" not in out
+    assert "Migration Status" in out
+
+
+def test_mokutil_sb_state_failure_is_loud(capsys):
+    out = _run(
+        tools={"mokutil"},
+        cmd_out={("mokutil", "--sb-state"): ("mokutil: EFI variables are not supported", 1),
+                 ("mokutil", "--kek"): "Microsoft Corporation KEK CA 2023\n",
+                 ("mokutil", "--db"): "Microsoft UEFI CA 2023\n"},
+        capsys=capsys,
+    )
+    assert "UNKNOWN — mokutil failed (exit 1)" in out
