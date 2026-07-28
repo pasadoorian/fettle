@@ -4,6 +4,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.30.0] — advisory-check: Rust crates (crates.io)
+
+`cargo install`ed crates are compiled from source into `~/.cargo/bin`: unsigned, never
+updated unless you do it by hand, and invisible to every OS package manager. They now
+join Python and Node as a third ecosystem in the existing OSV path — the client,
+SQLite cache, classifier, grouping and reporting all already existed.
+
+- Read from **cargo's own install index** (`~/.cargo/.crates2.json`) rather than the
+  binary names in `~/.cargo/bin`, which need not match their crate
+  (`flutter_rust_bridge_codegen` is a binary of a differently-named crate).
+- **The install source is carried into the environment label.** A crate built from a
+  `path`/`git` checkout appears as `cargo(path)` / `cargo(git)` rather than plain
+  `cargo`, because its version is whatever the checkout declared and need not be the
+  published release of that name — a finding against it should be read with that in
+  mind, not presented as a registry match.
+- A missing, malformed or unexpectedly-shaped index yields no crates instead of
+  raising.
+
 ## [0.29.0] — pkg-audit: GitHub CLI extension provenance
 
 New `gh` provider, completing the extension family. `gh` extensions install straight

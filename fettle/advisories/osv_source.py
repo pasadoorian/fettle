@@ -1,9 +1,10 @@
 """OSV language-ecosystem provider (PLAN.md §19.10).
 
-Flags vulnerable **Python (PyPI)** and **Node (npm)** packages your distro does
-**not** manage — venvs, uv/pipx apps, per-user installs — which no OS tracker can
-see. Queries OSV.dev (via the shared ``osv`` client + SQLite record cache) and
-classifies each against its ecosystem's fix state. Cross-platform.
+Flags vulnerable **Python (PyPI)**, **Node (npm)** and **Rust (crates.io)** packages
+your distro does **not** manage — virtualenvs, uv/pipx apps, per-user installs,
+bun/nvm trees, ``cargo install``ed crates — which no OS tracker can see. Queries
+OSV.dev (via the shared ``osv`` client + SQLite record cache) and classifies each
+against its ecosystem's fix state. Cross-platform.
 
 **Scope, and why (2026-07-28).** This provider used to enumerate
 ``importlib.metadata.distributions()`` — the *running interpreter's* packages. On a
@@ -231,7 +232,42 @@ class OsvLanguageSource(base.AdvisoryProvider):
         return out
 
     def _installed(self, ctx):
-        return self._pip(ctx) + self._npm(ctx)
+        return self._pip(ctx) + self._npm(ctx) + self._cargo(ctx)
+
+    def _cargo(self, ctx):
+        """Crates installed by ``cargo install`` — compiled from source into
+        ``~/.cargo/bin``, unsigned, and invisible to every OS package manager.
+
+        Read from cargo's own install index rather than guessing from the binaries
+        in ``~/.cargo/bin``, whose names need not match their crate. Keys look like
+        ``name 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)``; the
+        source kind is carried into the environment label because a ``path``/``git``
+        install is a *source checkout* whose version need not be the published
+        release of that name, and a finding against it should be read with that in
+        mind rather than presented as a registry match.
+        """
+        home = self._home(ctx)
+        index = home / ".cargo/.crates2.json"
+        if not index.is_file():
+            return []
+        try:
+            data = json.loads(index.read_text(errors="replace"))
+            installs = data.get("installs") or {}
+        except (OSError, ValueError, AttributeError):
+            return []
+        out, seen = [], set()
+        for key in installs:
+            name, _, rest = str(key).partition(" ")
+            version, _, source = rest.partition(" ")
+            if not name or not version:
+                continue
+            kind = source.strip("()").split("+", 1)[0]
+            env = "cargo" if kind == "registry" else f"cargo({kind})" if kind else "cargo"
+            if (env, name) in seen:
+                continue
+            seen.add((env, name))
+            out.append(("crates.io", name, version, env))
+        return out
 
     def _pip(self, ctx):
         try:

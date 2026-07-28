@@ -753,3 +753,72 @@ def test_labels_stay_short_when_unambiguous(tmp_path):
     _fake_venv(tmp_path / "src/ALEAPP", "venv", {"jinja2": "3.0.0"})
     ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])
     assert {env for *_x, env in OsvLanguageSource()._pip(ctx)} == {"SploitScan", "ALEAPP"}
+
+
+# -- cargo / crates.io -------------------------------------------------------
+# `cargo install`ed crates are compiled from source into ~/.cargo/bin: unsigned,
+# and invisible to every OS package manager. Read from cargo's own install index,
+# not from the binary names in ~/.cargo/bin (a crate's binaries need not share its
+# name -- flutter_rust_bridge_codegen installs a differently-named binary).
+def _crates(tmp_path, keys):
+    import json as _json
+    d = tmp_path / ".cargo"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".crates2.json").write_text(
+        _json.dumps({"installs": {k: {"bins": []} for k in keys}}))
+
+
+_REGISTRY = "(registry+https://github.com/rust-lang/crates.io-index)"
+
+
+def test_cargo_registry_install_is_enumerated(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _crates(tmp_path, [f"ripgrep 14.1.0 {_REGISTRY}"])
+    assert OsvLanguageSource()._cargo(_osv_ctx(tmp_path)) == [
+        ("crates.io", "ripgrep", "14.1.0", "cargo")]
+
+
+def test_cargo_source_kind_is_visible_in_the_label(tmp_path):
+    """A path/git install is a source checkout whose version need not be the
+    published release of that name — a finding against it must be readable as such,
+    not presented as a registry match."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _crates(tmp_path, [
+        f"a 1.0.0 {_REGISTRY}",
+        "b 2.0.0 (path+file:///home/u/.cache/yay/x/src/b)",
+        "c 3.0.0 (git+https://github.com/o/c#abc123)",
+    ])
+    got = {name: env for _eco, name, _v, env in
+           OsvLanguageSource()._cargo(_osv_ctx(tmp_path))}
+    assert got == {"a": "cargo", "b": "cargo(path)", "c": "cargo(git)"}
+
+
+def test_cargo_absent_index_yields_nothing(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    assert OsvLanguageSource()._cargo(_osv_ctx(tmp_path)) == []
+
+
+def test_cargo_malformed_index_does_not_crash(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    d = tmp_path / ".cargo"
+    d.mkdir(parents=True)
+    (d / ".crates2.json").write_text("{not json")
+    assert OsvLanguageSource()._cargo(_osv_ctx(tmp_path)) == []
+    (d / ".crates2.json").write_text('{"installs": "wrong type"}')
+    assert OsvLanguageSource()._cargo(_osv_ctx(tmp_path)) == []
+
+
+def test_cargo_skips_unparseable_keys(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _crates(tmp_path, ["nameonly", f"good 1.0.0 {_REGISTRY}"])
+    assert [n for _e, n, _v, _env in
+            OsvLanguageSource()._cargo(_osv_ctx(tmp_path))] == ["good"]
+
+
+def test_cargo_feeds_the_shared_installed_list(tmp_path):
+    """It must reach _installed(), or the crates are enumerated and never queried."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _crates(tmp_path, [f"ripgrep 14.1.0 {_REGISTRY}"])
+    ctx = _osv_ctx(tmp_path, venv_roots=[])
+    ecos = {eco for eco, *_rest in OsvLanguageSource()._installed(ctx)}
+    assert "crates.io" in ecos

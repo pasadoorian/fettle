@@ -74,8 +74,8 @@ fettle has four feature families:
    SSH.
 4. **Security advisories** — *is what you have installed known-vulnerable?*
    Per-package CVEs from your distro's own tracker, including the ones you're
-   vulnerable to with **no fix released yet**, plus Python/Node packages via OSV.
-   Exposed as `advisory-check`.
+   vulnerable to with **no fix released yet**, plus the Python/Node/Rust packages
+   your distro doesn't manage, via OSV. Exposed as `advisory-check`.
 
 The two supply-chain families are deliberately kept distinct in code, docs, and
 CLI: "where did this software come from / is it tampered?" → **Package**
@@ -871,9 +871,13 @@ Ubuntu "no fix yet", below), and `venv_roots` / `venv_depth` (where to hunt for
 virtualenvs, below). On Manjaro, "fix available" is phrased as possible sync lag, not
 alarm.
 
-**Python/Node coverage is deliberately limited to what your distro does _not_
+**Language coverage is deliberately limited to what your distro does _not_
 manage** — virtualenvs, `uv` tools, `pipx` apps, per-user (`pip install --user`)
-installs, and `bun`/`nvm` Node trees. Distro-packaged modules (`python-requests` and
+installs, `bun`/`nvm` Node trees, and `cargo install`ed Rust crates (read from cargo's
+own install index, since a crate's binaries need not share its name). A crate built
+from a `path`/`git` checkout rather than the registry is labelled `cargo(path)` /
+`cargo(git)`, because its version need not be the published release of that name.
+Distro-packaged modules (`python-requests` and
 friends) belong to your distro's tracker, which knows about backported fixes; judging
 them by PyPI version numbers instead produces both false alarms and duplicate
 findings. Each result is labelled by environment (`SploitScan:requests`), because the
@@ -1020,7 +1024,7 @@ curated command set.
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
 | **Package-file integrity verification** | ❌ | ✅ via `sys-audit` (paccheck / debsums) |
-| **Security advisories / CVE tracking** (incl. *vulnerable, no fix released yet*) | ❌ | ✅ `advisory-check` (distro feeds + OSV for Python/Node) |
+| **Security advisories / CVE tracking** (incl. *vulnerable, no fix released yet*) | ❌ | ✅ `advisory-check` (distro feeds + OSV for Python/Node/Rust) |
 | **AI pre-upgrade advisor** | ❌ | ✅ `upgrade-check` (local **and** remote) |
 
 **Which should you use?**
