@@ -4,6 +4,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.29.0] — pkg-audit: GitHub CLI extension provenance
+
+New `gh` provider, completing the extension family. `gh` extensions install straight
+from an arbitrary GitHub repository with no registry, review or signing — and `gh` runs
+them with your **authenticated session available**, so an extension can act as you
+against everything your token reaches. A one-line extension is a credential-
+exfiltration primitive.
+
+- Reports the origin repository of each installed extension →
+  `UNVERIFIED_PUBLISHER` (WARN), naming `github.com/<owner>/<repo>` and the token
+  exposure. Extensions owned by `cli`/`github` are first-party and not flagged; an
+  extension whose origin can't be determined is LOW rather than silence.
+- Provenance comes from the extension directory's own records — a binary extension's
+  `manifest.yml`, or a source extension's git `origin` remote (https and ssh forms) —
+  **not** from parsing `gh extension list`, whose output is unstructured text with no
+  stable contract. The manifest is read with a line scan rather than a YAML parse,
+  since the file has a fixed flat shape and fettle ships no YAML parser.
+
 ## [0.28.0] — pkg-audit: VS Code / VSCodium extension provenance
 
 New `vscode` provider. Editor extensions are unsandboxed Node with your full user

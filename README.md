@@ -288,6 +288,7 @@ normalized `Finding` format with one severity language:
   dropped in by hand, and whether they're enabled.
 - **VS Code / VSCodium extensions**: which came from the configured registry vs a
   sideloaded `.vsix`.
+- **GitHub CLI extensions**: which GitHub repository each `gh` extension came from.
 
 Except for the distro-native ones (AUR on Arch, APT on Debian), **every provider runs
 on every distribution** — flatpak, snap, containers and GNOME extensions install the
@@ -327,6 +328,15 @@ entirely, so no namespace or publisher check ever applied. VSCodium installs fro
 knowing when an extension's publisher field names a major vendor. fettle does **not**
 try to verify that a publisher is who they claim: doing that reliably needs a curated
 known-good list per registry, which is a maintenance burden it won't take on.
+
+On `gh` extensions: these install straight from **an arbitrary GitHub repository** with
+no registry, review or signing — and, the part usually missed, `gh` runs them with your
+**authenticated session available**, so an extension can act as you against everything
+your token reaches. fettle reports the origin repository of each one, reading the
+extension directory's own records (a binary extension's `manifest.yml`, or a source
+extension's git `origin`) rather than parsing `gh extension list`, whose output has no
+stable format. Extensions owned by `cli`/`github` are treated as first-party and not
+flagged.
 
 On containers specifically: an image is pulled by *name*, and `:latest` is a mutable
 pointer — the bits behind it change without the name changing, so nothing records what
