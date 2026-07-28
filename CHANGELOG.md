@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.24.1] — advisory-check: reach nested virtualenvs, and stop losing colliding ones
+
+- **`venv_depth` default 3 → 5.** Project virtualenvs are routinely nested a few
+  levels down (a cloned repo inside a topic directory). On a real tree depth 3 found
+  41 of 50 in 0.11s while depth 5 finds 49 in 0.52s — the ones it had been missing
+  were all security-research code.
+- **Fix silently dropped findings from environments whose labels collided.** The
+  label is part of a finding's identity — rows are cached as `env:package` and
+  deduplicated on that name — so two environments sharing a label collapsed into one
+  and a real finding disappeared. Both shapes occur in practice: different projects
+  with the same directory name (`src/cisa-kev/venv` vs `src/cvetool/cisa-kev/venv`),
+  and two environments in one project (`venv-fettle-dev` vs `venv-fettle-web`, both
+  labelled by their parent). Colliding labels are now widened with path context until
+  distinct — on a real tree, 49 environments that produced 46 labels now produce 49,
+  with only the 6 ambiguous ones widened.
+
 ## [0.24.0] — advisory-check: group findings by the fix, not by the environment
 
 Scanning unmanaged environments (0.23.0) meant one vulnerable package copied into

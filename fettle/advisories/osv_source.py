@@ -52,6 +52,33 @@ def _env_label(env: Path) -> str:
     return name
 
 
+def _unique_labels(envs) -> dict:
+    """``{env_dir: label}`` with **every label distinct**.
+
+    Labels are part of a finding's identity: rows are cached as ``env:package`` and
+    deduplicated on that name, so two environments sharing a label silently collapse
+    into one and a real finding disappears. Collisions are not hypothetical — a tree
+    can hold ``src/cisa-kev/venv`` and ``src/cvetool/cisa-kev/venv`` (different
+    projects, same directory name), or ``venv-fettle-dev`` and ``venv-fettle-web``
+    (same project, two environments, both labelled by their parent).
+
+    Colliding labels are widened with more path context until they separate, so the
+    common case stays short and only ambiguous ones grow.
+    """
+    labels = {e: _env_label(e) for e in envs}
+    for level in (2, 3, 4, 5):
+        seen: dict = {}
+        for lbl in labels.values():
+            seen[lbl] = seen.get(lbl, 0) + 1
+        clashing = {lbl for lbl, n in seen.items() if n > 1}
+        if not clashing:
+            break
+        for env, lbl in labels.items():
+            if lbl in clashing:
+                labels[env] = "/".join(env.parts[-level:])
+    return labels
+
+
 def _site_packages(env: Path) -> list[Path]:
     """``site-packages`` dirs inside a venv/tool environment (any Python version)."""
     return [p for p in env.glob("lib/python*/site-packages") if p.is_dir()]
@@ -145,7 +172,11 @@ class OsvLanguageSource(base.AdvisoryProvider):
         roots = adv.get("venv_roots")
         if roots is None:
             roots = ["~/src"]
-        return [str(r) for r in roots], int(adv.get("venv_depth", 3))
+        # Depth 5, not 3: project virtualenvs are routinely nested a few levels down
+        # (a cloned repo inside a topic dir, e.g. src/<topic>/<repo>/<sub>/venv). On a
+        # real tree depth 3 found 41 of 50 in 0.11s and depth 5 finds 49 in 0.52s —
+        # cheap next to the network time a check already spends.
+        return [str(r) for r in roots], int(adv.get("venv_depth", 5))
 
     def _home(self, ctx) -> Path:
         return Path(getattr(ctx, "user_home", None) or Path.home())
@@ -165,19 +196,22 @@ class OsvLanguageSource(base.AdvisoryProvider):
         except Exception:                        # site is absent in some embeddings
             pass
 
-        # uv tools and pipx apps: one environment per installed application.
+        # uv tools / pipx apps (one environment per installed application) and
+        # project venvs under the configured roots. Labels are assigned across the
+        # whole set at once so collisions can be detected and widened.
+        envs: list[Path] = []
         for tools_dir in (home / ".local/share/uv/tools",
                           home / ".local/share/pipx/venvs",
                           home / ".local/pipx/venvs"):
             if tools_dir.is_dir():
-                for env in sorted(p for p in tools_dir.iterdir() if p.is_dir()):
-                    out += [(env.name, sp) for sp in _site_packages(env)]
-
-        # project venvs under the configured roots
+                envs += sorted(p for p in tools_dir.iterdir() if p.is_dir())
         roots, depth = self._cfg(ctx)
         for root in roots:
-            for env in _find_venvs(Path(root).expanduser(), depth):
-                out += [(_env_label(env), sp) for sp in _site_packages(env)]
+            envs += _find_venvs(Path(root).expanduser(), depth)
+
+        labels = _unique_labels(envs)
+        for env in envs:
+            out += [(labels[env], sp) for sp in _site_packages(env)]
         return out
 
     def _node_dirs(self, ctx) -> list[tuple[str, Path]]:

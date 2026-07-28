@@ -801,7 +801,7 @@ them by PyPI version numbers instead produces both false alarms and duplicate
 findings. Each result is labelled by environment (`SploitScan:requests`), because the
 same vulnerable package in three virtualenvs is three things to fix. Virtualenv
 discovery is bounded by `venv_roots` (default `["~/src"]`) and `venv_depth` (default
-`3`) — an unbounded `$HOME` walk is far too slow to run on every check.
+`5`) — an unbounded `$HOME` walk is far too slow to run on every check.
 
 > Debian's tracker dump is large (~80 MB); a refresh downloads and parses it once per
 > `cache_ttl`. Coverage is by source package; third-party/local `.deb`s aren't

@@ -74,7 +74,7 @@ class Config:
     # pending Ubuntu CVEs, mostly negligible. The OSV language scan covers only
     # environments the distro does NOT manage (venvs, uv/pipx apps, per-user
     # installs); venv_roots (list of dirs to hunt for venvs, default ["~/src"]) and
-    # venv_depth (walk depth, default 3) bound that search — an unbounded $HOME walk
+    # venv_depth (walk depth, default 5) bound that search — an unbounded $HOME walk
     # is far too slow to run inline. All ship EMPTY/quiet.
     advisories: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,

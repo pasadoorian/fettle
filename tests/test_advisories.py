@@ -612,6 +612,17 @@ def test_venv_search_is_depth_bounded(tmp_path):
     assert OsvLanguageSource()._pip(deep_ctx) != []
 
 
+def test_default_depth_reaches_nested_project_venvs(tmp_path):
+    """Default depth must reach a venv nested like src/<topic>/<repo>/<sub>/venv —
+    real research trees put them there (src/fortinet/exploits/CVE_*/.../venv), and
+    the previous default of 3 silently missed them."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _fake_venv(tmp_path / "src/topic/repo/sub", "venv", {"requests": "2.25.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])   # no venv_depth set
+    found = OsvLanguageSource()._pip(ctx)
+    assert [name for _eco, name, _v, _env in found] == ["requests"]
+
+
 def test_same_package_in_two_venvs_stays_two_findings(tmp_path):
     """Env is part of the identity: the same vulnerable package in two venvs is
     two things to fix, and dedup keys on the package name."""
@@ -706,3 +717,39 @@ def test_render_single_environment_reads_naturally():
     text = "\n".join(lines)
     assert "in SploitScan (1.0)" in text and "environments:" not in text
     assert "occurrences across" not in text        # nothing was collapsed
+
+
+# -- environment labels must be unique --------------------------------------
+# The label is part of a finding's identity: rows are cached as "env:package" and
+# deduplicated on that name, so two environments sharing a label silently collapse
+# and a real finding disappears. Both collision shapes occur on a real tree.
+def test_two_venvs_in_one_project_get_distinct_labels(tmp_path):
+    """venv-fettle-dev and venv-fettle-web both label as their parent, 'fettle'."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    proj = tmp_path / "src/fettle"
+    _fake_venv(proj, "venv-dev", {"requests": "2.25.0"})
+    _fake_venv(proj, "venv-web", {"jinja2": "3.0.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])
+    labels = {env for *_x, env in OsvLanguageSource()._pip(ctx)}
+    assert len(labels) == 2, f"labels collapsed: {labels}"
+
+
+def test_same_dirname_in_different_projects_gets_distinct_labels(tmp_path):
+    """src/cisa-kev/venv vs src/cvetool/cisa-kev/venv — different projects."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _fake_venv(tmp_path / "src/cisa-kev", "venv", {"requests": "2.25.0"})
+    _fake_venv(tmp_path / "src/cvetool/cisa-kev", "venv", {"jinja2": "3.0.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])
+    found = OsvLanguageSource()._pip(ctx)
+    labels = {env for *_x, env in found}
+    assert len(labels) == 2, f"labels collapsed: {labels}"
+    assert len(found) == 2                      # neither package was lost
+
+
+def test_labels_stay_short_when_unambiguous(tmp_path):
+    """Widening only kicks in on a collision — the common case stays readable."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _fake_venv(tmp_path / "src/SploitScan", "venv", {"requests": "2.25.0"})
+    _fake_venv(tmp_path / "src/ALEAPP", "venv", {"jinja2": "3.0.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])
+    assert {env for *_x, env in OsvLanguageSource()._pip(ctx)} == {"SploitScan", "ALEAPP"}
