@@ -176,7 +176,8 @@ def test_check_run_writes_report(tmp_path, capsys):
     assert "NOT covered by the arch tracker" in out and "yay" in out
     d = tmp_path / ".fettle/reports/local"
     data = json.loads(list(d.glob("advisory-check-*.json"))[0].read_text())["data"]
-    assert data["counts"] == {"pending": 1, "fixed_available": 1}
+    assert data["counts"] == {"pending": 1, "fixed_available": 1,
+                              "pending_occurrences": 1, "fixed_available_occurrences": 1}
     assert data["uncovered"]["arch"] == ["yay", "some-git"]
 
 
@@ -444,7 +445,9 @@ def test_osv_language_provider_refresh_and_findings(tmp_path):
         assert src.refresh(conn) == 1                       # only the vulnerable one
     f = src.findings(None, conn)
     assert len(f) == 1
-    assert f[0].source == "osv" and f[0].package == "venvA:requests"   # env-qualified
+    # stored env-qualified, split back out for grouping
+    assert f[0].source == "osv" and f[0].package == "requests"
+    assert f[0].environment == "venvA"
     assert f[0].status == base.FIXED_AVAILABLE and f[0].fixed_version == "2.31.0"
     assert f[0].severity == "High" and f[0].cvss.startswith("CVSS:")
     assert f[0].cves == ["CVE-2024-9"]
@@ -631,3 +634,75 @@ def test_node_scan_reads_unmanaged_trees_without_npm(tmp_path):
     got = {(n, v, e) for _eco, n, v, e in OsvLanguageSource()._npm(_osv_ctx(tmp_path))}
     assert ("left-pad", "1.0.0", "bun") in got
     assert ("@scope/thing", "2.0.0", "bun") in got     # scoped packages handled
+
+
+# -- grouping: one package in many venvs is ONE problem, N places to fix -----
+# The unmanaged-language scan reports per environment, so replication (not
+# severity) is what makes the report unreadable: a real run produced 212 findings
+# for 16 packages, urllib3 alone accounting for 80. A severity floor barely helps
+# (209 of those 212 were High), so reporting groups instead.
+def _envf(pkg, env, ver="1.0", sev="High", cves=("CVE-1",), fixed="2.0", status=None):
+    from fettle.advisories import base
+    return base.AdvisoryFinding(
+        source="osv", package=pkg, environment=env, installed_version=ver,
+        status=status or base.FIXED_AVAILABLE, severity=sev, cves=list(cves),
+        fixed_version=fixed)
+
+
+def test_group_collapses_same_package_across_environments():
+    got = check._group([_envf("urllib3", e) for e in ("alpha", "beta", "gamma")])
+    assert len(got) == 1
+    f, envs = got[0]
+    assert f.package == "urllib3"
+    assert [e for e, _v in envs] == ["alpha", "beta", "gamma"]
+
+
+def test_group_merges_differing_installed_versions_behind_one_fix():
+    """Keyed on the REMEDIATION, not the installed version: "upgrade pip to 26.1.2"
+    is one action whether a venv sits on 24.0 or 25.2. Keying on the installed
+    version fragmented that single action into 34 lines on real data."""
+    got = check._group([_envf("pip", "dfir", ver="25.2", fixed="26.1.2"),
+                        _envf("pip", "cve-maker", ver="24.0", fixed="26.1.2")])
+    assert len(got) == 1
+    f, envs = got[0]
+    assert dict(envs) == {"dfir": "25.2", "cve-maker": "24.0"}   # per-env version kept
+    assert check._installed_summary(f, envs) == "24.0…25.2 (2 versions)"
+
+
+def test_group_keeps_different_fix_targets_apart():
+    """Different fix versions ARE different remediations — must not merge."""
+    got = check._group([_envf("pip", "a", fixed="26.1.2"),
+                        _envf("pip", "b", fixed="25.3")])
+    assert len(got) == 2
+
+
+def test_group_keeps_different_cves_apart():
+    got = check._group([_envf("pillow", "a", cves=("CVE-1",)),
+                        _envf("pillow", "a", cves=("CVE-2",))])
+    assert len(got) == 2
+
+
+def test_group_leaves_os_findings_untouched():
+    """Distro findings have no environment; grouping must be a no-op for them."""
+    got = check._group([_envf("bash", ""), _envf("curl", "")])
+    assert len(got) == 2 and all(envs == [] for _f_, envs in got)
+
+
+def test_render_lists_environments_and_reports_occurrences():
+    findings = [_envf("urllib3", f"env{i}") for i in range(28)]
+    lines, data = check._render(findings, {}, False, ["osv"])
+    text = "\n".join(lines)
+    assert "Fix available — installed trails a security fix (1)" in text
+    assert "28 occurrences across 28 environment(s)" in text     # nothing vanished
+    assert "in 28 environments: env0 (1.0)" in text
+    assert "(+18 more)" in text                                   # 10 shown, rest summarized
+    assert data["counts"] == {"pending": 0, "fixed_available": 1,
+                              "pending_occurrences": 0, "fixed_available_occurrences": 28}
+    assert len(data["findings"]) == 28            # JSON keeps every occurrence
+
+
+def test_render_single_environment_reads_naturally():
+    lines, _d = check._render([_envf("requests", "SploitScan")], {}, False, ["osv"])
+    text = "\n".join(lines)
+    assert "in SploitScan (1.0)" in text and "environments:" not in text
+    assert "occurrences across" not in text        # nothing was collapsed

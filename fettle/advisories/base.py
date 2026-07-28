@@ -39,6 +39,10 @@ class AdvisoryFinding:
     distro_class: str = ""                       # native rating/status tag (for filtering)
     url: str = ""
     cvss: str = ""                               # CVSS vector (OSV) — the "second opinion"
+    # Where the package lives, when it isn't distro-managed (a venv/uv/pipx/bun
+    # environment). Empty for the OS providers, whose packages are installed once.
+    # Reporting collapses findings that differ ONLY by this — see check._group.
+    environment: str = ""
 
 
 def advisory_to_dict(f: AdvisoryFinding) -> dict:
@@ -49,7 +53,7 @@ def advisory_to_dict(f: AdvisoryFinding) -> dict:
         "severity": f.severity, "cves": list(f.cves),
         "fixed_version": f.fixed_version, "group_id": f.group_id,
         "advisory_id": f.advisory_id, "distro_class": f.distro_class, "url": f.url,
-        "cvss": f.cvss,
+        "cvss": f.cvss, "environment": f.environment,
     }
 
 

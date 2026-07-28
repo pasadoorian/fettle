@@ -121,8 +121,15 @@ class OsvLanguageSource(base.AdvisoryProvider):
         out = []
         for (gid, pkg, status, sev, installed, fixed, cves_json, _adv, url,
              dclass, cvss) in db.all_rows(conn, self.source):
+            # Stored env-qualified ("SploitScan:requests") so the row stays unique
+            # per environment; split it back out so reporting can group on the
+            # package and list the environments.
+            env, _, name = pkg.partition(":")
+            if not name:                         # defensive: unqualified legacy row
+                env, name = "", pkg
             out.append(base.AdvisoryFinding(
-                source=self.source, package=pkg, installed_version=installed,
+                source=self.source, package=name, environment=env,
+                installed_version=installed,
                 status=(base.PENDING_FIX if status == "pending" else base.FIXED_AVAILABLE),
                 severity=sev, cves=json.loads(cves_json) if cves_json else [],
                 fixed_version=fixed or None, group_id=gid, distro_class=dclass,

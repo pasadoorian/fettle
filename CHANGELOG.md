@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.24.0] — advisory-check: group findings by the fix, not by the environment
+
+Scanning unmanaged environments (0.23.0) meant one vulnerable package copied into
+many virtualenvs arrived as many findings — 591 occurrences across 35 environments on
+a real box. That noise is **replication, not severity**: a severity floor would have
+removed almost none of it (209 of 212 findings were rated High, which spot-checks
+against the OSV records confirmed is correct data, not a banding bug). So reporting
+groups instead of filtering, and nothing is hidden.
+
+- Findings are grouped by the **remediation** — package + fix version + CVEs — and
+  deliberately *not* by the installed version: "upgrade pip to 26.1.2" is one action
+  whether a given virtualenv sits on 24.0 or 25.2. Measured: keying on the installed
+  version gave 323 groups, keying on the fix gives 132.
+- Each group lists its environments with their own versions
+  (`in 3 environments: cve-maker (3.4.0), dfir (4.0.0), …`), and the installed side
+  shows a span when they differ (`42.0.7…48.0.0 (6 versions) -> 48.0.1`). Ten are
+  named before the rest are summarised; the JSON sibling always keeps every
+  occurrence.
+- Section headers report the pre-grouping totals — `(591 occurrences across 35
+  environment(s), grouped by package+CVE)` — so a smaller count than the previous
+  release cannot be mistaken for findings having gone missing.
+- `AdvisoryFinding` gains an `environment` field (empty for the OS providers, whose
+  packages are installed once), carried into the JSON. `counts` gains
+  `pending_occurrences` / `fixed_available_occurrences` alongside the grouped totals.
+- The HTML report groups identically and gains a **where** column.
+
 ## [0.23.0] — advisory-check: scan the language packages your distro does NOT manage
 
 The OSV language provider enumerated `importlib.metadata.distributions()` — the

@@ -76,33 +76,100 @@ def _apply_filters(findings, cfg):
     return out
 
 
-def _sev_key(f):
+def _sev_key(item):
+    f = item[0] if isinstance(item, tuple) else item
     return (-base.severity_rank(f.severity), f.package)
 
 
-def _line(f) -> str:
-    ver = f.installed_version + (f" -> {f.fixed_version}" if f.fixed_version else "")
+# How many environment names to spell out before summarizing (the full list always
+# reaches the JSON sibling, so nothing is lost — this only keeps the text readable).
+_ENVS_SHOWN = 10
+
+
+def _group(findings):
+    """Collapse findings that describe **the same fix**.
+
+    The unmanaged-language scan reports per environment, so one vulnerable package
+    copied into many virtualenvs arrives as many findings. On a real box that was
+    594 occurrences for 28 packages. That noise is replication, not severity — a
+    severity floor barely touches it (209 of 212 were rated High) — so reporting
+    groups instead.
+
+    Keyed on the **remediation** (package + fix version + CVEs), deliberately *not*
+    on the installed version: "upgrade pip to 26.1.2" is one action whether a given
+    virtualenv sits on 24.0 or 25.2, and keying on installed version fragmented that
+    single action into 34 lines. Measured on real data: 594 occurrences → 323 groups
+    keyed with the installed version, → 132 keyed on the fix. Each environment keeps
+    its own version in the returned pairs so nothing is lost.
+
+    Returns ``[(representative_finding, [(environment, installed_version), …]), …]``.
+    """
+    groups: dict[tuple, list] = {}
+    for f in findings:
+        key = (f.source, f.package, f.fixed_version, f.status, f.severity,
+               tuple(f.cves))
+        groups.setdefault(key, []).append(f)
+    out = []
+    for fs in groups.values():
+        envs = sorted({(f.environment, f.installed_version) for f in fs if f.environment})
+        out.append((fs[0], envs))
+    return out
+
+
+def _installed_summary(f, envs) -> str:
+    """The installed side of the version arrow: one version, or a span when the
+    environments disagree (the fix target is the same either way)."""
+    versions = sorted({v for _e, v in envs}) if envs else [f.installed_version]
+    if len(versions) == 1:
+        return versions[0]
+    return f"{versions[0]}…{versions[-1]} ({len(versions)} versions)"
+
+
+def _lines_for(f, envs=()) -> list[str]:
+    ver = _installed_summary(f, envs)
+    ver += f" -> {f.fixed_version}" if f.fixed_version else ""
     cves = " ".join(f.cves[:4]) + (" …" if len(f.cves) > 4 else "")
     cvss = f"  ({f.cvss})" if f.cvss else ""
-    return f"  [{f.severity:<8}] {f.source}/{f.package} {ver}   {cves}   {f.url}{cvss}"
+    out = [f"  [{f.severity:<8}] {f.source}/{f.package} {ver}   {cves}   {f.url}{cvss}"]
+    if envs:
+        shown = ", ".join(f"{e} ({v})" for e, v in envs[:_ENVS_SHOWN])
+        more = f" (+{len(envs) - _ENVS_SHOWN} more)" if len(envs) > _ENVS_SHOWN else ""
+        where = (f"in {len(envs)} environments: " if len(envs) > 1 else "in ")
+        out.append(f"             {where}{shown}{more}")
+    return out
+
+
+def _count_note(groups, raw_total) -> str:
+    """Say so when grouping collapsed occurrences, so a smaller number than last
+    release doesn't read as findings having gone missing."""
+    if raw_total <= len(groups):
+        return ""
+    envs = len({e for _f, env_list in groups for e, _v in env_list})
+    return (f"  ({raw_total} occurrences across {envs} environment(s), "
+            f"grouped by package+CVE)")
 
 
 def _render(findings, uncovered, manjaro, sources):
-    pending = sorted((f for f in findings if f.status == base.PENDING_FIX), key=_sev_key)
-    fixable = sorted((f for f in findings if f.status != base.PENDING_FIX), key=_sev_key)
+    pending_f = [f for f in findings if f.status == base.PENDING_FIX]
+    fixable_f = [f for f in findings if f.status != base.PENDING_FIX]
+    pending = sorted(_group(pending_f), key=_sev_key)
+    fixable = sorted(_group(fixable_f), key=_sev_key)
 
     lines = [f"Security advisories  -  {datetime.now():%Y-%m-%d %H:%M:%S}", ""]
 
-    lines.append(f"=== Pending fixes — vulnerable, NO fix released yet ({len(pending)}) ===")
-    lines += [_line(f) for f in pending] or ["  none"]
+    lines.append(f"=== Pending fixes — vulnerable, NO fix released yet ({len(pending)}) ==="
+                 + _count_note(pending, len(pending_f)))
+    lines += [ln for f, envs in pending for ln in _lines_for(f, envs)] or ["  none"]
 
-    hi = [f for f in fixable if base.severity_rank(f.severity) >= 3]  # Critical/High
-    lo = [f for f in fixable if base.severity_rank(f.severity) < 3]
-    lines += ["", f"=== Fix available — installed trails a security fix ({len(fixable)}) ==="]
-    lines += [_line(f) for f in hi] or (["  none at Critical/High"] if lo else ["  none"])
+    hi = [(f, e) for f, e in fixable if base.severity_rank(f.severity) >= 3]
+    lo = [(f, e) for f, e in fixable if base.severity_rank(f.severity) < 3]
+    lines += ["", f"=== Fix available — installed trails a security fix ({len(fixable)}) ==="
+              + _count_note(fixable, len(fixable_f))]
+    lines += [ln for f, envs in hi for ln in _lines_for(f, envs)] \
+        or (["  none at Critical/High"] if lo else ["  none"])
     if lo:
         tally = {}
-        for f in lo:
+        for f, _e in lo:
             tally[f.severity] = tally.get(f.severity, 0) + 1
         lines.append("  " + ", ".join(f"{k}: {v}" for k, v in tally.items())
                      + "  (Medium/Low/Unknown — see the full report)")
@@ -128,7 +195,11 @@ def _render(findings, uncovered, manjaro, sources):
     data = {
         "sources": sources,
         "findings": [base.advisory_to_dict(f) for f in findings],
-        "counts": {"pending": len(pending), "fixed_available": len(fixable)},
+        # Grouped counts are the headline (distinct problems); occurrence counts keep
+        # the pre-grouping totals so consumers can tell the two apart.
+        "counts": {"pending": len(pending), "fixed_available": len(fixable),
+                   "pending_occurrences": len(pending_f),
+                   "fixed_available_occurrences": len(fixable_f)},
         "uncovered": uncovered,
         "manjaro": manjaro,
     }

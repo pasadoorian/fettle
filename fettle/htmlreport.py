@@ -419,7 +419,19 @@ _ADV_SEV = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
 def _render_advisories(data: dict) -> str:
     findings = data.get("findings") or []
 
-    def _row(f: dict) -> str:
+    def _group(items: list) -> list:
+        """Collapse rows differing only by environment — matches the text report
+        (one package in 28 virtualenvs is one problem with 28 places to fix)."""
+        groups: dict[tuple, list] = {}
+        for f in items:
+            # keyed on the remediation, not the installed version — matches check._group
+            key = (f.get("source"), f.get("package"), f.get("fixed_version"),
+                   f.get("severity"), tuple(map(str, f.get("cves") or [])))
+            groups.setdefault(key, []).append(f)
+        return [(fs[0], sorted({str(f.get("environment") or "") for f in fs} - {""}))
+                for fs in groups.values()]
+
+    def _row(f: dict, envs: list) -> str:
         sev = str(f.get("severity", "Unknown"))
         badge = f'<span class="badge b-{_esc(sev)}">{_esc(sev)}</span>'
         cvss = f.get("cvss")
@@ -431,15 +443,23 @@ def _render_advisories(data: dict) -> str:
         cves = _esc(", ".join(map(str, f.get("cves") or [])))
         link = _ext_link(str(f.get("url", "")), str(f.get("group_id") or "details"))
         pkg = f'<span class=muted>{_esc(str(f.get("source", "")))}/</span>{_esc(str(f.get("package", "")))}'
-        return (f'<tr><td>{badge}</td><td>{pkg}</td><td>{ver}</td>'
+        if not envs:
+            where = '<span class=muted>&mdash;</span>'
+        elif len(envs) == 1:
+            where = _esc(envs[0])
+        else:                                    # full list in the tooltip
+            where = (f'<span title="{_esc(", ".join(envs))}">{len(envs)} '
+                     f'environments</span>')
+        return (f'<tr><td>{badge}</td><td>{pkg}</td><td>{where}</td><td>{ver}</td>'
                 f'<td>{cves}</td><td>{link}</td></tr>')
 
     def _table(items: list) -> str:
-        items = sorted(items, key=lambda f: -_ADV_SEV.get(f.get("severity"), 0))
-        if not items:
+        rows = sorted(_group(items), key=lambda ge: -_ADV_SEV.get(ge[0].get("severity"), 0))
+        if not rows:
             return '<div class="muted">none</div>'
-        return ('<table><tr><th>sev</th><th>package</th><th>installed</th>'
-                f'<th>CVEs</th><th></th></tr>{"".join(_row(f) for f in items)}</table>')
+        return ('<table><tr><th>sev</th><th>package</th><th>where</th>'
+                '<th>installed</th><th>CVEs</th><th></th></tr>'
+                f'{"".join(_row(f, envs) for f, envs in rows)}</table>')
 
     pending = [f for f in findings if f.get("status") == "pending_fix"]
     fixable = [f for f in findings if f.get("status") != "pending_fix"]
