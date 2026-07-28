@@ -73,6 +73,7 @@ class ArchBackend(PackageBackend):
         "clean", "orphans", "update", "only_update", "rebuild_check",
         "python_rebuild_check", "config_drift", "auto_updates", "firmware_check",
         "kernel", "aur_audit", "aur_ioc_scan", "pkg_audit", "hardening_audit",
+        "container_update",
     }
 
     def supply_chain_sources(self):

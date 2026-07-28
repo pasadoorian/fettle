@@ -9,7 +9,7 @@ from fettle.backends.base import Context
 from fettle.command import Proc
 from fettle.config import Config
 from fettle.output import Output
-from fettle.cli import READ_ONLY_ACTIONS
+from fettle.cli import NO_ROOT_ACTIONS
 
 
 def _ctx(**kw):
@@ -92,9 +92,9 @@ def test_only_update_refreshes_then_reports(capsys):
 # -- read-only actions under --dry-run ---------------------------------------
 # Regression guard for the whole class: `fettle -A --dry-run` crashed with
 # UnboundLocalError because a report path bound inside `if not ctx.dry_run:`
-# was read outside it. --dry-run is supported for every READ_ONLY_ACTION, so
+# was read outside it. --dry-run is supported for every no-root action, so
 # each one must survive a dry run rather than only the one that broke.
-@pytest.mark.parametrize("action", sorted(READ_ONLY_ACTIONS))
+@pytest.mark.parametrize("action", sorted(NO_ROOT_ACTIONS))
 def test_read_only_actions_survive_dry_run(action, tmp_path):
     """Each read-only action completes under --dry-run without raising.
 

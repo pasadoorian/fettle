@@ -26,7 +26,7 @@ from .base import (MUTABLE_REFERENCE, STALE_OR_ABANDONED, UNOFFICIAL_SOURCE,
                    UNVERIFIABLE, Finding, Severity, SourceProvider)
 
 # Checked in order; the first one installed is used.
-_RUNTIMES = ("docker", "podman")
+RUNTIMES = ("docker", "podman")
 
 # Registries with a known operator and a published trust story. Anything else is
 # worth a second look — not because it is bad, but because you should know it is
@@ -51,7 +51,7 @@ def _cfg(ctx) -> tuple[int, list[str]]:
     return max_age, [str(p) for p in (c.get("ignore", []) or [])]
 
 
-def _parse_images(stdout: str) -> list[dict]:
+def parse_images(stdout: str) -> list[dict]:
     """One JSON object per line (``--format '{{json .}}'``); skip unparseable lines."""
     out = []
     for line in stdout.splitlines():
@@ -95,7 +95,7 @@ def _registry(repository: str) -> str:
     return ""
 
 
-def _ref(repository: str, tag: str) -> str:
+def image_ref(repository: str, tag: str) -> str:
     return f"{repository}:{tag}" if tag and tag != _NONE else repository
 
 
@@ -106,10 +106,10 @@ class ContainerSource(SourceProvider):
                 "vulnerable packages — use trivy/grype for that.")
 
     def is_present(self, ctx) -> bool:
-        return any(command.which(r) for r in _RUNTIMES)
+        return any(command.which(r) for r in RUNTIMES)
 
     def findings(self, ctx) -> list[Finding]:
-        runtime = next((r for r in _RUNTIMES if command.which(r)), None)
+        runtime = next((r for r in RUNTIMES if command.which(r)), None)
         if runtime is None:
             return []
         proc = command.run([runtime, "images", "--format", "{{json .}}"], capture=True)
@@ -126,10 +126,10 @@ class ContainerSource(SourceProvider):
         max_age, ignore = _cfg(ctx)
         now = datetime.now(timezone.utc)
         out: list[Finding] = []
-        for img in _parse_images(proc.stdout):
+        for img in parse_images(proc.stdout):
             repo = str(img.get("Repository", "") or "")
             tag = str(img.get("Tag", "") or "")
-            ref = _ref(repo, tag)
+            ref = image_ref(repo, tag)
             if not repo or (ignore and matches_any(ref, ignore)):
                 continue
 

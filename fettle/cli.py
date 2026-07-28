@@ -41,6 +41,7 @@ FLAG_ACTIONS = [
     (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
     (("-P", "--pkg-audit"), "pkg_audit"),
     (("-H", "--hardening-audit"), "hardening_audit"),
+    (("-C", "--container-update"), "container_update"),
 ]
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 
@@ -51,6 +52,13 @@ WORD_ALIASES = {"upgrade": "update"}
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
                      "auto_updates", "hardening_audit"}
+
+# Actions that need no root. That is *not* the same question as "read-only":
+# container-update changes the system, but it talks to the docker/podman socket as
+# the invoking user, so elevating would only add a needless password prompt (and run
+# the pull under root's environment). Elevation keys off this set; the read-only set
+# above keeps its literal meaning.
+NO_ROOT_ACTIONS = READ_ONLY_ACTIONS | {"container_update"}
 
 # The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
 # (orphan removal, kernel management) are NOT here — they must be named explicitly.
@@ -71,6 +79,7 @@ ACTION_HELP = {
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",
     "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/.fettle/reports/",
     "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/.fettle/reports/",
+    "container_update": "pull container images (asks per image; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
 }
 
@@ -903,8 +912,8 @@ def _main(argv: list[str]) -> int:
         out.warn("nothing to do (no supported actions selected).")
         return 0
 
-    # Elevate only when a selected action will actually change the system.
-    needs_root = any(a not in READ_ONLY_ACTIONS for a in runnable)
+    # Elevate only when a selected action actually needs root.
+    needs_root = any(a not in NO_ROOT_ACTIONS for a in runnable)
     if needs_root and not args.dry_run and not _is_root() and not _in_test():
         _reexec_with_sudo(args)
 

@@ -281,3 +281,12 @@ def test_help_documents_report_subcommand(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     assert "fettle report" in capsys.readouterr().out
+
+
+def test_container_update_needs_no_root():
+    """It changes state, but talks to the docker socket as the invoking user —
+    elevating would only add a password prompt and run the pull under root."""
+    from fettle.cli import NO_ROOT_ACTIONS, READ_ONLY_ACTIONS
+    assert "container_update" in NO_ROOT_ACTIONS
+    assert "container_update" not in READ_ONLY_ACTIONS   # it is not read-only
+    assert READ_ONLY_ACTIONS < NO_ROOT_ACTIONS           # read-only implies no-root

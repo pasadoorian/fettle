@@ -28,6 +28,7 @@ TITLES = {
     "aur_ioc_scan": "AUR IoC scan",
     "pkg_audit": "Package supply-chain audit",
     "hardening_audit": "Binary hardening audit",
+    "container_update": "Container images",
 }
 
 
@@ -176,7 +177,13 @@ HANDLERS = {
     "aur_audit": lambda b, c: _aur_audit(c),
     "aur_ioc_scan": lambda b, c: _aur_ioc_scan(c),
     "hardening_audit": lambda b, c: _hardening_audit(b, c),
+    "container_update": lambda b, c: _container_update(c),
 }
+
+
+def _container_update(ctx: "Context") -> None:
+    from . import containers
+    containers.run(ctx)
 
 
 def _hardening_audit(backend: "PackageBackend", ctx: "Context") -> None:

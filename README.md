@@ -298,6 +298,22 @@ vulnerable packages — that is trivy's/grype's job. If the daemon can't be quer
 stopped, or you're not in the `docker` group) that is reported as a finding rather than
 passing silently.
 
+**Refreshing images — `fettle -C` / `container-update`.** The audit tells you an image
+is stale; this pulls it. It is **opt-in** (never in the default set) and needs no root.
+Nothing is pulled implicitly — each image is decided by:
+
+```toml
+[containers]
+auto_update   = "ask"            # "ask" (default) | "always" | "never" — overrides both lists
+never_update  = ["pyemba-*"]     # globs, matched against "repo:tag" and the bare repo
+always_update = ["python"]
+```
+
+First match wins: `auto_update` → `never_update` → `always_update` → otherwise **ask**.
+Under `--yes` (cron, `fettle remote`) the "ask" case is **skipped, not auto-approved** —
+an image you never explicitly opted into is never pulled without a human seeing the
+question. `--dry-run` prints the decision for every image and pulls nothing.
+
 `fettle aur-precheck <pkg>…` is the install-time helper: it prints machine-readable
 `CRIT`/`WARN` lines for the named packages and always exits 0. **With no package
 named** (`fettle aur-precheck` or `fettle -p`) it scans *every* installed AUR

@@ -77,9 +77,13 @@ class Config:
     # venv_depth (walk depth, default 5) bound that search — an unbounded $HOME walk
     # is far too slow to run inline. All ship EMPTY/quiet.
     advisories: dict = field(default_factory=dict)
-    # Container images (pkg-audit's container provider). Keys: max_age_days (an image
-    # is frozen at build time, so age is the real risk — default 90), ignore (name
-    # globs to skip entirely, e.g. ["scratch*"]).
+    # Container images. Audit keys (pkg-audit's container provider): max_age_days (an
+    # image is frozen at build time, so age is the real risk — default 90), ignore
+    # (name globs to skip entirely, e.g. ["scratch*"]). Update keys (`fettle -C`):
+    # auto_update ("ask" default | "always" | "never" — OVERRIDES both lists),
+    # never_update / always_update (name globs, matched against "repo:tag" and the
+    # bare repo). Nothing is pulled implicitly: unlisted images are asked about, and
+    # under --yes they are SKIPPED rather than auto-approved.
     containers: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.

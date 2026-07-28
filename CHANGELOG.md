@@ -4,6 +4,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.26.0] — `container-update` (`-C`): refresh images, one decision at a time
+
+The audit added in 0.25.0 reports that an image is stale; this refreshes it. Opt-in
+(never in the default set) and **needs no root** — docker/podman talk to their socket
+as the invoking user.
+
+- Per-image decisions from `[containers]`: `auto_update` (`"ask"` default / `"always"` /
+  `"never"` — **overrides both lists**), `never_update` and `always_update` name globs,
+  matched against both `repo:tag` and the bare repository so `["cvetool"]` works without
+  writing `["cvetool:*"]`. First match wins: override → never → always → **ask**.
+- **Unattended runs honour config only.** Under `--yes` the "ask" case is *skipped*, not
+  auto-approved: an image never explicitly opted into is never pulled without a human
+  seeing the question. This deliberately short-circuits before `Context.confirm()`,
+  which returns True under `--yes`.
+- `--dry-run` prints the resolved decision for every image and pulls nothing.
+- A daemon that can't be listed updates nothing and says so, rather than reporting
+  "nothing to do".
+- **Elevation now keys off a new `NO_ROOT_ACTIONS` set** rather than
+  `READ_ONLY_ACTIONS`. Those are different questions, and conflating them made `-C`
+  demand a sudo password it has no use for: `container-update` changes the system but
+  needs no root. `READ_ONLY_ACTIONS` keeps its literal meaning and remains a subset.
+
 ## [0.25.0] — pkg-audit: container images
 
 Container images were a blind spot: `pkg-audit` covered apt/aur/flatpak/snap while
