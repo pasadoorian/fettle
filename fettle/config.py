@@ -71,7 +71,11 @@ class Config:
     # `-u`/`-a` when Critical CVEs are unpatched). Ubuntu "no fix yet" (pending) is
     # opt-in via ubuntu_pending (bool, default false) with ubuntu_pending_severity
     # (low|medium|high|critical, default high) as its floor — a real box has ~1300
-    # pending Ubuntu CVEs, mostly negligible. All ship EMPTY/quiet.
+    # pending Ubuntu CVEs, mostly negligible. The OSV language scan covers only
+    # environments the distro does NOT manage (venvs, uv/pipx apps, per-user
+    # installs); venv_roots (list of dirs to hunt for venvs, default ["~/src"]) and
+    # venv_depth (walk depth, default 3) bound that search — an unbounded $HOME walk
+    # is far too slow to run inline. All ship EMPTY/quiet.
     advisories: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.

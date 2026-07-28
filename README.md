@@ -788,9 +788,20 @@ but never blocks a routine update on missing/stale/offline data.
 
 `[advisories]` config: `cache_ttl`, `severity_threshold`, `exclude_packages` (globs),
 `exclude_classes` (hide distro class tags, e.g. Debian `["nodsa","unimportant",
-"end-of-life"]`), `warn_gate`, plus `ubuntu_pending` / `ubuntu_pending_severity`
-(opt-in Ubuntu "no fix yet", below). On Manjaro, "fix available" is phrased as possible
-sync lag, not alarm.
+"end-of-life"]`), `warn_gate`, `ubuntu_pending` / `ubuntu_pending_severity` (opt-in
+Ubuntu "no fix yet", below), and `venv_roots` / `venv_depth` (where to hunt for
+virtualenvs, below). On Manjaro, "fix available" is phrased as possible sync lag, not
+alarm.
+
+**Python/Node coverage is deliberately limited to what your distro does _not_
+manage** — virtualenvs, `uv` tools, `pipx` apps, per-user (`pip install --user`)
+installs, and `bun`/`nvm` Node trees. Distro-packaged modules (`python-requests` and
+friends) belong to your distro's tracker, which knows about backported fixes; judging
+them by PyPI version numbers instead produces both false alarms and duplicate
+findings. Each result is labelled by environment (`SploitScan:requests`), because the
+same vulnerable package in three virtualenvs is three things to fix. Virtualenv
+discovery is bounded by `venv_roots` (default `["~/src"]`) and `venv_depth` (default
+`3`) — an unbounded `$HOME` walk is far too slow to run on every check.
 
 > Debian's tracker dump is large (~80 MB); a refresh downloads and parses it once per
 > `cache_ttl`. Coverage is by source package; third-party/local `.deb`s aren't

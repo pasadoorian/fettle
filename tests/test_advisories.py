@@ -436,14 +436,15 @@ def test_osv_language_provider_refresh_and_findings(tmp_path):
     from fettle.advisories.osv_source import OsvLanguageSource
     conn = db.connect(tmp_path / "adv.db")
     src = OsvLanguageSource()
-    src._installed = lambda: [("PyPI", "requests", "2.25.0"), ("PyPI", "clean-pkg", "1.0")]
+    src._installed = lambda ctx: [("PyPI", "requests", "2.25.0", "venvA"),
+                                  ("PyPI", "clean-pkg", "1.0", "venvA")]
     with patch.object(osv, "querybatch",
                       return_value=[[{"id": "GHSA-xxxx", "modified": "2024-01-01"}], []]), \
          patch.object(osv, "record", return_value=_OSV_REC):
         assert src.refresh(conn) == 1                       # only the vulnerable one
     f = src.findings(None, conn)
     assert len(f) == 1
-    assert f[0].source == "osv" and f[0].package == "requests"
+    assert f[0].source == "osv" and f[0].package == "venvA:requests"   # env-qualified
     assert f[0].status == base.FIXED_AVAILABLE and f[0].fixed_version == "2.31.0"
     assert f[0].severity == "High" and f[0].cvss.startswith("CVSS:")
     assert f[0].cves == ["CVE-2024-9"]
@@ -534,3 +535,99 @@ def test_cli_routes_advisory_subcommands():
         assert cli._main(["advisory-update", "--no-config"]) == 0
     run.assert_called_once()
     upd.assert_called_once()
+
+
+# -- OSV language scan targets UNMANAGED environments only -------------------
+# Regression guard. This provider used to enumerate the running interpreter's
+# packages, which on a distro box is the package-manager-owned system
+# site-packages: it re-reported packages the arch/debian providers already cover
+# (judging them by PyPI rather than the distro's own verdict) while missing every
+# venv on the machine. wopr: 264 scanned, 100% pacman-owned, 36 venvs invisible.
+def _fake_venv(root, name, pkgs, *, marker="pyvenv.cfg"):
+    """Build a venv-shaped tree with real .dist-info metadata."""
+    env = root / name
+    sp = env / "lib/python3.14/site-packages"
+    sp.mkdir(parents=True)
+    if marker:
+        (env / marker).write_text("home = /usr/bin\n")
+    for pkg, ver in pkgs.items():
+        d = sp / f"{pkg}-{ver}.dist-info"
+        d.mkdir()
+        (d / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {pkg}\nVersion: {ver}\n")
+    return env
+
+
+def _osv_ctx(tmp_path, **adv):
+    from fettle.backends.base import Context
+    from fettle.config import Config
+    from fettle.output import Output
+    cfg = Config()
+    cfg.advisories = adv
+    return Context(output=Output(color=False), config=cfg, user_home=tmp_path)
+
+
+def test_language_scan_finds_project_venvs_under_configured_roots(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    root = tmp_path / "src"
+    _fake_venv(root / "SploitScan", "venv", {"requests": "2.25.0"})
+    _fake_venv(root / "bifrost", ".venv", {"jinja2": "3.0.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(root)], venv_depth=3)
+    got = {(name, ver, env) for _eco, name, ver, env in OsvLanguageSource()._pip(ctx)}
+    # labelled by PROJECT, not by the venv dir's own name ("venv"/".venv")
+    assert ("requests", "2.25.0", "SploitScan") in got
+    assert ("jinja2", "3.0.0", "bifrost") in got
+
+
+def test_language_scan_ignores_distro_managed_site_packages(tmp_path):
+    """A site-packages dir that is NOT part of an environment must not be scanned
+    — that is the distro providers' territory and caused duplicate findings."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    root = tmp_path / "src"
+    # same shape, but no pyvenv.cfg => not an environment we own
+    _fake_venv(root / "distro", "lib-tree", {"ecdsa": "0.19.2"}, marker=None)
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(root)], venv_depth=3)
+    assert OsvLanguageSource()._pip(ctx) == []
+
+
+def test_language_scan_finds_uv_and_pipx_apps(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    _fake_venv(tmp_path / ".local/share/uv/tools", "ruff", {"ruff": "0.1.0"})
+    _fake_venv(tmp_path / ".local/share/pipx/venvs", "httpie", {"httpie": "3.0.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[])       # no project roots: tools only
+    got = {(name, env) for _eco, name, _v, env in OsvLanguageSource()._pip(ctx)}
+    assert ("ruff", "ruff") in got and ("httpie", "httpie") in got
+
+
+def test_venv_search_is_depth_bounded(tmp_path):
+    """An unbounded $HOME walk took >120s on a real machine; depth must be honoured."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    deep = tmp_path / "src/a/b/c/d/e"
+    _fake_venv(deep, "venv", {"requests": "2.25.0"})
+    shallow = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")], venv_depth=2)
+    assert OsvLanguageSource()._pip(shallow) == []
+    deep_ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")], venv_depth=9)
+    assert OsvLanguageSource()._pip(deep_ctx) != []
+
+
+def test_same_package_in_two_venvs_stays_two_findings(tmp_path):
+    """Env is part of the identity: the same vulnerable package in two venvs is
+    two things to fix, and dedup keys on the package name."""
+    from fettle.advisories.osv_source import OsvLanguageSource
+    root = tmp_path / "src"
+    _fake_venv(root / "toolA", "venv", {"requests": "2.25.0"})
+    _fake_venv(root / "toolB", "venv", {"requests": "2.25.0"})
+    ctx = _osv_ctx(tmp_path, venv_roots=[str(root)], venv_depth=3)
+    envs = sorted(env for *_x, env in OsvLanguageSource()._pip(ctx))
+    assert envs == ["toolA", "toolB"]
+
+
+def test_node_scan_reads_unmanaged_trees_without_npm(tmp_path):
+    from fettle.advisories.osv_source import OsvLanguageSource
+    mods = tmp_path / ".bun/install/global/node_modules"
+    (mods / "left-pad").mkdir(parents=True)
+    (mods / "left-pad/package.json").write_text('{"name":"left-pad","version":"1.0.0"}')
+    (mods / "@scope/thing").mkdir(parents=True)
+    (mods / "@scope/thing/package.json").write_text('{"name":"@scope/thing","version":"2.0.0"}')
+    got = {(n, v, e) for _eco, n, v, e in OsvLanguageSource()._npm(_osv_ctx(tmp_path))}
+    assert ("left-pad", "1.0.0", "bun") in got
+    assert ("@scope/thing", "2.0.0", "bun") in got     # scoped packages handled

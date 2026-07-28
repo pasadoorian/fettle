@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.23.0] — advisory-check: scan the language packages your distro does NOT manage
+
+The OSV language provider enumerated `importlib.metadata.distributions()` — the
+*running interpreter's* packages. On a distro machine that is the system
+site-packages, which the package manager owns, so the "language ecosystem" scan was
+in fact scanning distro packages. Two consequences, both wrong:
+
+- It re-reported packages the arch/debian providers already cover, judged by **PyPI
+  version semantics** instead of the distro's own verdict (a backported fix or an
+  explicit "not affected"), and under a second name — `osv/ecdsa` alongside
+  `arch/python-ecdsa` — so one package looked like two problems.
+- It missed **every virtualenv on the machine**. Measured on a real box: 264 packages
+  scanned, 100% package-manager-owned, while 36 virtualenvs were invisible.
+
+Now scans only environments that are unmanaged *by construction* — virtualenvs, `uv`
+tools, `pipx` apps, per-user (`pip install --user`) installs, and `bun`/`nvm` Node
+trees — so there is no overlap to dedupe and no ownership query to run. Node reads
+`node_modules/*/package.json` directly (works for bun/nvm trees `npm ls -g` won't
+report) and skips a global root under a system prefix. Same real box after: **736
+packages across 38 unmanaged environments**, 0 distro-owned.
+
+- Findings are environment-qualified (`SploitScan:requests`) — the same vulnerable
+  package in three virtualenvs is three things to fix, and dedup keys on that name.
+- New `[advisories] venv_roots` (default `["~/src"]`) and `venv_depth` (default `3`)
+  bound virtualenv discovery; an unbounded `$HOME` walk measured over two minutes.
+
 ## [0.22.2] — docs
 
 - **README table of contents rebuilt.** It was missing the whole `advisory-check`
