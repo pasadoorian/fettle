@@ -77,6 +77,10 @@ class Config:
     # venv_depth (walk depth, default 5) bound that search — an unbounded $HOME walk
     # is far too slow to run inline. All ship EMPTY/quiet.
     advisories: dict = field(default_factory=dict)
+    # Container images (pkg-audit's container provider). Keys: max_age_days (an image
+    # is frozen at build time, so age is the real risk — default 90), ignore (name
+    # globs to skip entirely, e.g. ["scratch*"]).
+    containers: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True

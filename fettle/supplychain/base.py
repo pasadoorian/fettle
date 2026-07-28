@@ -23,7 +23,7 @@ class Severity(enum.IntEnum):
     CRIT = 3
 
 
-# The seven questions every provider answers as far as its ecosystem allows.
+# The questions every provider answers as far as its ecosystem allows.
 UNVERIFIED_PUBLISHER = "UNVERIFIED_PUBLISHER"
 UNOFFICIAL_SOURCE = "UNOFFICIAL_SOURCE"
 INSECURE_TRANSPORT = "INSECURE_TRANSPORT"
@@ -31,12 +31,21 @@ STALE_OR_ABANDONED = "STALE_OR_ABANDONED"
 INTEGRITY_DRIFT = "INTEGRITY_DRIFT"
 KNOWN_BAD = "KNOWN_BAD"
 OVER_PRIVILEGED = "OVER_PRIVILEGED"
+# Added for the container provider: the name you deployed does not identify a fixed
+# artifact, so "the same image" is a different thing week to week and nothing records
+# what actually ran.
+MUTABLE_REFERENCE = "MUTABLE_REFERENCE"
+# Not a property of the software but of the audit: the provider could not answer its
+# questions for this item (daemon down, permission denied, tool broken). It exists so
+# a failed check can never be mistaken for a clean one — returning no findings when
+# you could not look is the bug this whole model is meant to prevent.
+UNVERIFIABLE = "UNVERIFIABLE"
 
 
 @dataclass
 class Finding:
     severity: Severity
-    source: str      # "aur" | "apt" | "flatpak" | "snap"
+    source: str      # "aur" | "apt" | "flatpak" | "snap" | "container"
     package: str
     question: str
     detail: str

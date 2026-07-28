@@ -4,6 +4,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.25.0] — pkg-audit: container images
+
+Container images were a blind spot: `pkg-audit` covered apt/aur/flatpak/snap while
+whole security toolchains ran from images nothing on the system tracked. New
+`container` provider (docker, falling back to podman), inventory only — pure stdlib
+JSON from `<runtime> images --format '{{json .}}'`.
+
+- **`:latest` → `MUTABLE_REFERENCE`** (a new question in the supply-chain vocabulary):
+  the bits behind the name change without the name changing, so nothing records what
+  actually ran. Deliberately *only* `:latest` — flagging every non-digest-pinned tag
+  would light up essentially every image on every machine.
+- **Image age → `STALE_OR_ABANDONED`**, default over 90 days
+  (`[containers] max_age_days`). Rated more harshly than the AUR staleness reading on
+  purpose: an AUR package still receives distro updates, whereas an image is frozen at
+  build time and carries every CVE published since.
+- **Registry provenance → `UNOFFICIAL_SOURCE`** for registries outside a known-operator
+  set. A bare name (`cvetool`, `python`) is *not* claimed either way — `docker images`
+  cannot distinguish a local build from a Docker Hub library image.
+- **Dangling images** reported as INFO hygiene with the `prune` command.
+- **A daemon that cannot be queried is reported, never silently skipped** —
+  `UNVERIFIABLE`, the second new question, which exists so a failed check can never
+  render identically to a clean one. Covers a stopped daemon and the common "not in
+  the `docker` group" case.
+- Explicit non-goal, stated in the provider's `coverage` line: scanning image
+  *contents* for vulnerable packages. That is trivy/grype's job.
+- New `[containers]` config: `max_age_days` (default 90), `ignore` (name globs).
+
 ## [0.24.1] — advisory-check: reach nested virtualenvs, and stop losing colliding ones
 
 - **`venv_depth` default 3 → 5.** Project virtualenvs are routinely nested a few

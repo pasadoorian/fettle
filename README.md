@@ -282,9 +282,21 @@ normalized `Finding` format with one severity language:
 - **Flatpak**: non-flathub origin, broad sandbox permissions (host/home
   filesystem, `devices=all`), http remotes.
 - **Snap**: sideloaded / unverified publisher, `classic`/`devmode` confinement.
+- **Containers** (docker/podman): images pulled by the mutable `:latest` tag, image
+  **age**, registry provenance, dangling images.
 
 Each provider prints a **coverage line** so uneven depth is explicit — a real
 malware/IOC feed exists only for the AUR, and fettle never pretends otherwise.
+
+On containers specifically: an image is pulled by *name*, and `:latest` is a mutable
+pointer — the bits behind it change without the name changing, so nothing records what
+actually ran. An image is also **frozen at build time**: unlike a distro package, no
+updater touches it, so every CVE published since its build date is still inside. That
+makes age the headline signal (`[containers] max_age_days`, default 90; `ignore`
+accepts name globs). fettle deliberately does **not** scan image *contents* for
+vulnerable packages — that is trivy's/grype's job. If the daemon can't be queried (it's
+stopped, or you're not in the `docker` group) that is reported as a finding rather than
+passing silently.
 
 `fettle aur-precheck <pkg>…` is the install-time helper: it prints machine-readable
 `CRIT`/`WARN` lines for the named packages and always exits 0. **With no package
