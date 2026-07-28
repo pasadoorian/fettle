@@ -169,7 +169,9 @@ class PackageBackend(abc.ABC):
         from ..supplychain.flatpak_source import FlatpakSource
         from ..supplychain.gnome_source import GnomeSource
         from ..supplychain.snap_source import SnapSource
-        return [FlatpakSource(), SnapSource(), ContainerSource(), GnomeSource()]
+        from ..supplychain.vscode_source import VSCodeSource
+        return [FlatpakSource(), SnapSource(), ContainerSource(), GnomeSource(),
+                VSCodeSource()]
 
     # -- actions (overridden per backend; NotImplementedError = not yet built) --
     def clean_caches(self, ctx: Context) -> Result:

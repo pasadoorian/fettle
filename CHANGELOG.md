@@ -4,6 +4,29 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.28.0] — pkg-audit: VS Code / VSCodium extension provenance
+
+New `vscode` provider. Editor extensions are unsandboxed Node with your full user
+privileges — filesystem, shell, SSH keys — and they auto-update, which makes them one
+of the most actively exploited desktop supply-chain surfaces.
+
+- Reads the editor's own extension index (`<profile>/extensions/extensions.json`), the
+  only local record of *where* each extension came from. Covers VSCodium, VS Code and
+  VS Code Insiders as separate profiles.
+- **Sideloaded `.vsix` installs → `UNOFFICIAL_SOURCE` (WARN)**: they bypassed the
+  registry entirely, so no namespace or publisher check ever applied. The claimed
+  publisher is named in the finding, since a hand-installed extension asserting a major
+  vendor's name is exactly the interesting case.
+- An extension whose index entry records no install source → LOW rather than silence.
+- An index that can't be read or isn't in the expected shape → `UNVERIFIABLE`. Note
+  `json.dumps([])` is the non-empty string `"[]"`, so "no extensions installed" and
+  "unreadable index" cannot be told apart from the raw text — the parser returns
+  `None` vs `[]` to keep them distinct.
+- Deliberately does **not** verify publisher identity or scan extension code: doing
+  that reliably needs a curated known-good publisher list per registry. `coverage`
+  states this, and notes that VSCodium's registry is Open VSX, whose namespace vetting
+  is lighter than Microsoft's marketplace.
+
 ## [0.27.0] — pkg-audit: distro-agnostic providers + GNOME Shell extensions
 
 - **Supply-chain providers now run on every distribution.** Flatpak, snap, containers

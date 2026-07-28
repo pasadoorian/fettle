@@ -286,6 +286,8 @@ normalized `Finding` format with one severity language:
   **age**, registry provenance, dangling images.
 - **GNOME Shell extensions**: which extensions are **attributable** to a package vs
   dropped in by hand, and whether they're enabled.
+- **VS Code / VSCodium extensions**: which came from the configured registry vs a
+  sideloaded `.vsix`.
 
 Except for the distro-native ones (AUR on Arch, APT on Debian), **every provider runs
 on every distribution** — flatpak, snap, containers and GNOME extensions install the
@@ -315,6 +317,16 @@ fettle answers the question it can answer well — *attribution*: an extension u
 origin. Enabled-and-unattributed is the finding that matters. There is no IOC feed for
 extensions.gnome.org, so this says nothing about whether an extension's *code* is
 malicious.
+
+On editor extensions: these are unsandboxed Node running with your full user
+privileges — filesystem, shell, SSH keys — and they auto-update. fettle reads the
+editor's own extension index, the only local record of *where* each one came from, and
+flags the ones installed from a **sideloaded `.vsix`**: those bypassed the registry
+entirely, so no namespace or publisher check ever applied. VSCodium installs from
+**Open VSX**, whose namespace vetting is lighter than Microsoft's marketplace — worth
+knowing when an extension's publisher field names a major vendor. fettle does **not**
+try to verify that a publisher is who they claim: doing that reliably needs a curated
+known-good list per registry, which is a maintenance burden it won't take on.
 
 On containers specifically: an image is pulled by *name*, and `:latest` is a mutable
 pointer — the bits behind it change without the name changing, so nothing records what
