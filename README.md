@@ -284,9 +284,37 @@ normalized `Finding` format with one severity language:
 - **Snap**: sideloaded / unverified publisher, `classic`/`devmode` confinement.
 - **Containers** (docker/podman): images pulled by the mutable `:latest` tag, image
   **age**, registry provenance, dangling images.
+- **GNOME Shell extensions**: which extensions are **attributable** to a package vs
+  dropped in by hand, and whether they're enabled.
+
+Except for the distro-native ones (AUR on Arch, APT on Debian), **every provider runs
+on every distribution** — flatpak, snap, containers and GNOME extensions install the
+same way anywhere. A provider whose tool isn't installed says so rather than staying
+silent, because "flatpak is clean" and "flatpak was never looked at" must not look
+identical. For ecosystems you knowingly don't use:
+
+```toml
+[supplychain]
+skip_sources = ["snap", "flatpak"]      # never checked here, never mentioned
+
+[supplychain.hosts.wopr]                # optional per-machine override
+skip_sources = ["snap"]
+```
+
+(Host tables only matter for a config you sync between machines — `fettle remote` runs
+on the *remote*, which reads the *remote's* config.)
 
 Each provider prints a **coverage line** so uneven depth is explicit — a real
 malware/IOC feed exists only for the AUR, and fettle never pretends otherwise.
+
+On GNOME extensions: extension JavaScript runs **inside the `gnome-shell` process
+itself**, not a sandbox, so an enabled one can observe and drive your whole session.
+fettle answers the question it can answer well — *attribution*: an extension under
+`/usr/share` came from a package and is traceable; one in
+`~/.local/share/gnome-shell/extensions` was hand-installed and nothing records its
+origin. Enabled-and-unattributed is the finding that matters. There is no IOC feed for
+extensions.gnome.org, so this says nothing about whether an extension's *code* is
+malicious.
 
 On containers specifically: an image is pulled by *name*, and `:latest` is a mutable
 pointer — the bits behind it change without the name changing, so nothing records what

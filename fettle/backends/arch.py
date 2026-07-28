@@ -78,8 +78,7 @@ class ArchBackend(PackageBackend):
 
     def supply_chain_sources(self):
         from ..supplychain.aur_source import AURSource
-        from ..supplychain.container_source import ContainerSource
-        return [AURSource(), ContainerSource()]
+        return [AURSource(), *super().supply_chain_sources()]
 
     # -- sys-audit `packages` integrity (M10) --------------------------------
     def verify_integrity(self, scan) -> None:

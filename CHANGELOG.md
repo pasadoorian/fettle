@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.27.0] — pkg-audit: distro-agnostic providers + GNOME Shell extensions
+
+- **Supply-chain providers now run on every distribution.** Flatpak, snap, containers
+  and GNOME extensions install the same way anywhere, but flatpak/snap had been
+  registered on the Debian backend only — so an Arch box with flatpaks installed was
+  audited as though it had none. They move to a shared base
+  (`PackageBackend.supply_chain_sources`); each backend adds only its native provider
+  (AUR, APT). Each still self-gates with `is_present`.
+- **A provider whose tool is absent is reported, not silently skipped** — "flatpak is
+  clean" and "flatpak was never looked at" must not read the same.
+- **New `[supplychain] skip_sources`** (list of provider names): an ecosystem you
+  knowingly don't use is neither run nor mentioned. Deliberately stronger than hiding
+  the absence notice — a tool can be installed but empty, so silencing only the notice
+  wouldn't help. `[supplychain.hosts.<hostname>]` overrides it per machine for a
+  shared config (`fettle remote` reads the *remote's* config, so host tables only
+  matter for configs you sync).
+- **New `gnome` provider** — GNOME Shell extension **attribution**. Extension JS runs
+  inside the `gnome-shell` process with full session access, and e.g.o. review is
+  light, so the useful question is provenance: extensions under `/usr/share` trace to
+  a package (`pacman -Qo` / `dpkg -S`); ones under
+  `~/.local/share/gnome-shell/extensions`, or system-path ones no package owns, were
+  placed by hand. Enabled-and-unattributed → WARN, disabled → LOW. Parses
+  `gnome-extensions list --details` off the known-uuid set, since a wrapped
+  `Description:` continues on unindented lines. Reports `UNVERIFIABLE` when the tool
+  fails; states in `coverage` that it does not judge extension *code* (no IOC feed).
+
 ## [0.26.0] — `container-update` (`-C`): refresh images, one decision at a time
 
 The audit added in 0.25.0 reports that an image is stale; this refreshes it. Opt-in

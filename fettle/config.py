@@ -85,6 +85,14 @@ class Config:
     # bare repo). Nothing is pulled implicitly: unlisted images are asked about, and
     # under --yes they are SKIPPED rather than auto-approved.
     containers: dict = field(default_factory=dict)
+    # Package supply chain (`pkg-audit`). Every provider is offered on every distro
+    # (flatpak/snap/containers/GNOME extensions install the same way anywhere), and
+    # absent ones are reported so a blind spot is never mistaken for a clean result.
+    # skip_sources (list of provider names, e.g. ["snap","flatpak"]) silences that
+    # notice for the ones you knowingly don't use. `[supplychain.hosts.<hostname>]`
+    # may override skip_sources per machine for a shared config — note that
+    # `fettle remote` runs on the remote and reads the REMOTE's config.
+    supplychain: dict = field(default_factory=dict)
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True

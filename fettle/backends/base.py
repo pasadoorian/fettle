@@ -154,8 +154,22 @@ class PackageBackend(abc.ABC):
         return action in self.supported
 
     def supply_chain_sources(self):
-        """Package Supply Chain providers for this distro (empty by default)."""
-        return []
+        """Package Supply Chain providers.
+
+        The base set is **distro-agnostic**: flatpak, snap, containers and GNOME
+        extensions install the same way on any distribution, so every backend gets
+        them and each adds its own native provider on top. They used to be attached
+        to the Debian backend alone, which meant an Arch box with flatpaks installed
+        was audited as though it had none.
+
+        Each provider still gates itself with ``is_present``, so an absent tool costs
+        nothing beyond one ``which`` call.
+        """
+        from ..supplychain.container_source import ContainerSource
+        from ..supplychain.flatpak_source import FlatpakSource
+        from ..supplychain.gnome_source import GnomeSource
+        from ..supplychain.snap_source import SnapSource
+        return [FlatpakSource(), SnapSource(), ContainerSource(), GnomeSource()]
 
     # -- actions (overridden per backend; NotImplementedError = not yet built) --
     def clean_caches(self, ctx: Context) -> Result:

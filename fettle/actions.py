@@ -117,13 +117,46 @@ def _emit(out, finding) -> None:
         out.note(line)
 
 
+def _skipped_sources(ctx: "Context") -> set[str]:
+    """Provider names whose "not present" notice is suppressed.
+
+    ``[supplychain] skip_sources`` applies wherever the config is read. A
+    ``[supplychain.hosts.<hostname>]`` table overrides it for one machine, for people
+    who sync a single config around — note that ``fettle remote`` runs the zipapp on
+    the *remote*, which reads the *remote's* config, so host tables only matter for
+    configs you deliberately share.
+    """
+    import socket
+
+    sc = getattr(getattr(ctx, "config", None), "supplychain", None) or {}
+    hosts = sc.get("hosts") or {}
+    entry = hosts.get(socket.gethostname()) if isinstance(hosts, dict) else None
+    chosen = entry if isinstance(entry, dict) and "skip_sources" in entry else sc
+    return {str(s) for s in (chosen.get("skip_sources") or [])}
+
+
 def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
     """Run every present Package Supply Chain provider and report normalized findings."""
     from . import reports
     from .supplychain.base import Severity
 
     out = ctx.output
-    providers = [p for p in backend.supply_chain_sources() if p.is_present(ctx)]
+    # `skip_sources` means "never check this here" — the provider is not run and its
+    # absence is not reported, so an ecosystem you don't use costs you no output at
+    # all (a tool can be installed but empty, which is why silencing only the absence
+    # notice would not have helped).
+    skip = _skipped_sources(ctx)
+    sources = [p for p in backend.supply_chain_sources() if p.source not in skip]
+    providers = [p for p in sources if p.is_present(ctx)]
+
+    # Say what was NOT audited. Every provider is offered on every distro now, so a
+    # silent omission would leave you unable to tell "flatpak is clean" from "flatpak
+    # was never looked at".
+    for p in sources:
+        if p not in providers:
+            out.note(f"[{p.source}] not present on this system — nothing to audit "
+                     f"(silence it with [supplychain] skip_sources)")
+
     if not providers:
         out.ok("no package sources present for a supply-chain audit.")
         return

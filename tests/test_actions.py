@@ -125,3 +125,57 @@ def test_aur_audit_dry_run_summary_omits_report_path(tmp_path, capsys):
     assert "AUR audit of 1 package(s)" in out
     assert "written to" not in out                  # nothing was written
     assert "None" not in out                        # and no stringified None
+
+
+# -- supply-chain providers are distro-agnostic ------------------------------
+# Flatpak and Snap used to be registered on the Debian backend only, so an Arch box
+# with flatpaks installed was audited as though it had none.
+def test_both_backends_offer_the_distro_agnostic_providers():
+    from fettle.backends.debian import DebianBackend
+    shared = {"flatpak", "snap", "container", "gnome"}
+    for backend in (ArchBackend(), DebianBackend()):
+        names = {p.source for p in backend.supply_chain_sources()}
+        assert shared <= names, f"{backend.name} is missing {shared - names}"
+    assert "aur" in {p.source for p in ArchBackend().supply_chain_sources()}
+    assert "apt" in {p.source for p in DebianBackend().supply_chain_sources()}
+
+
+def test_absent_providers_are_reported_not_silently_skipped(capsys):
+    """A silent omission leaves you unable to tell "flatpak is clean" from
+    "flatpak was never looked at"."""
+    with patch("fettle.command.run", return_value=Proc(0)), \
+         patch("fettle.command.which", side_effect=lambda n: False):
+        actions.pkg_audit(ArchBackend(), _ctx())
+    out = capsys.readouterr().out
+    for name in ("flatpak", "snap", "container", "gnome"):
+        assert f"[{name}] not present" in out
+
+
+def test_skip_sources_skips_the_provider_entirely(capsys):
+    """"Never check this here" — not merely "hide the absence notice". A tool can be
+    installed but empty (wopr has flatpak with zero apps), so silencing only the
+    absence message would still leave its coverage line on every run."""
+    cfg = Config()
+    cfg.supplychain = {"skip_sources": ["snap", "flatpak"]}
+    ctx = Context(output=Output(color=False), config=cfg, dry_run=True)
+    with patch("fettle.command.run", return_value=Proc(0)), \
+         patch("fettle.command.which", side_effect=lambda n: n in ("snap", "flatpak")):
+        actions.pkg_audit(ArchBackend(), ctx)
+    out = capsys.readouterr().out
+    for hidden in ("snap", "flatpak"):
+        assert f"[{hidden}]" not in out             # not run, not mentioned at all
+    assert "[container] not present" in out          # unlisted ones still reported
+
+
+def test_host_table_overrides_skip_sources(capsys):
+    import socket
+    cfg = Config()
+    cfg.supplychain = {"skip_sources": ["container"],
+                       "hosts": {socket.gethostname(): {"skip_sources": ["snap"]}}}
+    ctx = Context(output=Output(color=False), config=cfg, dry_run=True)
+    with patch("fettle.command.run", return_value=Proc(0)), \
+         patch("fettle.command.which", side_effect=lambda n: False):
+        actions.pkg_audit(ArchBackend(), ctx)
+    out = capsys.readouterr().out
+    assert "[snap] not present" not in out           # host entry wins
+    assert "[container] not present" in out          # top-level entry overridden

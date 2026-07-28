@@ -65,10 +65,7 @@ class DebianBackend(PackageBackend):
 
     def supply_chain_sources(self):
         from ..supplychain.apt_source import AptSource
-        from ..supplychain.container_source import ContainerSource
-        from ..supplychain.flatpak_source import FlatpakSource
-        from ..supplychain.snap_source import SnapSource
-        return [AptSource(), FlatpakSource(), SnapSource(), ContainerSource()]
+        return [AptSource(), *super().supply_chain_sources()]
 
     # -- sys-audit `packages` integrity (M10) --------------------------------
     def verify_integrity(self, scan) -> None:
