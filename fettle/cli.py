@@ -72,13 +72,13 @@ ACTION_HELP = {
     "only_update": "refresh repo metadata + report upgradable (no upgrade; safe)",
     "rebuild_check": "find packages/services needing a rebuild or restart",
     "python_rebuild_check": "rebuild packages stranded on an old Python",
-    "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist)",
+    "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist / .rpmnew)",
     "auto_updates": "report whether automatic/unattended updates are enabled",
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",
     "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/.fettle/reports/",
-    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap) -> ~/.fettle/reports/",
+    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (asks per image; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
 }
@@ -98,11 +98,11 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
   fettle web [--port N]                            serve the web UI (localhost; needs
                                                    the 'web' extra: pip install fettle[web])
   fettle advisory-check                            installed pkgs with known CVEs (fix
-                                                   available, or no fix yet) [arch; deb/ubuntu soon]
+                                                   available, or no fix yet)
   fettle advisory-update                           refresh the advisory cache
 
 which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
-  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap): provenance + tampering
+  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap/containers/extensions)
   -A  aur-audit     AUR health census: age, votes, out-of-date, orphan
   -I  aur-ioc-scan  match installed AUR pkgs to known-compromise (IoC) feeds
   -p  aur-precheck  per-package pre-install check (RPC + IoC); bare = all installed

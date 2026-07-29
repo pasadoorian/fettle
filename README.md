@@ -87,6 +87,13 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 |---|---|---|---|
 | Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | `arch`, `manjaro`, `endeavouros`, … |
 | Debian / Ubuntu | `debian` | apt/nala + flatpak + snap | `debian`, `ubuntu`, `linuxmint`, `pop`, … |
+| RHEL family *(audit only)* | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
+
+**RHEL support is currently the security half only** — `pkg-audit`, `hardening-audit`
+and `container-update` work; the maintenance actions (update, clean, orphans, kernels,
+config drift) are not yet implemented and are reported as unsupported rather than
+silently skipped. Fedora is deliberately not claimed: it shares dnf, but its advisories
+come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`.
 
 Detection reads `/etc/os-release` and falls through the `ID_LIKE` chain, so
 derivatives resolve to their parent family with no extra code. Override with

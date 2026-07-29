@@ -4,6 +4,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.31.0] — RHEL family: detection and package audit
+
+fettle raised `UnknownDistro` on RHEL, so nothing ran there. New `rhel` backend covering
+**RHEL, CentOS Stream, Rocky, AlmaLinux and Oracle Linux**.
+
+- Registering the backend is what unlocks the work: `PackageBackend` already returns the
+  six distro-agnostic supply-chain providers, so `pkg-audit` covers flatpak, snap,
+  containers, GNOME/VS Code/gh extensions on RHEL with **no RPM-specific code**. podman
+  is RHEL's default runtime and the container provider already prefers docker then it.
+- **Audit only, deliberately.** `supported` claims `pkg_audit`, `hardening_audit` and
+  `container_update` and nothing else, so the maintenance actions report as unsupported
+  rather than half-working. `PackageBackend` has no abstract methods, so this is the
+  intended way to advertise partial capability.
+- **Every ID is registered explicitly** rather than relying on `ID_LIKE`: RHEL 9/10
+  carry only `ID_LIKE="fedora"`, and the clones spell theirs differently between
+  releases. Fedora is *not* claimed — its advisories are Bodhi `FEDORA-*`, not `RHSA-*`.
+- **The action-registry cross-check now derives its backend list from the registry.** It
+  hardcoded Arch and Debian, so it silently stopped covering the new backend the moment
+  it was added — a typo in `RhelBackend.supported` would not have been caught. A fourth
+  backend is now covered automatically.
+- Help text: `--help` distro tags are auto-derived, so actions RHEL cannot do now
+  correctly read `[arch/debian]`. `.rpmnew` added to the config-drift description, and
+  `dnf install checksec` to the hardening hint.
+
 ## [0.30.0] — advisory-check: Rust crates (crates.io)
 
 `cargo install`ed crates are compiled from source into `~/.cargo/bin`: unsigned, never

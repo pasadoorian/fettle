@@ -52,3 +52,54 @@ def test_bad_override_raises():
 def test_missing_os_release_raises(tmp_path):
     with pytest.raises(UnknownDistro):
         detect(tmp_path)
+
+
+# -- the enterprise RPM family ----------------------------------------------
+# Each ID is registered explicitly rather than leaning on ID_LIKE. topgrade reaches
+# Rocky/Alma only via an ID_LIKE token, which breaks the moment a release spells its
+# ID_LIKE differently — and RHEL itself carries only ID_LIKE="fedora", which we do
+# NOT register (Fedora's advisories are Bodhi FEDORA-*, not RHSA).
+@pytest.mark.parametrize("osr", [
+    'ID="rhel"\nID_LIKE="fedora"\nVERSION_ID="10.1"\n',      # RHEL 10
+    'ID="rhel"\nID_LIKE="fedora"\nVERSION_ID="9.4"\n',       # RHEL 9
+    'ID="centos"\nID_LIKE="rhel fedora"\n',                  # CentOS Stream
+    'ID="rocky"\nID_LIKE="rhel centos fedora"\n',            # Rocky
+    'ID="almalinux"\nID_LIKE="rhel centos fedora"\n',        # Alma
+    'ID="ol"\nID_LIKE="fedora"\n',                           # Oracle Linux
+])
+def test_detect_rhel_family(tmp_path, osr):
+    from fettle.backends.rhel import RhelBackend
+    _write_osr(tmp_path, osr)
+    assert isinstance(detect(tmp_path), RhelBackend)
+
+
+def test_rhel_id_alone_is_enough_without_id_like(tmp_path):
+    """A derivative that drops ID_LIKE entirely must still resolve."""
+    from fettle.backends.rhel import RhelBackend
+    _write_osr(tmp_path, 'ID="rocky"\n')
+    assert isinstance(detect(tmp_path), RhelBackend)
+
+
+def test_fedora_is_not_claimed(tmp_path):
+    """Deliberate: Fedora shares dnf but its advisories are Bodhi FEDORA-*, not
+    RHSA, so claiming it would make the advisory provider approximate."""
+    _write_osr(tmp_path, 'ID="fedora"\nVERSION_ID="41"\n')
+    with pytest.raises(UnknownDistro):
+        detect(tmp_path)
+
+
+def test_rhel_backend_claims_only_implemented_actions():
+    """Audit-first: the maintenance actions are NOT claimed, so actions.run reports
+    them unsupported rather than raising NotImplementedError at the user."""
+    from fettle.backends.rhel import RhelBackend
+    assert RhelBackend.supported == {"pkg_audit", "hardening_audit", "container_update"}
+    for absent in ("update", "clean", "orphans", "kernel", "aur_audit"):
+        assert absent not in RhelBackend.supported
+
+
+def test_rhel_inherits_the_distro_agnostic_providers():
+    """Registering the backend is what unlocks pkg-audit on RHEL — the six shared
+    providers come from the base class with no RPM-specific code."""
+    from fettle.backends.rhel import RhelBackend
+    names = {p.source for p in RhelBackend().supply_chain_sources()}
+    assert {"flatpak", "snap", "container", "gnome", "vscode", "gh"} <= names

@@ -6,13 +6,17 @@ backend's `supported` set. This is the guard for the Phase 6 key rename.
 """
 
 from fettle.actions import HANDLERS, TITLES
-from fettle.backends.arch import ArchBackend
 from fettle.backends.base import ALL_ACTIONS
-from fettle.backends.debian import DebianBackend
 from fettle.cli import ACTION_NAMES, REMOTE_DEFAULT_ACTIONS
 from fettle.config import DEFAULT_ACTIONS
+from fettle.distro import _REGISTRY
 
-_BACKEND_SUPPORT = ArchBackend.supported | DebianBackend.supported
+# Derived from the registry, not a hardcoded list of backend classes: a hardcoded
+# pair silently stopped covering the RHEL backend the moment it was added, so a typo
+# in its `supported` set would not have been caught. Every registered backend is
+# checked, and a fourth is covered automatically.
+_BACKENDS = sorted(set(_REGISTRY.values()), key=lambda c: c.name)
+_BACKEND_SUPPORT = set().union(*(b.supported for b in _BACKENDS))
 # Names retired in the Phase 6 rework — must not linger anywhere.
 _RETIRED = {"rebuilds", "python_rebuild", "firmware", "kernels",
             "integrity", "source_audit"}
@@ -33,7 +37,7 @@ def test_every_action_is_supported_by_some_backend():
 
 
 def test_backend_support_sets_only_name_real_actions():
-    for backend in (ArchBackend, DebianBackend):
+    for backend in _BACKENDS:
         stray = backend.supported - ACTION_NAMES
         assert not stray, f"{backend.name} lists unknown actions: {stray}"
 

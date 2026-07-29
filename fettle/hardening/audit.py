@@ -18,7 +18,8 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     out = ctx.output
     if not command.which("checksec"):
         out.note("checksec not found (install it: pacman -S checksec / "
-                 "apt install checksec); skipping hardening audit.")
+                 "apt install checksec / dnf install checksec); "
+                 "skipping hardening audit.")
         return Result()
 
     base = bl.resolve(backend.name, root=ctx.root)

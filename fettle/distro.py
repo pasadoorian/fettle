@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from .backends.arch import ArchBackend
 from .backends.debian import DebianBackend
+from .backends.rhel import RhelBackend
 
 if TYPE_CHECKING:
     from .backends.base import PackageBackend
@@ -25,6 +26,16 @@ _REGISTRY: dict[str, type] = {
     "ubuntu": DebianBackend,
     "linuxmint": DebianBackend,
     "pop": DebianBackend,
+    # Enterprise RPM family. Each ID is listed explicitly rather than relying on
+    # ID_LIKE: RHEL 9/10 carry only `ID_LIKE="fedora"`, and Rocky/Alma spell their
+    # ID_LIKE differently between releases, so ID_LIKE alone routes some of these to
+    # the wrong place (or nowhere). Fedora itself is deliberately absent — see
+    # backends/rhel.py.
+    "rhel": RhelBackend,
+    "centos": RhelBackend,
+    "rocky": RhelBackend,
+    "almalinux": RhelBackend,
+    "ol": RhelBackend,
 }
 
 
