@@ -4,6 +4,40 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.39.0] — `fettle -u` upgrades a RHEL box
+
+The headline action finally works on the RHEL family: `update` runs
+`dnf upgrade --refresh`, which expires the metadata cache first and so is the
+equivalent of Debian's `apt-get update && apt-get full-upgrade` in one command. Without
+`--yes`, dnf shows its own transaction table and prompts — the same deal apt gets.
+flatpak and snap are updated too when present, gated on `command.which` exactly as on
+Debian.
+
+- **An upgrade from a `gpgcheck=0` repository asks one extra time**, naming the
+  repositories. This is not hypothetical: all three enabled CentOS Stream repos on the
+  test box ship `gpgcheck=0`, so a bare `fettle -u` there would install ~340 packages
+  without verifying a single signature.
+  - The gate **reuses the pkg-audit provider** rather than re-parsing
+    `/etc/yum.repos.d`, so the gate and the audit cannot disagree — and an *absent*
+    `gpgcheck` correctly inherits `[main]` from `dnf.conf` instead of being read as
+    disabled, which would fire on essentially every RHEL box.
+  - Disabled repositories do not trip it; they install nothing today.
+  - It **fails safe**, unlike the advisory gate which deliberately fails open. An
+    unpatched CVE is a pre-existing condition that blocking does not fix — refusing to
+    upgrade leaves you unpatched. `gpgcheck=0` is the reverse: the upgrade itself is the
+    delivery mechanism, so no readable stdin means "do not install unverified packages".
+  - `--yes` proceeds, loudly, and records it in the summary. Automation is never
+    silently blocked, nor silently allowed.
+  - Under `--dry-run` it warns without blocking, since blocking there would only hide
+    the command the user asked to preview.
+- `update` also refuses on an image-based host, for the reason in 0.38.1.
+- README: RHEL is no longer described as audit-only, and `--full-preview` is documented.
+
+Verified live: a real `-u --yes` upgrade in both an AlmaLinux (dnf4) and a Fedora (dnf5)
+container through the same code path; the gate blocking and then proceeding under
+`--yes` in a container with `gpgcheck` flipped; and the gate firing for real on the RHEL
+10.1 VM under `--dry-run`, which changed nothing.
+
 ## [0.38.1] — refuse to preview a dnf upgrade on an image-based host
 
 On an ostree-based system (rpm-ostree, Fedora Silverblue, RHEL Image Mode / bootc) dnf

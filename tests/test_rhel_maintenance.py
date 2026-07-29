@@ -405,6 +405,156 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- update + the unsigned-repo gate -----------------------------------------
+# Real /etc/yum.repos.d content from the RHEL 10.1 box: all enabled CentOS Stream repos
+# ship gpgcheck=0, so a `fettle -u` there would install ~341 packages unverified. The
+# EPEL entry is signed, and epel-source is disabled — neither should trip the gate.
+_REPOS = """\
+[centos-stream-baseos]
+name=CentOS Stream 10 - BaseOS
+baseurl=https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/
+gpgcheck=0
+enabled=1
+
+[centos-stream-appstream]
+name=CentOS Stream 10 - AppStream
+baseurl=https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/
+gpgcheck=0
+enabled=1
+
+[epel]
+name=EPEL $releasever
+metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-$releasever
+gpgcheck=1
+enabled=1
+
+[old-unsigned]
+name=disabled and unsigned
+baseurl=https://vendor.example/rpm/
+gpgcheck=0
+enabled=0
+"""
+
+
+def _repo_root(tmp_path, repos=_REPOS, dnf_conf="[main]\ngpgcheck=1\n"):
+    d = tmp_path / "etc/yum.repos.d"
+    d.mkdir(parents=True)
+    (d / "test.repo").write_text(repos)
+    c = tmp_path / "etc/dnf"
+    c.mkdir(parents=True)
+    (c / "dnf.conf").write_text(dnf_conf)
+    return tmp_path
+
+
+def _update(ctx, responses=None):
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake(responses or {}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        result = RhelBackend().update_system(ctx)
+    return result, [c for c, _ in calls]
+
+
+def test_update_refreshes_metadata_in_the_same_command(tmp_path):
+    """`--refresh` makes this the equivalent of apt-get update && full-upgrade."""
+    _, argvs = _update(_ctx(assume_yes=True, root=_repo_root(tmp_path, repos="")))
+    assert ["dnf", "upgrade", "--refresh", "-y"] in argvs
+
+
+def test_without_yes_dnf_does_its_own_prompting(tmp_path):
+    _, argvs = _update(_ctx(root=_repo_root(tmp_path, repos="")))
+    assert ["dnf", "upgrade", "--refresh"] in argvs
+    assert not any("-y" in a for a in argvs)
+
+
+def test_unsigned_repos_block_the_upgrade_when_the_answer_is_no(tmp_path):
+    """gpgcheck=0 means the upgrade itself delivers unverified code."""
+    ctx = _ctx(root=_repo_root(tmp_path))
+    with patch("fettle.backends.base.Context.confirm", return_value=False):
+        result, argvs = _update(ctx)
+    assert result.ok is False
+    assert not any(a[:2] == ["dnf", "upgrade"] for a in argvs)
+
+
+def test_unsigned_repos_are_named_and_the_upgrade_proceeds_on_yes(tmp_path, capsys):
+    ctx = _ctx(root=_repo_root(tmp_path))
+    with patch("fettle.backends.base.Context.confirm", return_value=True):
+        _, argvs = _update(ctx)
+    cap = capsys.readouterr()          # one read — a second returns an empty buffer
+    shown = cap.out + cap.err
+    assert "centos-stream-baseos" in shown and "centos-stream-appstream" in shown
+    assert any(a[:2] == ["dnf", "upgrade"] for a in argvs)
+
+
+def test_signed_and_disabled_repos_do_not_trip_the_gate(tmp_path):
+    """EPEL is signed; old-unsigned is disabled and installs nothing today. A gate that
+    fires on either would be ignored within a week."""
+    assert RhelBackend()._unsigned_repos(_ctx(root=_repo_root(tmp_path))) == [
+        "centos-stream-appstream", "centos-stream-baseos"]
+
+
+def test_an_absent_gpgcheck_inherits_dnf_conf_and_does_not_trip_the_gate(tmp_path):
+    """dnf.conf ships gpgcheck=1, so a repo omitting the key is fine. Treating absence
+    as disabled would fire the gate on essentially every RHEL box."""
+    repos = "[r]\nname=r\nbaseurl=https://mirror.stream.centos.org/x/\nenabled=1\n"
+    assert RhelBackend()._unsigned_repos(_ctx(root=_repo_root(tmp_path, repos))) == []
+
+
+def test_yes_proceeds_past_the_gate_but_says_so(tmp_path, capsys):
+    """Automation must not be silently blocked — nor silently allowed."""
+    result, argvs = _update(_ctx(assume_yes=True, root=_repo_root(tmp_path)))
+    assert result.ok and any(a[:2] == ["dnf", "upgrade"] for a in argvs)
+    assert "--yes" in capsys.readouterr().err
+
+
+def test_dry_run_warns_but_still_shows_the_command(tmp_path, capsys):
+    """ctx.confirm returns False under --dry-run, so a naive gate would swallow the very
+    command the user asked to preview."""
+    result, _ = _update(_ctx(dry_run=True, root=_repo_root(tmp_path)))
+    combined = capsys.readouterr()
+    assert result.ok
+    assert "would run: dnf upgrade --refresh" in combined.out + combined.err
+
+
+def test_an_unreadable_repo_tree_does_not_block_the_upgrade(tmp_path):
+    """Best-effort, like the advisory gate: a broken audit path must not stop
+    maintenance."""
+    assert RhelBackend()._unsigned_repos(_ctx(root=tmp_path / "nope")) == []
+
+
+def test_update_refuses_on_an_image_based_host(tmp_path):
+    root = _repo_root(tmp_path, repos="")
+    (root / "run").mkdir()
+    (root / "run/ostree-booted").touch()
+    result, argvs = _update(_ctx(assume_yes=True, root=root))
+    assert result.ok is False
+    assert not any(a[:2] == ["dnf", "upgrade"] for a in argvs)
+
+
+def test_system_updater_none_skips_the_upgrade(tmp_path):
+    cfg = Config()
+    cfg.updaters = {"rhel": {"system_updater": "none"}}
+    _, argvs = _update(_ctx(cfg, assume_yes=True, root=_repo_root(tmp_path, repos="")))
+    assert not any(a[:2] == ["dnf", "upgrade"] for a in argvs)
+
+
+def test_update_extras_covers_flatpak_and_snap():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        RhelBackend().update_extras(_ctx(assume_yes=True))
+    argvs = [c for c, _ in calls]
+    assert ["flatpak", "update", "-y"] in argvs
+    assert ["snap", "refresh"] in argvs
+
+
+def test_update_extras_skips_absent_tools():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=False):
+        RhelBackend().update_extras(_ctx(assume_yes=True))
+    assert calls == []
+
+
 # -- refresh_metadata --------------------------------------------------------
 def test_refresh_runs_makecache_and_flatpak_appstream():
     _, argvs = _run({}, method="refresh_metadata")

@@ -87,13 +87,29 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 |---|---|---|---|
 | Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | `arch`, `manjaro`, `endeavouros`, … |
 | Debian / Ubuntu | `debian` | apt/nala + flatpak + snap | `debian`, `ubuntu`, `linuxmint`, `pop`, … |
-| RHEL family *(audit only)* | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
+| RHEL family *(partial)* | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
 
-**RHEL support is currently the security half only** — `pkg-audit`, `hardening-audit`
-and `container-update` work; the maintenance actions (update, clean, orphans, kernels,
-config drift) are not yet implemented and are reported as unsupported rather than
-silently skipped. Fedora is deliberately not claimed: it shares dnf, but its advisories
-come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`.
+**RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
+`advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
+integrity check. Not yet built: `clean`, `orphans`, `kernel`, `config-drift`,
+`auto-updates` and `rebuild-check` — those are reported as unsupported rather than
+silently skipped. Fedora is deliberately not claimed as a distro: it shares dnf, but its
+advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
+still works there, and is how the dnf5 code path is tested).
+
+Two RHEL-specific things worth knowing:
+
+- **`-u --dry-run` shows upgrades only.** dnf has no rootless equivalent of
+  `apt-get -s` — `dnf upgrade --assumeno` resolves the complete transaction but refuses
+  to run without root. The preview says so rather than passing a partial answer off as
+  a complete one; add **`--full-preview`** to elevate and see new dependencies and
+  removals too.
+- **An upgrade from a repository with `gpgcheck=0` asks one extra time.** Those packages
+  are installed without verifying their signature. `--yes` proceeds, loudly.
+
+On an **image-based** host (rpm-ostree, Fedora Silverblue, RHEL Image Mode / bootc)
+fettle refuses to dnf-upgrade at all and points at `bootc upgrade` / `rpm-ostree
+upgrade`, because a dnf transaction there does not survive a reboot.
 
 Detection reads `/etc/os-release` and falls through the `ID_LIKE` chain, so
 derivatives resolve to their parent family with no extra code. Override with
@@ -936,6 +952,14 @@ and preview against the cached data (faster; may be stale). AUR `-git`/`-devel`
 packages that rebuild from source may not show a version bump until yay fetches
 them — noted in the output.
 
+On the **RHEL family** the preview is deliberately partial by default, and says so:
+dnf's full resolver (`dnf upgrade --assumeno`) refuses to run without root, and there
+is no rootless `apt-get -s` equivalent, so a plain `--dry-run` lists upgrades and
+reports that new dependencies and removals are missing. `--full-preview` elevates to
+resolve the real transaction — on a live RHEL 10.1 box that is 345 packages against the
+337 the rootless query can see. `-O` already runs as root, so it gets the complete set
+without the flag.
+
 ## Common options
 
 | Option | Effect |
@@ -943,6 +967,7 @@ them — noted in the output.
 | `-a`, `--all` | run the default action set |
 | `--dry-run` | print what would run; execute nothing (read-only queries still run) |
 | `--no-sync` | dry-run preview: use cached repo data instead of a fresh sync |
+| `--full-preview` | with `--dry-run`: elevate so the preview resolves new deps + removals *(rhel)* |
 | `--only ACTION` / `--skip ACTION` | restrict / exclude actions (repeatable) |
 | `--yes` | assume yes to all prompts (non-interactive) |
 | `--no-aur-precheck` | skip the pre-upgrade AUR IoC gate *(arch)* |

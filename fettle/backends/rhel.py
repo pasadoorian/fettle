@@ -223,6 +223,7 @@ class RhelBackend(PackageBackend):
         "hardening_audit",   # checksec-driven; distro-neutral apart from the baseline
         "container_update",  # podman/docker, backend-independent
         "only_update",       # dnf makecache + report upgradable (no upgrade)
+        "update",            # dnf upgrade --refresh (+ flatpak/snap when present)
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -410,6 +411,102 @@ class RhelBackend(PackageBackend):
                          "rootless query — a subscribed RHEL host may have more updates "
                          "than shown")
         return Transaction(items=items, ok=True, notes=notes)
+
+    # -- update --------------------------------------------------------------
+    def _unsigned_repos(self, ctx: Context) -> list[str]:
+        """Enabled repositories that install packages without checking signatures.
+
+        Reuses the pkg-audit provider instead of re-parsing ``/etc/yum.repos.d``, so the
+        gate and the audit can never disagree — and the provider already resolves an
+        *absent* ``gpgcheck`` against ``[main]`` in ``dnf.conf``, which is the part that
+        is easy to get wrong (treating absence as disabled flags every repo on every
+        box). ``Severity.WARN`` is what marks a finding as an *enabled* repo; the
+        provider reports disabled ones at LOW, and those install nothing today.
+        """
+        try:
+            from ..supplychain.base import INSECURE_TRANSPORT, Severity
+            from ..supplychain.dnf_source import DnfSource
+            src = DnfSource()
+            if not src.is_present(ctx):
+                return []
+            return sorted({f.package for f in src.findings(ctx)
+                           if f.question == INSECURE_TRANSPORT
+                           and "gpgcheck=0" in f.detail
+                           and f.severity == Severity.WARN})
+        except Exception:      # never let the audit path break a routine upgrade
+            return []
+
+    def _signature_gate(self, ctx: Context) -> bool:
+        """Ask before installing packages whose signatures nobody checked.
+
+        Returns ``False`` only to abort. Note the deliberate asymmetry with
+        :func:`~fettle.advisories.check.security_gate`, which fails *open*: an unpatched
+        CVE is a pre-existing condition that blocking does not fix — refusing to upgrade
+        leaves you unpatched, which is worse. ``gpgcheck=0`` is the opposite: the
+        upgrade itself is the delivery mechanism, so an unreadable stdin defaults to
+        *not* installing unverified packages.
+        """
+        repos = self._unsigned_repos(ctx)
+        if not repos:
+            return True
+        out = ctx.output
+        out.warn(f"{len(repos)} enabled repositor{'y' if len(repos) == 1 else 'ies'} "
+                 "install packages WITHOUT verifying their signature (gpgcheck=0):")
+        for repo in repos:
+            print(f"    {repo}")
+        if ctx.dry_run:
+            # Nothing is installed in a dry run, so warning is right and blocking would
+            # only hide the command the user asked to preview.
+            out.note("a real upgrade would ask for confirmation before using these.")
+            return True
+        if ctx.assume_yes:
+            # Never silently block automation — and never let it pass unremarked.
+            out.warn("proceeding anyway (--yes): these packages are unverified.")
+            out.summary_add(f"upgraded from {len(repos)} unsigned repo(s)")
+            return True
+        return ctx.confirm("upgrade from these unverified repositories anyway?",
+                           default=False)
+
+    def update_system(self, ctx: Context) -> Result:
+        out = ctx.output
+        if _image_based(ctx):
+            out.warn("this host booted from an ostree image — dnf cannot upgrade it; "
+                     "the changes would not survive a reboot.")
+            out.next_step(f"update the image instead: {_image_update_command()}")
+            out.summary_add("update skipped: image-based host")
+            return Result(ok=False, summary="image-based host")
+        system, _, _ = self._updaters(ctx)
+        if system == "none":
+            out.note("skipping repo update (system_updater: none).")
+            return Result()
+        if not self._signature_gate(ctx):
+            out.warn("upgrade skipped — set gpgcheck=1 on the repositories above "
+                     "(or import their keys) first.")
+            return Result(ok=False, summary="upgrade skipped (unsigned repos)")
+        out.note("applying upgrades (dnf)...")
+        # `--refresh` expires the metadata cache first, making this the equivalent of
+        # Debian's `apt-get update && apt-get full-upgrade` in one command. Without -y,
+        # dnf shows its own transaction table and prompts — the same deal apt gets.
+        argv = ["dnf", "upgrade", "--refresh"]
+        if ctx.assume_yes:
+            argv.append("-y")
+        ctx.execute(argv)
+        return Result()
+
+    def update_extras(self, ctx: Context) -> Result:
+        out = ctx.output
+        _, flatpak, snap = self._updaters(ctx)
+        did = ["dnf"]
+        if flatpak != "none" and command.which("flatpak"):
+            out.note("updating flatpaks...")
+            ctx.execute(["flatpak", "update", "-y"])
+            did.append("flatpak")
+        if snap != "none" and command.which("snap"):
+            out.note("refreshing snaps...")
+            ctx.execute(["snap", "refresh"])
+            did.append("snap")
+        out.summary_add(f"packages updated ({', '.join(did)})")
+        return Result()
 
     def verify_integrity(self, scan) -> None:
         """sys-audit's ``packages`` check — the RPM analogue of debsums/paccheck.
