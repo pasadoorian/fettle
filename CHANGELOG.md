@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.33.0] — advisory-check: dnf5 support
+
+The RHEL provider parsed **dnf4 output only**, and dnf5's is a completely different
+shape. Worse, dnf5 keeps `updateinfo` as an alias for `advisory`, so the dnf4 command
+*succeeds* there and simply returns something the regex cannot match: 19 real
+advisories read as **zero, silently** — and the blind-spot check would then announce
+that the repositories publish no security errata, which on a dnf5 system is flatly
+wrong. Latent on RHEL 10.1 (dnf 4.20) but waiting for RHEL 11 / Rocky 11.
+
+- Version-gated on `dnf --version` containing the literal `dnf5`, **not** a path
+  check: on a dnf5 system dnf5 *is* `/usr/bin/dnf`, while on RHEL 10.1 that path is a
+  symlink to `dnf-3`.
+- dnf5 uses `advisory list --json` and `advisory info --json` — structured output, no
+  text parsing at all.
+- **`--with-cve` is not used on either version, for opposite reasons.** On dnf4 it
+  emits three rows per advisory (upstream RHSA, the CVE, the distro's own id); on dnf5
+  it is a *filter* that drops every advisory without a `cve` reference — which on
+  Fedora is all of them.
+- CVEs come from structured `references` of type `cve`, falling back to scanning
+  reference titles and the description. That fallback carries real weight: on Fedora
+  **0 of 20** references were type `cve` (all bugzilla), yet 7 of 8 advisories named
+  their CVE in a title or description.
+
+Verified against both real systems: Fedora 44 / dnf5 5.4.2.1 → 19 findings with CVEs
+and versions (0 before); AlmaLinux 10 / dnf 4.20 → 19 findings, unchanged.
+
 ## [0.32.2] — fix: the container audit found nothing on podman
 
 **0.32.1 claimed podman compatibility and was wrong.** That claim rested on podman's

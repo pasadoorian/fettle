@@ -12,10 +12,15 @@ transfer. OSV is likewise avoided here: it carries a ``Red Hat`` ecosystem, but 
 returned 550 records for a single kernel version because it includes RHBA/RHEA bug and
 enhancement advisories — it would duplicate dnf, more noisily.
 
-**dnf4 only.** RHEL 10.1 ships dnf 4.20 with no dnf5 available at all, so the dnf5
-``advisory list --json`` path is unreachable on the platform this targets and is
-deliberately not written. When a dnf5 system shows up, add a version-gated branch —
-``dnf --version`` output containing the literal ``dnf5`` is the discriminator.
+**Both dnf4 and dnf5.** RHEL 10.1 ships dnf 4.20; Fedora 44 and future RHEL ship
+dnf5, whose output is a completely different shape. The two are gated on
+``dnf --version`` containing the literal ``dnf5`` — not on a path check, since on a
+dnf5 system dnf5 *is* ``/usr/bin/dnf`` while on RHEL 10.1 that path is a symlink to
+``dnf-3``. This matters more than a normal compatibility branch: dnf5 keeps
+``updateinfo`` as an alias for ``advisory``, so the dnf4 command **succeeds** there
+and merely returns an unparseable shape — 19 real advisories read as zero, and the
+blind-spot warning below would then wrongly announce that the repos publish no
+errata.
 
 **The blind spot this provider exists to name.** `updateinfo` only knows advisories a
 repository publishes, and CentOS Stream publishes none. A real RHEL 10.1 box was
@@ -63,6 +68,72 @@ _SEVERITY = {"critical": "Critical", "important": "High",
              "moderate": "Medium", "low": "Low", "none": "Unknown"}
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}")
+
+
+def is_dnf5() -> bool:
+    """True when ``dnf`` is dnf5.
+
+    Detected from ``dnf --version`` output containing the literal ``dnf5``
+    (``dnf5 version 5.4.2.1``), **not** from a path check: on a dnf5 system dnf5 *is*
+    ``/usr/bin/dnf``, and on RHEL 10.1 ``/usr/bin/dnf`` is a symlink to ``dnf-3``.
+    """
+    proc = command.run(["dnf", "--version"], capture=True)
+    return "dnf5" in (proc.stdout + proc.stderr).lower()
+
+
+def parse_list_json(stdout: str) -> list[tuple[str, str, str]]:
+    """``[(advisory, severity, nevra), …]`` from dnf5 ``advisory list --json``.
+
+    Entries look like ``{"name": "FEDORA-…", "type": "security", "severity":
+    "Important", "nevra": "libacl-2.4.0-1.fc44.x86_64", "buildtime": …}``.
+    """
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return []
+    out = []
+    for e in data if isinstance(data, list) else []:
+        if not isinstance(e, dict):
+            continue
+        name, nevra = str(e.get("name") or ""), str(e.get("nevra") or "")
+        if name and nevra:
+            out.append((name, str(e.get("severity") or ""), nevra))
+    return out
+
+
+def parse_info_json(stdout: str) -> dict[str, dict]:
+    """``{advisory: {"cves": [...], "severity": str}}`` from dnf5 ``advisory info
+    --json``.
+
+    CVEs are taken from structured ``references`` of type ``cve`` when present, and
+    otherwise recovered by scanning reference titles and the description. That
+    fallback is not belt-and-braces — on Fedora **every** reference is a ``bugzilla``
+    and none is a ``cve``, yet 7 of 8 advisories name their CVE in a reference title
+    or description. (It is also why ``--with-cve`` must not be used to *fetch*: on
+    dnf5 that flag is a filter, and it drops every advisory lacking a cve reference.)
+    """
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return {}
+    out: dict[str, dict] = {}
+    for e in data if isinstance(data, list) else []:
+        if not isinstance(e, dict):
+            continue
+        name = str(e.get("Name") or "")
+        if not name:
+            continue
+        refs = e.get("references") or []
+        cves = [str(r.get("Id") or "") for r in refs
+                if isinstance(r, dict) and str(r.get("Type", "")).lower() == "cve"]
+        cves = [c for c in cves if c.startswith("CVE-")]
+        if not cves:
+            haystack = " ".join([str(e.get("Description") or "")]
+                                + [str(r.get("Title") or "") for r in refs
+                                   if isinstance(r, dict)])
+            cves = list(dict.fromkeys(_CVE_RE.findall(haystack)))
+        out[name] = {"cves": cves, "severity": str(e.get("Severity") or "")}
+    return out
 
 
 def parse_list(stdout: str) -> list[tuple[str, str, str]]:
@@ -170,14 +241,39 @@ class RhelAdvisorySource(base.AdvisoryProvider):
         return bool(ids & RHEL_IDS) and command.which("dnf")
 
     # -- fetch ---------------------------------------------------------------
-    def refresh(self, conn, ctx=None) -> int:
+    def _fetch(self) -> tuple[list, dict, bool]:
+        """``(list_rows, info_by_advisory, ok)`` for whichever dnf is installed.
+
+        The two versions are **not** interchangeable. dnf5 keeps ``updateinfo`` as an
+        alias for ``advisory``, so the dnf4 command still exits 0 there — it simply
+        prints a different, table-shaped format that the dnf4 regex cannot match,
+        yielding zero rows with no error. That silent-empty result would then be
+        reported as "these repos publish no security errata", which on a dnf5 system
+        is flatly wrong.
+        """
+        if is_dnf5():
+            listing = command.run(
+                ["dnf", "advisory", "list", "--available", "--security", "--json"],
+                capture=True)
+            if listing.returncode != 0:
+                return [], {}, False
+            info = command.run(
+                ["dnf", "advisory", "info", "--available", "--security", "--json"],
+                capture=True)
+            return (parse_list_json(listing.stdout),
+                    parse_info_json(info.stdout) if info.returncode == 0 else {}, True)
+
         listing = command.run(["dnf", "updateinfo", "list", "--security"], capture=True)
         if listing.returncode != 0:
-            return -1
-        rows_in = parse_list(listing.stdout)
-
+            return [], {}, False
         info = command.run(["dnf", "updateinfo", "info", "--security"], capture=True)
-        details = parse_info(info.stdout) if info.returncode == 0 else {}
+        return (parse_list(listing.stdout),
+                parse_info(info.stdout) if info.returncode == 0 else {}, True)
+
+    def refresh(self, conn, ctx=None) -> int:
+        rows_in, details, ok = self._fetch()
+        if not ok:
+            return -1
 
         installed = installed_versions()
         rows = []
