@@ -4,6 +4,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.35.0] — pkg-audit: DNF/YUM repository provenance
+
+New `dnf` provider for the RHEL family, the RPM analogue of the existing APT one.
+Every package on the system comes from a repository in `/etc/yum.repos.d`, and three
+properties of that list decide whether "installed from the distro" means anything.
+
+- **`gpgcheck=0` → `INSECURE_TRANSPORT` (WARN)** — packages installed without
+  verifying their signature. Matches how the APT provider treats `[trusted=yes]`, so
+  the same weakness reads the same on either family.
+- Plain-`http` URLs → `INSECURE_TRANSPORT`; repositories outside the distro vendors →
+  `UNOFFICIAL_SOURCE` (EPEL counts, exactly as a Launchpad PPA does on Ubuntu).
+- A `.repo` file that cannot be parsed is reported as `UNVERIFIABLE`, not skipped.
+- Disabled repositories are reported at a lower severity rather than hidden — inert
+  today, a landmine if switched on — and are not counted as package *sources*.
+
+Two things measured on real systems rather than assumed:
+
+- **`gpgcheck` is resolved, not read.** An absent key inherits `[main]` from
+  `/etc/dnf/dnf.conf`, which ships as `gpgcheck=1`. Treating absence as "disabled"
+  would have flagged nearly every repo on every box. A missing dnf.conf also assumes
+  checking is *on*, since that is dnf's own default — never assume a system is less
+  safe than it is.
+- **`repo_gpgcheck=0` is deliberately not reported.** Metadata signing is rarely
+  deployed on RPM systems — EPEL itself ships `repo_gpgcheck=0` — so it would be a
+  finding that is true, universal and useless. `coverage` states that only package
+  signing is assessed.
+
+Reads `/etc/yum.repos.d` through `ctx.root` rather than shelling out to `dnf
+repolist`, matching `apt_source`: testable under a fake root, needs no dnf, and
+reports what is *configured* rather than what dnf could reach today. `configparser`
+runs with interpolation disabled, since real files carry `$releasever`/`$basearch`.
+
+Verified live: a RHEL 10.1 box reports **3 enabled repositories with `gpgcheck=0`**
+plus EPEL as third-party; a stock AlmaLinux 10 reports **zero**.
+
 ## [0.34.1] — say which actions a backend cannot run
 
 `fettle -a` silently dropped actions the detected backend doesn't implement. That was

@@ -289,6 +289,8 @@ normalized `Finding` format with one severity language:
 - **Flatpak**: non-flathub origin, broad sandbox permissions (host/home
   filesystem, `devices=all`), http remotes.
 - **Snap**: sideloaded / unverified publisher, `classic`/`devmode` confinement.
+- **DNF/YUM repos** (RHEL family): `gpgcheck=0` (signatures not verified), plain-http
+  URLs, third-party repositories.
 - **Containers** (docker/podman): images pulled by the mutable `:latest` tag, image
   **age**, registry provenance, dangling images.
 - **GNOME Shell extensions**: which extensions are **attributable** to a package vs

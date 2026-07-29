@@ -60,6 +60,10 @@ class RhelBackend(PackageBackend):
     # (secure/audit.py), so adding it would name an action that does not exist —
     # which is exactly what the action-registry cross-check flagged.
 
+    def supply_chain_sources(self):
+        from ..supplychain.dnf_source import DnfSource
+        return [DnfSource(), *super().supply_chain_sources()]
+
     def verify_integrity(self, scan) -> None:
         """sys-audit's ``packages`` check — the RPM analogue of debsums/paccheck.
 
