@@ -4,6 +4,23 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.38.1] — refuse to preview a dnf upgrade on an image-based host
+
+On an ostree-based system (rpm-ostree, Fedora Silverblue, RHEL Image Mode / bootc) dnf
+will happily *list* pending upgrades, and that list is a lie: applying it writes into a
+deployment the next boot discards. `-O` and `-u --dry-run` now report that the host
+cannot be upgraded this way and name `bootc upgrade` / `rpm-ostree upgrade` instead.
+
+- **The marker is `/run/ostree-booted`, not the presence of a binary.** `rpm-ostree` and
+  `bootc` can both be installed on an ordinary RHEL box, and refusing to upgrade a
+  perfectly normal machine would be a worse failure than the one being guarded against.
+  The file exists only when the running system actually booted from an ostree deployment,
+  which covers bootc too since bootc images are ostree-based.
+- The suggested command comes from what is installed, and **`rpm-ostree` is suggested
+  without `sudo`** — it authenticates through polkit over D-Bus, unlike `bootc`.
+- Verified on the same AlmaLinux container image with and without the marker: 17 pending
+  upgrades in one case, the refusal in the other.
+
 ## [0.38.0] — RHEL: `--full-preview` resolves the real transaction
 
 `-u --dry-run` on the RHEL family could only list upgrades, because dnf has no

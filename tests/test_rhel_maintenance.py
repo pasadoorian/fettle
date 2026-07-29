@@ -361,6 +361,50 @@ def test_without_root_the_full_resolver_is_never_invoked():
     assert not any(a[:2] == ["dnf", "upgrade"] for a in argvs)
 
 
+# -- image-based (ostree / bootc) hosts --------------------------------------
+def _ostree(tmp_path):
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run/ostree-booted").touch()
+    return tmp_path
+
+
+def test_an_ostree_host_is_refused_not_previewed(tmp_path):
+    """dnf will happily *list* upgrades on an image-based host, and that list is a lie:
+    applying it writes into a deployment the next boot discards."""
+    tx, argvs = _run({("dnf", "check-update"): (100, _CU), ("rpm", "-qa"): _RPM},
+                     method="pending_transaction", ctx=_ctx(root=_ostree(tmp_path)))
+    assert tx.ok is False
+    assert any("ostree image" in n for n in tx.notes)
+    assert not any(a[:1] == ["dnf"] for a in argvs)  # dnf is not even consulted
+
+
+def test_the_refusal_names_the_command_that_works(tmp_path):
+    tx, _ = _run({}, method="pending_transaction", ctx=_ctx(root=_ostree(tmp_path)))
+    assert any("bootc upgrade" in n or "rpm-ostree upgrade" in n for n in tx.notes)
+
+
+def test_a_normal_host_with_bootc_installed_is_not_refused(tmp_path):
+    """The binary being present proves nothing — bootc and rpm-ostree can both be
+    installed on an ordinary RHEL box. Refusing to upgrade one of those would be a
+    worse failure than the one this guards against, so the marker is the boot state."""
+    (tmp_path / "run").mkdir()  # no ostree-booted marker
+    tx, _ = _run({("dnf", "check-update"): (100, _CU), ("rpm", "-qa"): _RPM},
+                 method="pending_transaction", ctx=_ctx(root=tmp_path))
+    assert tx.ok is True and tx.items
+
+
+def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
+    """rpm-ostree authenticates through polkit over D-Bus and does not want sudo;
+    bootc does. Telling someone to sudo rpm-ostree teaches the wrong habit."""
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", side_effect=lambda t: t != "bootc"), \
+         patch("fettle.backends.rhel._have_root", return_value=False):
+        tx = RhelBackend().pending_transaction(_ctx(root=_ostree(tmp_path)))
+    hint = next(n for n in tx.notes if "rpm-ostree" in n)
+    assert "sudo" not in hint.split("rpm-ostree")[0]
+
+
 # -- refresh_metadata --------------------------------------------------------
 def test_refresh_runs_makecache_and_flatpak_appstream():
     _, argvs = _run({}, method="refresh_metadata")

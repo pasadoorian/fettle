@@ -86,6 +86,33 @@ def _have_root() -> bool:
     return os.geteuid() == 0
 
 
+def _image_based(ctx: Context) -> bool:
+    """Whether this host booted from an ostree image (rpm-ostree, Fedora Silverblue,
+    RHEL Image Mode / bootc) rather than from packages.
+
+    ``/run/ostree-booted`` is the marker to use because it exists only when the running
+    system *actually booted* from an ostree deployment — bootc images are ostree-based,
+    so it covers both. Testing for an ``rpm-ostree`` or ``bootc`` **binary** instead
+    would be wrong: either can be installed on an ordinary RHEL box, and refusing to
+    upgrade a perfectly normal machine is a worse failure than the one being guarded
+    against.
+    """
+    return (ctx.root / "run/ostree-booted").exists()
+
+
+def _image_update_command() -> str:
+    """The command that actually updates an image-based host.
+
+    Named from what is installed rather than assumed. ``rpm-ostree`` notably does *not*
+    want sudo — it authenticates through polkit over D-Bus — whereas ``bootc`` does.
+    """
+    if command.which("bootc"):
+        return "sudo bootc upgrade"
+    if command.which("rpm-ostree"):
+        return "rpm-ostree upgrade   (no sudo — it uses polkit)"
+    return "bootc upgrade / rpm-ostree upgrade"
+
+
 def _norm_evr(ver: str) -> str:
     """Drop a zero epoch.
 
@@ -292,6 +319,14 @@ class RhelBackend(PackageBackend):
         """
         if not command.which("dnf"):
             return Transaction(ok=False, notes=["dnf not found"])
+        if _image_based(ctx):
+            # dnf can still *list* upgrades here, and that list is a lie: applying it
+            # writes into a deployment the next boot discards. ok=False so the runner
+            # reports "could not determine" instead of an actionable-looking preview.
+            return Transaction(ok=False, notes=[
+                "this host booted from an ostree image, so dnf cannot upgrade it — "
+                "changes would not survive a reboot",
+                f"update the image instead: {_image_update_command()}"])
         if _have_root():
             return self._full_transaction(ctx, sync=sync)
         return self._partial_transaction(ctx)
