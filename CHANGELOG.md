@@ -4,6 +4,44 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.37.0] — RHEL: metadata refresh and an honest upgrade preview
+
+First slice of dnf **maintenance** support (the backend was audit-only until now):
+`fettle -O` refreshes repo metadata and reports what is upgradable. `update` itself
+is deliberately not claimed yet.
+
+- **One code path for dnf4 and dnf5.** The advisory provider needed a version gate
+  because `updateinfo` and `advisory` emit unrelated formats. The maintenance verbs
+  do not — `upgrade`, `check-update`, `makecache`, `clean` and `autoremove` were
+  measured to behave identically on dnf 4.20 (RHEL 10) and dnf5 5.4.2 (Fedora) — so
+  nothing here branches on the dnf version.
+- **`dnf check-update` exits 100 when upgrades exist.** 100 is success; 0 means
+  nothing to do. Reading it as a failure yields a silent "up to date" on a box with
+  337 pending upgrades.
+- **The preview says what it cannot see.** dnf has no rootless equivalent of
+  `apt-get -s`: `dnf upgrade --assumeno` resolves the full transaction but refuses to
+  run without root. The preview therefore lists upgrades only and states that new
+  dependencies and removals are missing, rather than letting a partial answer render
+  identically to a complete one. It also reports how many packages replace *obsoleted*
+  packages (they have no `old -> new` to show), and warns when a rootless query
+  skipped subscription-manager repositories.
+- **Parsing hazards, all measured rather than assumed:** dnf lists an obsoleting
+  package a *second* time under its obsoletes header, so `fwupd` was double-counted
+  until the parser stopped there — dnf4 spells it `Obsoleting Packages` and dnf5
+  `Obsoleting packages` (both read out of the shipped binaries). dnf5 also prefixes
+  the list with a bare `Upgrades` header that dnf4 omits, and dnf writes its "Not
+  root" notice to *stdout*, not stderr.
+- **Epochs are rendered as dnf renders them.** A bare `%{EVR}` omits the epoch, so
+  every epoch-bearing package would appear to be changing epoch (`1.54.0-1.el10` vs
+  dnf's `1:1.58~rc1-1.el10`); the rpm queryformat restores it conditionally.
+- Multilib arches stay separate: `glibc.i686` and `glibc.x86_64` are two independent
+  upgrades, and keying on the bare name reported one while dropping the other.
+- `[updaters.rhel]` accepts `system_updater` (dnf | none), `flatpak_updater` and
+  `snap_updater`, matching `[updaters.debian]`.
+- A backend claiming an action it never implemented is now caught for **every**
+  backend, replacing a hardcoded pin on RHEL's exact `supported` set that would have
+  needed editing on each wave.
+
 ## [0.36.0] — hardening-audit: a real baseline for the RHEL family
 
 `hardening-audit` ran on RHEL but scored binaries against the **generic** baseline,

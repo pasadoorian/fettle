@@ -88,12 +88,14 @@ def test_fedora_is_not_claimed(tmp_path):
         detect(tmp_path)
 
 
-def test_rhel_backend_claims_only_implemented_actions():
-    """Audit-first: the maintenance actions are NOT claimed, so actions.run reports
-    them unsupported rather than raising NotImplementedError at the user."""
+def test_rhel_backend_does_not_claim_unbuilt_actions():
+    """`supported` is a promise: an action listed here runs, one omitted is reported as
+    unsupported rather than raising NotImplementedError at the user. The maintenance
+    half is landing wave by wave, so this asserts what is *not* claimed yet — the
+    matching "everything claimed is implemented" direction is enforced for every
+    backend by test_action_registry."""
     from fettle.backends.rhel import RhelBackend
-    assert RhelBackend.supported == {"pkg_audit", "hardening_audit", "container_update"}
-    for absent in ("update", "clean", "orphans", "kernel", "aur_audit"):
+    for absent in ("orphans", "kernel", "aur_audit", "python_rebuild_check"):
         assert absent not in RhelBackend.supported
 
 

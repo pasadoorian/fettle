@@ -6,7 +6,7 @@ backend's `supported` set. This is the guard for the Phase 6 key rename.
 """
 
 from fettle.actions import HANDLERS, TITLES
-from fettle.backends.base import ALL_ACTIONS
+from fettle.backends.base import ALL_ACTIONS, PackageBackend
 from fettle.cli import ACTION_NAMES, REMOTE_DEFAULT_ACTIONS
 from fettle.config import DEFAULT_ACTIONS
 from fettle.distro import _REGISTRY
@@ -40,6 +40,43 @@ def test_backend_support_sets_only_name_real_actions():
     for backend in _BACKENDS:
         stray = backend.supported - ACTION_NAMES
         assert not stray, f"{backend.name} lists unknown actions: {stray}"
+
+
+# Actions whose implementation is a backend method (so "claimed" is checkable).
+# Provider-driven actions — pkg_audit, hardening_audit, container_update, the aur_*
+# trio — are deliberately absent: they run off supply-chain providers and shared
+# modules, not a per-backend method.
+_ACTION_METHODS = {
+    "clean": ("clean_caches",),
+    "orphans": ("check_foreign_orphans",),
+    "update": ("update_system", "update_extras"),
+    "only_update": ("refresh_metadata", "pending_transaction"),
+    "rebuild_check": ("check_rebuilds",),
+    "python_rebuild_check": ("check_python_rebuilds",),
+    "config_drift": ("check_config_drift",),
+    "auto_updates": ("check_auto_updates",),
+    "kernel": ("manage_kernels",),
+    # firmware_check is concrete on the base class (fwupd is distro-neutral), so a
+    # backend legitimately claims it without overriding anything.
+}
+
+
+def test_claimed_actions_are_actually_implemented():
+    """A backend must not advertise an action it inherited as a stub.
+
+    `supported` is how the CLI decides what to offer, and the base methods raise
+    NotImplementedError — so claiming one without writing it turns a clean "not
+    supported on this distro" note into an error surfaced at the user. This is the
+    direction the old hardcoded RHEL set was really guarding, expressed so it holds for
+    every backend and needs no edit as each wave lands.
+    """
+    for backend in _BACKENDS:
+        for action in sorted(backend.supported & set(_ACTION_METHODS)):
+            for meth in _ACTION_METHODS[action]:
+                own = getattr(backend, meth, None)
+                assert own is not getattr(PackageBackend, meth), (
+                    f"{backend.name} claims '{action}' but inherits {meth}() "
+                    f"from the base class")
 
 
 def test_default_and_remote_sets_are_valid_actions():
