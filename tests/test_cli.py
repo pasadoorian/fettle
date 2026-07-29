@@ -290,3 +290,30 @@ def test_container_update_needs_no_root():
     assert "container_update" in NO_ROOT_ACTIONS
     assert "container_update" not in READ_ONLY_ACTIONS   # it is not read-only
     assert READ_ONLY_ACTIONS < NO_ROOT_ACTIONS           # read-only implies no-root
+
+
+def test_default_run_says_which_actions_the_backend_cannot_do(capsys):
+    """`-a` silently dropped unsupported actions. That was tolerable when a backend
+    lacked one or two, but the RHEL backend implements a small subset: `-a` ran 1 of
+    10 actions and reported nothing, so a nearly-empty run looked like a full one."""
+    from unittest.mock import patch
+    from fettle.backends.rhel import RhelBackend
+    from fettle.cli import main as cli_main
+    with patch("fettle.cli.detect", return_value=RhelBackend()), \
+         patch("fettle.actions.run"):
+        cli_main(["-a", "--dry-run"])
+    out = capsys.readouterr().out
+    assert "not implemented by the rhel backend" in out
+    assert "update" in out and "clean" in out            # names them
+    assert out.count("not implemented by the rhel backend") == 1   # ONE line, not nine
+
+
+def test_backend_supporting_everything_says_nothing(capsys):
+    """Arch supports the whole default set — no notice should appear."""
+    from unittest.mock import patch
+    from fettle.backends.arch import ArchBackend
+    from fettle.cli import main as cli_main
+    with patch("fettle.cli.detect", return_value=ArchBackend()), \
+         patch("fettle.actions.run"):
+        cli_main(["-a", "--dry-run"])
+    assert "not implemented by" not in capsys.readouterr().out

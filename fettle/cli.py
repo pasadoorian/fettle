@@ -897,16 +897,23 @@ def _main(argv: list[str]) -> int:
 
     requested = _requested_actions(args, cfg)
     runnable = [a for a in requested if backend.supports(a)]
-    # Only flag unsupported actions the user NAMED. When the list is the default
-    # set (bare `fettle` / `-a`), silently skip ones this distro can't do (e.g.
-    # aur-ioc-scan on Debian) — otherwise every Debian default run is noisy.
+    skipped = [a for a in requested if not backend.supports(a)]
     explicit = bool(args.actions) or any(
         getattr(args, f"do_{a}") for *_, a in FLAG_ACTIONS)
     from_default = args.all or not explicit
-    if not from_default:
-        for a in requested:
-            if not backend.supports(a):
+    if skipped:
+        if not from_default:
+            # The user named these, so answer each one.
+            for a in skipped:
                 out.note(f"skipping '{a}' — not supported by the {backend.name} backend")
+        else:
+            # The default set: one summary line, not a note per action. This used to
+            # be silent, on the reasoning that a Debian run drops only a couple of
+            # Arch-only actions and per-action notes would be noise. That holds until
+            # a backend implements a small subset — on RHEL `-a` runs 1 of 10 actions,
+            # and saying nothing made a nearly-empty run look like a complete one.
+            out.note(f"{len(skipped)} of {len(requested)} action(s) not implemented "
+                     f"by the {backend.name} backend: {', '.join(skipped)}")
 
     if not runnable:
         out.warn("nothing to do (no supported actions selected).")

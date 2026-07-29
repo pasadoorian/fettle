@@ -4,6 +4,20 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.34.1] — say which actions a backend cannot run
+
+`fettle -a` silently dropped actions the detected backend doesn't implement. That was
+deliberate and defensible while every backend covered nearly the whole default set —
+a Debian run drops only a couple of Arch-only actions, and a note per action would be
+noise. It stops being defensible once a backend implements a small subset: on RHEL,
+`-a` ran **1 of 10** actions and said nothing, so a nearly-empty run was
+indistinguishable from a complete one.
+
+Default runs now emit **one summary line** naming what was skipped
+(`9 of 10 action(s) not implemented by the rhel backend: clean, orphans, …`) rather
+than a line per action. Explicitly-named actions still get an individual note each,
+and a backend that supports everything requested stays silent.
+
 ## [0.34.0] — sys-audit package integrity on RHEL (`rpm -Va`)
 
 `sys-audit`'s `packages` category reported "not implemented for the rhel backend".
