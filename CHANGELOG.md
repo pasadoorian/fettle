@@ -4,6 +4,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.38.0] — RHEL: `--full-preview` resolves the real transaction
+
+`-u --dry-run` on the RHEL family could only list upgrades, because dnf has no
+rootless equivalent of `apt-get -s`. The new `--full-preview` flag elevates so the
+preview can resolve the *whole* transaction — measured on a live RHEL 10.1 box, that
+is 345 packages against the 337 the rootless query can see, the extra 16 being new
+dependencies (kernels among them) and an obsoletes replacement, offset by 8 entries
+the resolver classifies differently.
+
+- **The resolver branches on privilege, not on the flag.** `-O` already elevates, so
+  it gets the complete transaction at no extra cost; `--full-preview` exists purely to
+  opt a `--dry-run` into the sudo prompt it otherwise avoids. `--dry-run` alone stays
+  passwordless.
+- `--assumeno` answers dnf's own prompt with "no", so nothing is installed and the
+  command is safe under `--dry-run`; `--no-sync` adds `-C` for a purely cached answer.
+- **`dnf` exits 1 both when `--assumeno` declines and on a genuine error** ("Error: No
+  packages marked for upgrade."), so the exit code cannot tell them apart — the
+  resolved table is the discriminator instead of a localisable message. Nothing to
+  upgrade exits 0 with "Nothing to do."
+- **dnf5 follows every upgrade with a `replacing <pkg>` sub-row** carrying the version
+  being *removed*, indented three spaces instead of one. Accepting those would double
+  every upgrade and list the outgoing version as the incoming one — verified live on
+  Fedora, where the count is 35 and not 70.
+- **A zero epoch is dropped.** dnf5's table writes `0:9.10-4.fc44` where rpm and
+  `check-update` write `9.10-4.fc44`, so left alone every package on a dnf5 host
+  appeared to be gaining an epoch.
+- Sections the preview cannot express — `Downgrading:`, `Reinstalling:` — are
+  *reported* rather than dropped, since a preview the user is about to act on must not
+  quietly omit part of the transaction. Parsing stops at "Transaction Summary", which
+  dnf5 writes with a trailing colon that would otherwise read as a section header.
+- A partial preview that stayed partial *despite* `--full-preview` now says elevation
+  did not happen, rather than advising a flag that was already passed.
+- `fettle remote HOST -O --dry-run --full-preview` elevates on the far end too; a
+  dry run otherwise deliberately runs without sudo.
+
 ## [0.37.0] — RHEL: metadata refresh and an honest upgrade preview
 
 First slice of dnf **maintenance** support (the backend was audit-only until now):

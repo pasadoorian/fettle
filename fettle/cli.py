@@ -172,6 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="show what would run; change nothing")
     p.add_argument("--no-sync", action="store_true",
                    help="dry-run preview: use cached repo data instead of a fresh sync")
+    p.add_argument("--full-preview", action="store_true",
+                   help="with --dry-run: elevate (sudo) so the preview can resolve new "
+                        "dependencies and removals, not just upgrades [rhel]")
     p.add_argument("--only", metavar="ACTION", action="append", default=[],
                    help="restrict to these actions (repeatable)")
     p.add_argument("--skip", metavar="ACTION", action="append", default=[],
@@ -384,10 +387,12 @@ def _remote_one(host: str, ssh_args, forwarded) -> int:
     if not _remote_has_action(fwd):
         fwd = [a.replace("_", "-") for a in REMOTE_DEFAULT_ACTIONS] + fwd
     # dry-run needs neither sudo nor a PTY; --yes is fully unattended (no PTY).
+    # --full-preview is the exception: it is a dry run that *does* need root remotely,
+    # since resolving a full dnf transaction is only possible as root.
     dry_run = "--dry-run" in fwd
     unattended = "--yes" in fwd
-    rc = remote.run(host, fwd, sudo=not dry_run, ssh_args=ssh_args,
-                    tty=not unattended)
+    rc = remote.run(host, fwd, sudo=not dry_run or "--full-preview" in fwd,
+                    ssh_args=ssh_args, tty=not unattended)
     if not dry_run:  # pull any reports the remote wrote back under reports/<host>/
         _fetch_remote_reports(host, ssh_args)
     return rc
@@ -919,9 +924,13 @@ def _main(argv: list[str]) -> int:
         out.warn("nothing to do (no supported actions selected).")
         return 0
 
-    # Elevate only when a selected action actually needs root.
+    # Elevate only when a selected action actually needs root. --dry-run normally stays
+    # passwordless; --full-preview is the explicit opt-in to elevate anyway, because the
+    # only way to resolve a full dnf transaction is to run `dnf upgrade --assumeno` as
+    # root (it refuses otherwise, and there is no `apt-get -s` equivalent).
     needs_root = any(a not in NO_ROOT_ACTIONS for a in runnable)
-    if needs_root and not args.dry_run and not _is_root() and not _in_test():
+    if needs_root and (not args.dry_run or args.full_preview) \
+            and not _is_root() and not _in_test():
         _reexec_with_sudo(args)
 
     sudo_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
@@ -937,6 +946,7 @@ def _main(argv: list[str]) -> int:
     ctx = Context(output=out, config=cfg, dry_run=args.dry_run,
                   assume_yes=args.yes, auto_rebuild=args.auto_rebuild or cfg.auto_rebuild,
                   sync=not args.no_sync, force_aur=args.force_aur,
+                  full_preview=args.full_preview,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
     return 0

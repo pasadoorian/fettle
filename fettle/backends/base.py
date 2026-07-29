@@ -37,6 +37,10 @@ class Context:
     auto_rebuild: bool = False
     sync: bool = True  # refresh repo data for the dry-run preview (--no-sync opts out)
     force_aur: bool = False  # --force-aur: override the AUR pre-check gate under --yes
+    # --full-preview: elevate under --dry-run so a backend that needs root to resolve a
+    # full transaction can. Read by the backend only to explain a preview that stayed
+    # partial anyway (elevation declined) — the resolver branches on real privilege.
+    full_preview: bool = False
     root: Path = Path("/")  # injected so filesystem reads are testable
     sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
     user_home: Path = Path.home()

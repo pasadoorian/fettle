@@ -31,6 +31,7 @@ RHSA data would be honest here and approximate there.
 
 from __future__ import annotations
 
+import os
 import re
 
 from .. import command
@@ -55,6 +56,75 @@ _CU_ROW = re.compile(r"^(\S+\.\S+)[ \t]+(\S+)[ \t]+(\S+)[ \t]*$")
 # `%{EVR}` omits the epoch — so old and new would be formatted differently and every
 # such package would appear to be changing epoch.
 _RPM_QF = r"%{NAME}.%{ARCH} %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\n"
+
+
+# Transaction-table section headers -> TxItem kind. Wording measured on dnf 4.20 and
+# dnf5 5.4.2, which agree on all of these.
+_TX_SECTIONS = {
+    "upgrading": "upgrade",
+    "installing": "new-dep",
+    "installing dependencies": "new-dep",
+    "installing weak dependencies": "new-dep",
+    "obsoleting": "new-dep",
+    "removing": "remove",
+    "removing dependent packages": "remove",
+    "removing unused dependencies": "remove",
+}
+
+# One row of the transaction table: exactly ONE leading space, then
+# `name arch version repo [size...]`.
+#
+# The single-space anchor is load-bearing. dnf5 follows each upgrade with a
+# `replacing <pkg>` sub-row indented by three spaces, carrying the version being
+# *removed*; accepting those would double every upgrade and list the outgoing version
+# as if it were incoming. dnf4 indents its obsoleted packages the same way.
+_TX_ROW = re.compile(r"^ (\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s|$)")
+
+
+def _have_root() -> bool:
+    """Whether this process can run ``dnf upgrade``, which refuses to run otherwise."""
+    return os.geteuid() == 0
+
+
+def _norm_evr(ver: str) -> str:
+    """Drop a zero epoch.
+
+    dnf5's transaction table writes ``0:9.10-4.fc44`` where ``check-update`` and rpm
+    write ``9.10-4.fc44``. Left alone, every package on a dnf5 host would appear to be
+    gaining an epoch.
+    """
+    return ver[2:] if ver.startswith("0:") else ver
+
+
+def _parse_tx_table(text: str) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """``([(kind, name.arch, version)], [unrecognised section names])``.
+
+    Parsing stops at "Transaction Summary" — dnf5 writes that with a trailing colon,
+    which would otherwise read as a section header.
+
+    Unrecognised sections are *returned*, not skipped: ``Downgrading:`` and
+    ``Reinstalling:`` have no equivalent in :class:`~fettle.backends.base.TxItem`'s
+    vocabulary, and a section this parser does not understand must be reported rather
+    than quietly dropped from a preview the user is about to act on.
+    """
+    rows: list[tuple[str, str, str]] = []
+    unknown: list[str] = []
+    kind = ""
+    for raw in text.splitlines():
+        if raw.startswith("Transaction Summary"):
+            break
+        stripped = raw.strip()
+        if raw[:1] not in (" ", "\t") and stripped.endswith(":"):
+            label = stripped[:-1].strip().lower()
+            kind = _TX_SECTIONS.get(label, "")
+            if not kind and label not in unknown:
+                unknown.append(label)
+            continue
+        m = _TX_ROW.match(raw.rstrip())
+        if m and kind:
+            name, arch, ver = m.group(1), m.group(2), m.group(3)
+            rows.append((kind, f"{name}.{arch}", _norm_evr(ver)))
+    return rows, unknown
 
 
 def _is_obsoletes_header(line: str) -> bool:
@@ -171,7 +241,7 @@ class RhelBackend(PackageBackend):
         for line in RhelBackend._query(["rpm", "-qa", "--qf", _RPM_QF]).splitlines():
             label, _, ver = line.partition(" ")
             if label and ver:
-                out[label] = ver
+                out[label] = _norm_evr(ver)
         return out
 
     # -- pending upgrades ----------------------------------------------------
@@ -210,18 +280,71 @@ class RhelBackend(PackageBackend):
         return Result()
 
     def pending_transaction(self, ctx: Context, *, sync: bool = True) -> Transaction:
-        """Upgrades only, with the gap stated.
+        """The transaction ``update`` would perform.
 
         **dnf has no rootless equivalent of ``apt-get -s``.** ``dnf upgrade --assumeno``
-        does resolve the full transaction — new dependencies, obsoletes, removals — but
-        it refuses to run without root, so the default preview cannot show them and says
-        so. ``--full-preview`` elevates to get the real thing.
-
-        Reporting these upgrades as if they were the whole transaction would make a
-        partial answer indistinguishable from a complete one.
+        resolves the real thing — new dependencies, obsoletes, removals — but refuses to
+        run without root. So the branch is on privilege, not on a flag: as root (which
+        ``-O`` already is, and which ``--dry-run --full-preview`` opts into) the full
+        resolver runs; otherwise the preview lists upgrades only and *says* it is
+        partial, because a partial answer must never render identically to a complete
+        one.
         """
         if not command.which("dnf"):
             return Transaction(ok=False, notes=["dnf not found"])
+        if _have_root():
+            return self._full_transaction(ctx, sync=sync)
+        return self._partial_transaction(ctx)
+
+    def _full_transaction(self, ctx: Context, *, sync: bool) -> Transaction:
+        """Resolve the complete transaction with ``dnf upgrade --assumeno`` (needs root).
+
+        ``--assumeno`` answers dnf's own confirmation prompt with "no", so nothing is
+        installed; it is safe under ``--dry-run`` and is therefore *not* routed through
+        ``ctx.execute``, which would suppress it. It can still refresh the metadata cache
+        on the way, so ``--no-sync`` adds ``-C`` for a purely cached answer.
+        """
+        argv = ["dnf", "upgrade", "--assumeno"] if sync else \
+               ["dnf", "-C", "upgrade", "--assumeno"]
+        proc = command.run(argv, capture=True)
+        text = proc.stdout or ""
+        rows, unknown = _parse_tx_table(text)
+
+        # Exit codes, measured: 0 with "Nothing to do." when there is nothing to
+        # upgrade; 1 when --assumeno declines at the prompt; and *also* 1 for a genuine
+        # error ("Error: No packages marked for upgrade."). 1 is therefore ambiguous, so
+        # the resolved table is the discriminator rather than a localisable message.
+        resolved = bool(rows) or "Nothing to do" in text
+        if proc.returncode > 1 or (proc.returncode == 1 and not resolved):
+            err = [ln for ln in (proc.stderr or "").strip().splitlines()
+                   if ln.strip() and "Operation aborted" not in ln]
+            return Transaction(ok=False, notes=[
+                f"dnf upgrade --assumeno failed (exit {proc.returncode})", *err[:3]])
+
+        installed = self._installed_versions()
+        items = []
+        for kind, label, ver in rows:
+            old = installed.get(label)
+            if kind == "remove":
+                items.append(TxItem(name=label, new="", old=old or "", kind="remove"))
+            elif kind == "upgrade":
+                items.append(TxItem(name=label, new=ver, old=old, kind="upgrade"))
+            else:
+                items.append(TxItem(name=label, new=ver, old=None, kind="new-dep"))
+
+        notes = []
+        if not sync:
+            notes.append("preview built from cached metadata (--no-sync) — it may miss "
+                         "upgrades published since the last refresh")
+        if unknown:
+            # e.g. Downgrading: / Reinstalling:, which TxItem cannot express.
+            notes.append("this preview does not itemise dnf's "
+                         f"{', '.join(unknown)} section(s) — inspect with "
+                         "`dnf upgrade --assumeno` before applying")
+        return Transaction(items=items, ok=True, notes=notes)
+
+    def _partial_transaction(self, ctx: Context) -> Transaction:
+        """Upgrades only, from the rootless ``dnf check-update``, with the gap stated."""
         proc = command.run(["dnf", "check-update"], capture=True)
         if proc.returncode not in (0, 100):
             err = (proc.stderr or "").strip().splitlines()
@@ -234,9 +357,15 @@ class RhelBackend(PackageBackend):
                         kind="upgrade" if installed.get(label) else "new-dep")
                  for label, new in _parse_check_update(text)]
 
-        notes = ["new dependencies and removals are not shown — dnf cannot resolve a "
-                 "full transaction without root; run with --full-preview for the "
-                 "complete set"]
+        gap = "new dependencies and removals are not shown — dnf cannot resolve a full "
+        if getattr(ctx, "full_preview", False):
+            # Asked for the full preview and still landed here: elevation did not
+            # happen. Say that, rather than advising a flag they already passed.
+            notes = [gap + "transaction without root, and this process is not root "
+                           "despite --full-preview"]
+        else:
+            notes = [gap + "transaction without root; add --full-preview to elevate "
+                           "and resolve the complete set"]
         obsoletes = _count_obsoletes(text)
         if obsoletes:
             notes.append(f"{obsoletes} package(s) additionally replace obsoleted "

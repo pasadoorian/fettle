@@ -154,6 +154,35 @@ def test_dry_run_lists_actions_without_elevating(capsys):
     assert "would run:" in out  # dry-run shows commands, executes nothing
 
 
+def _elevation(argv):
+    """Whether `main(argv)` would re-exec under sudo."""
+    from unittest.mock import patch
+    with patch("fettle.cli._is_root", return_value=False), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec, \
+         patch("fettle.actions.run"):
+        main(argv)
+    return reexec.called
+
+
+def test_dry_run_stays_passwordless():
+    assert _elevation(["--distro", "rhel", "--dry-run", "-O"]) is False
+
+
+def test_full_preview_elevates_a_dry_run():
+    """The only way to resolve a full dnf transaction is `dnf upgrade --assumeno` as
+    root, so the complete preview has to be an explicit opt-in rather than something
+    --dry-run does behind a sudo prompt."""
+    assert _elevation(["--distro", "rhel", "--dry-run", "-O",
+                       "--full-preview"]) is True
+
+
+def test_full_preview_does_not_elevate_a_read_only_action():
+    """--full-preview grants permission to elevate, it does not demand it: pkg-audit
+    needs no root, so nothing should ask for a password."""
+    assert _elevation(["--distro", "rhel", "--dry-run", "-P", "--full-preview"]) is False
+
+
 def test_dry_run_update_lists_pending_packages(capsys):
     from unittest.mock import patch
 
