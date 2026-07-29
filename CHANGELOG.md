@@ -4,6 +4,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.41.0] — RHEL: `orphans`, with kernels off the table
+
+`fettle -o` now works on the RHEL family: it reports installed packages that no enabled
+repository offers, and offers unused dependencies for removal one at a time.
+
+- **A kernel is never offered for removal.** This is the hazard the action is shaped
+  around, and it is not theoretical — it was reproduced live. After `dnf mark remove
+  kernel-core`, dnf genuinely lists `kernel-core` and `kernel-modules-core` among its
+  `--unneeded` packages; under `-o --yes` fettle held both back, removed the other 32,
+  and the kernel was still installed afterwards.
+  - The protected set comes from `dnf repoquery --installonly`, **plus** a name-prefix
+    net as defence in depth if `installonlypkgs` is misconfigured. Over-protecting
+    (sparing something like `kernelshark` needlessly) is the right way to err.
+  - The query matters beyond the prefix net: dnf's `installonlypkgs` includes
+    `installonlypkg(kernel-module)`, so a DKMS package such as `kmod-nvidia` is
+    installonly while matching no `kernel` name.
+  - **If that query fails, nothing is offered at all.** An empty result and a failed
+    query are byte-identical, and this is not a mistake recoverable from a shell that no
+    longer boots.
+- **`--installonly --installed` is a hard error on dnf5** (dnf4 accepts the pair), and
+  the complaint goes to *stderr* — so with stderr discarded it read as a clean "no
+  kernels installed". `--installonly` alone means "installed installonly packages" on
+  both generations and is what is used.
+- **Removal uses `dnf remove <chosen>`, not `dnf autoremove`.** The selection is
+  per-package and autoremove is all-or-nothing by construction. Without `--yes`, dnf then
+  shows its own transaction and confirms, so a removal cascading into dependents cannot
+  happen unseen.
+- **`dnf repoquery --queryformat` output needed two fixes**, both measured: dnf4 already
+  terminates each record, so the `\n` that dnf5 *requires* (without it dnf5 runs every
+  record onto one line) makes dnf4 emit a blank line between entries; and dnf writes its
+  rootless "Not root, Subscription Management repositories not updated" notice to
+  **stdout**, mixed in with results. Both would have become entries in the removal offer.
+- Packages from no enabled repository go to the same `obsolete-pkgs` report Debian uses,
+  so `fettle report` picks them up either way. On the RHEL box that finds the Eclypsium
+  sensor packages. `keep_orphans` is honoured, and held-back packages are always named
+  rather than silently dropped.
+
+Verified live on both generations: AlmaLinux (dnf4) with the kernel hazard reproduced,
+Fedora (dnf5) removing 14 real orphans, and the RHEL 10.1 VM read-only.
+
 ## [0.40.0] — RHEL: `clean` reclaims the package cache
 
 `fettle -c` now works on the RHEL family: `dnf clean packages` plus unused flatpaks.

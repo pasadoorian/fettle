@@ -91,7 +91,7 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 
 **RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
 `advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
-integrity check, plus `clean`. Not yet built: `orphans`, `kernel`, `config-drift`,
+integrity check, plus `clean` and `orphans`. Not yet built: `kernel`, `config-drift`,
 `auto-updates` and `rebuild-check` — those are reported as unsupported rather than
 silently skipped. Fedora is deliberately not claimed as a distro: it shares dnf, but its
 advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
@@ -106,6 +106,10 @@ Two RHEL-specific things worth knowing:
   removals too.
 - **An upgrade from a repository with `gpgcheck=0` asks one extra time.** Those packages
   are installed without verifying their signature. `--yes` proceeds, loudly.
+- **`-o` never offers a kernel for removal.** dnf's own `autoremove` has been known to
+  propose removing kernels when the `dnf mark` reason data is incomplete, and removing a
+  running one leaves an unbootable machine. Installonly packages are held back and named,
+  and if the query that identifies them fails, *nothing* is offered.
 
 On an **image-based** host (rpm-ostree, Fedora Silverblue, RHEL Image Mode / bootc)
 fettle refuses to dnf-upgrade at all and points at `bootc upgrade` / `rpm-ostree

@@ -88,14 +88,19 @@ def test_fedora_is_not_claimed(tmp_path):
         detect(tmp_path)
 
 
-def test_rhel_backend_does_not_claim_unbuilt_actions():
+def test_rhel_backend_never_claims_other_families_actions():
     """`supported` is a promise: an action listed here runs, one omitted is reported as
-    unsupported rather than raising NotImplementedError at the user. The maintenance
-    half is landing wave by wave, so this asserts what is *not* claimed yet — the
-    matching "everything claimed is implemented" direction is enforced for every
-    backend by test_action_registry."""
+    unsupported rather than raising NotImplementedError at the user.
+
+    These three can never belong to RHEL, so this holds no matter how much of the
+    maintenance half has landed: the `aur_*` pair is pacman/AUR-only, and
+    `python_rebuild_check` is deliberately absent on both non-Arch backends because apt
+    and dnf handle interpreter transitions themselves. Asserting *currently* unbuilt
+    actions instead would go stale on every wave — the complementary direction
+    ("everything claimed is really implemented") is enforced for every backend by
+    test_action_registry."""
     from fettle.backends.rhel import RhelBackend
-    for absent in ("orphans", "kernel", "aur_audit", "python_rebuild_check"):
+    for absent in ("aur_audit", "aur_ioc_scan", "python_rebuild_check"):
         assert absent not in RhelBackend.supported
 
 

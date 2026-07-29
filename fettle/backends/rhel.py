@@ -34,7 +34,8 @@ from __future__ import annotations
 import os
 import re
 
-from .. import command
+from .. import command, reports
+from ..util import matches_any
 from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _SYSTEM_UPDATERS = {"dnf", "none"}
@@ -56,6 +57,16 @@ _CU_ROW = re.compile(r"^(\S+\.\S+)[ \t]+(\S+)[ \t]+(\S+)[ \t]*$")
 # `%{EVR}` omits the epoch — so old and new would be formatted differently and every
 # such package would appear to be changing epoch.
 _RPM_QF = r"%{NAME}.%{ARCH} %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\n"
+
+# `dnf repoquery` output format. One `name.arch` per line — see `_repoquery` for the two
+# quirks this has to survive.
+_REPOQUERY_QF = r"%{name}.%{arch}\n"
+
+# Defence in depth behind the `--installonly` query: a name that starts with one of
+# these is never offered for removal even if dnf does not report it as installonly.
+# Removing a running kernel leaves an unbootable machine, so over-protecting (a package
+# like `kernelshark` is spared needlessly) is the right direction to err in.
+_NEVER_REMOVE_PREFIXES = ("kernel",)
 
 
 # Transaction-table section headers -> TxItem kind. Wording measured on dnf 4.20 and
@@ -225,6 +236,7 @@ class RhelBackend(PackageBackend):
         "only_update",       # dnf makecache + report upgradable (no upgrade)
         "update",            # dnf upgrade --refresh (+ flatpak/snap when present)
         "clean",             # dnf clean packages (NOT clean all) + unused flatpaks
+        "orphans",           # repoquery --unneeded/--extras; kernels never offered
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -412,6 +424,123 @@ class RhelBackend(PackageBackend):
                          "rootless query — a subscribed RHEL host may have more updates "
                          "than shown")
         return Transaction(items=items, ok=True, notes=notes)
+
+    # -- orphans / foreign packages ------------------------------------------
+    @staticmethod
+    def _repoquery(*flags: str) -> tuple[list[str], bool]:
+        """``(name.arch list, query_succeeded)`` from ``dnf repoquery``.
+
+        The success flag is not decoration. One caller is the kernel-protection set, and
+        a failed query returns an empty list that is byte-identical to "no kernels are
+        installed" — which would quietly offer a running kernel for removal. It nearly
+        happened: **dnf5 rejects ``--installonly --installed`` as mutually exclusive**
+        (dnf4 accepts the pair), and the complaint goes to *stderr*, so the pair looked
+        like a clean empty answer. ``--installonly`` alone means "installed installonly
+        packages" on both, and is what is used.
+
+        Two output quirks, both measured:
+
+        * **dnf4 already terminates each record with a newline**, so the ``\\n`` that
+          dnf5 *requires* — without it dnf5 runs every record together on one line —
+          makes dnf4 emit a blank line between entries.
+        * dnf writes its rootless "Not root, Subscription Management repositories not
+          updated" notice to **stdout**, mixed in with the results.
+
+        Keeping only whitespace-free tokens containing a dot handles both.
+        """
+        proc = command.run(["dnf", "repoquery", *flags,
+                            "--queryformat", _REPOQUERY_QF], capture=True)
+        if proc.returncode != 0:
+            return [], False
+        found = {ln.strip() for ln in (proc.stdout or "").splitlines()}
+        return sorted(n for n in found
+                      if n and "." in n and not any(c.isspace() for c in n)), True
+
+    def _report_foreign(self, ctx: Context) -> None:
+        """Installed packages that no enabled repository offers — the RPM analogue of
+        Debian's obsolete-package report, written to the same report name so
+        ``fettle report`` picks it up either way."""
+        out = ctx.output
+        extras, ok = self._repoquery("--extras")
+        if not ok:
+            out.warn("could not list packages absent from every repository "
+                     "(dnf repoquery --extras failed); skipping that report.")
+            return
+        if not extras:
+            out.ok("every installed package comes from an enabled repository.")
+            return
+        if ctx.dry_run:
+            out.note(f"{len(extras)} package(s) from no enabled repository would be "
+                     "saved for review")
+            return
+        try:
+            review = reports.write_report("obsolete-pkgs", "\n".join(extras), ctx,
+                                         data={"packages": list(extras)})
+            out.note(f"packages from no enabled repository saved to {review} for review "
+                     f"({len(extras)} found)")
+        except OSError as exc:
+            out.warn(f"could not write obsolete-pkgs report: {exc}")
+
+    def check_foreign_orphans(self, ctx: Context) -> Result:
+        out, cfg = ctx.output, ctx.config
+        self._report_foreign(ctx)
+
+        unneeded, ok = self._repoquery("--unneeded")
+        if not ok:
+            out.warn("could not list unused dependencies (dnf repoquery --unneeded "
+                     "failed); nothing is offered for removal.")
+            return Result()
+        if not unneeded:
+            out.ok("no unused dependencies.")
+            return Result()
+
+        # Fail SAFE: without a trustworthy installonly set there is no way to know which
+        # of these is a kernel, and offering one is not a mistake that can be undone
+        # from a shell that no longer boots.
+        installonly, ok = self._repoquery("--installonly")
+        if not ok:
+            out.warn("could not determine which packages dnf keeps multiple versions "
+                     "of (kernels), so nothing is offered for removal — removing a "
+                     "running kernel leaves an unbootable system.")
+            return Result()
+
+        protected = {p for p in unneeded
+                     if p in installonly
+                     or p.split(".")[0].startswith(_NEVER_REMOVE_PREFIXES)}
+        kept = {p for p in unneeded if matches_any(p, cfg.keep_orphans)}
+        candidates = [p for p in unneeded if p not in protected and p not in kept]
+
+        if protected:
+            # Named, not hidden: dnf's autoremove has been known to propose removing
+            # kernels when the `dnf mark` reason data is incomplete, and a user who sees
+            # nothing cannot tell that anything was held back.
+            out.note(f"{len(protected)} unused package(s) held back as installonly "
+                     "(kernels are never offered): " + ", ".join(sorted(protected)))
+        if kept:
+            out.note(f"{len(kept)} skipped by keep_orphans: " + ", ".join(sorted(kept)))
+        if not candidates:
+            out.ok("no unused dependencies eligible for removal.")
+            return Result()
+
+        out.note(f"{len(candidates)} unused dependency(ies) eligible for removal:")
+        for pkg in candidates:
+            print(f"    {pkg}")
+        if ctx.dry_run:
+            out.note("would ask about each, then run: dnf remove <chosen>")
+            return Result()
+        chosen = ctx.select(candidates, prompt="remove unused dependency")
+        if not chosen:
+            return Result()
+        # `dnf remove` on the chosen list, NOT `dnf autoremove`: the selection is
+        # per-package, and autoremove is all-or-nothing by construction. Without --yes
+        # dnf then shows its own transaction and confirms, so a removal that cascades
+        # into dependents cannot happen unseen.
+        argv = ["dnf", "remove", *chosen]
+        if ctx.assume_yes:
+            argv.append("-y")
+        ctx.execute(argv)
+        out.summary_add(f"{len(chosen)} unused dependency(ies) removed")
+        return Result()
 
     # -- clean ---------------------------------------------------------------
     def clean_caches(self, ctx: Context) -> Result:

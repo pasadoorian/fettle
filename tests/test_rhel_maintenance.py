@@ -405,6 +405,159 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- orphans -----------------------------------------------------------------
+# Real `dnf repoquery --queryformat` output. dnf4 already terminates each record, so the
+# `\n` dnf5 needs makes dnf4 double-space; and dnf puts its rootless notice on stdout.
+_UNNEEDED4 = """\
+Not root, Subscription Management repositories not updated
+apr.x86_64
+
+apr-util.x86_64
+
+kernel-core.x86_64
+
+kmod-nvidia.x86_64
+
+libbrotli.x86_64
+
+"""
+_INSTALLONLY = ("kernel-core.x86_64\n\nkernel-modules.x86_64\n\n"
+                "kmod-nvidia.x86_64\n\n")
+_EXTRAS = "eclypsiumapp.x86_64\n\neclypsiumdriver.noarch\n\n"
+
+
+def _orphans(responses, ctx=None, **kw):
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake(responses, calls)), \
+         patch("fettle.command.which", return_value=True), \
+         patch("fettle.reports.write_report", return_value="/tmp/r.txt"):
+        result = RhelBackend().check_foreign_orphans(ctx or _ctx(**kw))
+    return result, [c for c, _ in calls]
+
+
+_RQ_UNNEEDED = ("dnf", "repoquery", "--unneeded")
+_RQ_INSTALLONLY = ("dnf", "repoquery", "--installonly")
+_RQ_EXTRAS = ("dnf", "repoquery", "--extras")
+_ALL_RQ = {_RQ_UNNEEDED: _UNNEEDED4, _RQ_INSTALLONLY: _INSTALLONLY, _RQ_EXTRAS: _EXTRAS}
+
+
+def test_dnf4_blank_lines_and_the_not_root_notice_are_not_packages(capsys):
+    """dnf4 double-spaces queryformat output and writes its rootless notice to stdout;
+    both would otherwise become entries in the removal offer."""
+    with patch("fettle.command.run",
+               return_value=command.Proc(0, _UNNEEDED4, "")):
+        names, ok = RhelBackend._repoquery("--unneeded")
+    assert ok
+    assert names == ["apr-util.x86_64", "apr.x86_64", "kernel-core.x86_64",
+                     "kmod-nvidia.x86_64", "libbrotli.x86_64"]
+
+
+def test_a_kernel_is_never_offered_for_removal(capsys):
+    """The hazard this whole action is shaped around: dnf autoremove has been known to
+    propose removing kernels when `dnf mark` reason data is incomplete, and removing the
+    running one leaves a machine that does not boot."""
+    ctx = _ctx(assume_yes=True)
+    _, argvs = _orphans(_ALL_RQ, ctx=ctx)
+    removal = next(a for a in argvs if a[:2] == ["dnf", "remove"])
+    assert "kernel-core.x86_64" not in removal
+    assert set(removal[2:]) == {"apr.x86_64", "apr-util.x86_64", "libbrotli.x86_64", "-y"}
+
+
+def test_an_installonly_package_not_named_kernel_is_still_protected():
+    """dnf's installonlypkgs covers installonlypkg(kernel-module), so a DKMS package
+    like kmod-nvidia is installonly while matching no `kernel` name prefix. Without the
+    query result being honoured, only the prefix net would guard anything — and this
+    package would be offered for removal."""
+    _, argvs = _orphans(_ALL_RQ, ctx=_ctx(assume_yes=True))
+    removal = next(a for a in argvs if a[:2] == ["dnf", "remove"])
+    assert "kmod-nvidia.x86_64" not in removal
+
+
+def test_held_back_kernels_are_named_not_hidden(capsys):
+    _orphans(_ALL_RQ, ctx=_ctx(assume_yes=True))
+    shown = capsys.readouterr()
+    assert "held back as installonly" in shown.out + shown.err
+    assert "kernel-core.x86_64" in shown.out + shown.err
+
+
+def test_a_kernel_is_protected_even_if_dnf_does_not_report_it_installonly():
+    """Defence in depth: if installonlypkgs is misconfigured the name prefix still
+    spares it. Over-protecting is the right direction to err in here."""
+    resp = {**_ALL_RQ, _RQ_INSTALLONLY: ""}   # dnf claims nothing is installonly
+    _, argvs = _orphans(resp, ctx=_ctx(assume_yes=True))
+    removal = next(a for a in argvs if a[:2] == ["dnf", "remove"])
+    assert "kernel-core.x86_64" not in removal
+
+
+def test_a_failed_installonly_query_offers_nothing():
+    """An empty result and a failed query look identical. dnf5 rejects
+    `--installonly --installed` as mutually exclusive and complains on stderr, so the
+    pair reads as a clean empty answer — which would offer a running kernel."""
+    resp = {**_ALL_RQ, _RQ_INSTALLONLY: (1, "")}
+    result, argvs = _orphans(resp, ctx=_ctx(assume_yes=True))
+    assert not any(a[:2] == ["dnf", "remove"] for a in argvs)
+    assert result.ok
+
+
+def test_a_failed_unneeded_query_offers_nothing():
+    resp = {**_ALL_RQ, _RQ_UNNEEDED: (1, "")}
+    _, argvs = _orphans(resp, ctx=_ctx(assume_yes=True))
+    assert not any(a[:2] == ["dnf", "remove"] for a in argvs)
+
+
+def test_the_installonly_query_does_not_pass_installed():
+    """`--installonly --installed` is a hard error on dnf5. `--installonly` alone means
+    "installed installonly packages" on both generations."""
+    _, argvs = _orphans(_ALL_RQ, ctx=_ctx(assume_yes=True))
+    q = next(a for a in argvs if a[:3] == list(_RQ_INSTALLONLY))
+    assert "--installed" not in q
+
+
+def test_removal_uses_dnf_remove_not_autoremove():
+    """Selection is per-package; autoremove is all-or-nothing by construction, so one
+    'y' must not be able to trigger dnf's own resolution."""
+    _, argvs = _orphans(_ALL_RQ, ctx=_ctx(assume_yes=True))
+    assert not any("autoremove" in " ".join(a) for a in argvs)
+
+
+def test_without_yes_dnf_confirms_the_real_transaction():
+    """No -y, so dnf shows what it will actually remove — a cascade into dependents
+    cannot happen unseen."""
+    with patch("fettle.backends.base.Context.select",
+               side_effect=lambda items, prompt: list(items)):
+        _, argvs = _orphans(_ALL_RQ)
+    removal = next(a for a in argvs if a[:2] == ["dnf", "remove"])
+    assert "-y" not in removal
+
+
+def test_keep_orphans_config_is_honored():
+    cfg = Config()
+    cfg.keep_orphans = ["apr*"]
+    _, argvs = _orphans(_ALL_RQ, ctx=_ctx(cfg, assume_yes=True))
+    removal = next(a for a in argvs if a[:2] == ["dnf", "remove"])
+    assert "apr.x86_64" not in removal and "apr-util.x86_64" not in removal
+    assert "libbrotli.x86_64" in removal
+
+
+def test_foreign_packages_are_written_to_a_review_report():
+    """The RPM analogue of Debian's obsolete-pkgs report — same report name, so
+    `fettle report` picks it up either way. Real finding on the RHEL box: the Eclypsium
+    sensor packages come from no enabled repository."""
+    with patch("fettle.command.run", side_effect=_fake(_ALL_RQ, [])), \
+         patch("fettle.command.which", return_value=True), \
+         patch("fettle.reports.write_report", return_value="/tmp/r.txt") as wr:
+        RhelBackend().check_foreign_orphans(_ctx(assume_yes=True))
+    name, body = wr.call_args[0][0], wr.call_args[0][1]
+    assert name == "obsolete-pkgs"
+    assert "eclypsiumapp.x86_64" in body and "eclypsiumdriver.noarch" in body
+
+
+def test_orphans_removes_nothing_under_dry_run():
+    _, argvs = _orphans(_ALL_RQ, ctx=_ctx(dry_run=True))
+    assert not any(a[:2] == ["dnf", "remove"] for a in argvs)
+    assert all(a[:2] == ["dnf", "repoquery"] for a in argvs)   # read-only queries only
+
+
 # -- clean -------------------------------------------------------------------
 def _clean(ctx=None, which=True, **kw):
     calls = []
