@@ -148,3 +148,41 @@ def test_malformed_json_lines_are_skipped():
          patch("fettle.command.which", side_effect=lambda n: n == "docker"):
         f = ContainerSource().findings(_ctx())
     assert [x.package for x in f] == ["ok:latest"]
+
+
+# -- podman compatibility ----------------------------------------------------
+# RHEL ships podman, not docker, so podman-only systems are the main new platform
+# and cannot be exercised on a docker box. Two format differences matter, and both
+# are pinned here because a silent mismatch would report zero findings forever.
+def test_podman_created_at_without_a_zone_abbreviation_is_parsed():
+    """docker emits `2026-06-15 10:30:30 -0400 EDT` (4 fields); podman documents
+    `YYYY-MM-DD HH:MM:SS +nnnn` (3 fields, no zone NAME). Both must parse, or image
+    age silently stops being reported on every podman host."""
+    from fettle.supplychain.container_source import _created
+    docker_form = _created("2026-06-15 10:30:30 -0400 EDT")
+    podman_form = _created("2026-06-15 10:30:30 -0400")
+    assert docker_form is not None and podman_form is not None
+    assert docker_form == podman_form
+
+
+def test_podman_template_json_keys_are_the_ones_we_read():
+    """`--format "{{json .}}"` serialises podman's reporter struct, whose fields are
+    Repository/Tag/ID/CreatedAt/Size — the same names docker uses. `--format json`
+    would give lowercase `id`/`names`/`created` instead, which is why the provider
+    uses the template form and not the built-in JSON one."""
+    from fettle.supplychain.container_source import ContainerSource, parse_images
+    podman_line = ('{"Repository":"registry.access.redhat.com/ubi10/ubi",'
+                   '"Tag":"latest","ID":"abc123","CreatedAt":"2026-01-15 10:30:30 -0500",'
+                   '"Size":"210MB","Digest":"","History":[],"IsReadOnly":false}')
+    parsed = parse_images(podman_line)
+    assert parsed and parsed[0]["Repository"].endswith("ubi10/ubi")
+    # and it flows all the way through to a finding
+    import json as _json
+    from unittest.mock import patch
+    def fake_run(cmd, *, as_user=None, capture=False):
+        return command.Proc(0, podman_line, "")
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n == "podman"):
+        f = ContainerSource().findings(_ctx())
+    assert any(x.package == "registry.access.redhat.com/ubi10/ubi:latest" for x in f)
+    assert _json.loads(podman_line)["CreatedAt"].count(" ") == 2   # 3 fields, not 4

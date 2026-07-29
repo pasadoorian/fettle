@@ -4,6 +4,20 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.32.1] — pin podman format compatibility
+
+RHEL ships podman rather than docker, so podman-only hosts are now the main new
+platform — and a format mismatch there would report zero container findings forever
+rather than failing visibly. Two differences are now pinned by tests:
+
+- `podman images --format "{{json .}}"` serialises podman's reporter struct, whose
+  fields are `Repository`/`Tag`/`ID`/`CreatedAt`/`Size` — the same names docker uses.
+  Podman's *other* JSON form, `--format json`, emits lowercase `id`/`names`/`created`
+  and would not parse; the provider uses the template form, and a test says why.
+- Podman's `.CreatedAt` is `YYYY-MM-DD HH:MM:SS +nnnn` with **no trailing zone
+  abbreviation**, where docker appends one (`… -0400 EDT`). The parser takes the first
+  three whitespace fields so both work; only docker's shape had been covered.
+
 ## [0.32.0] — advisory-check on the RHEL family
 
 New `rhel` advisory provider reading errata from the repositories' own `updateinfo`
