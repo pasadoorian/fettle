@@ -4,6 +4,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.40.0] — RHEL: `clean` reclaims the package cache
+
+`fettle -c` now works on the RHEL family: `dnf clean packages` plus unused flatpaks.
+
+- **`clean packages`, deliberately not `clean all`.** The two are priced very
+  differently. Measured on the RHEL 10.1 box, `/var/cache/dnf` held **796M — 736M of
+  `.rpm` files and 60M of metadata**. `clean packages` frees the 736M; `clean all` would
+  also discard the metadata, so the next dnf command re-downloads it — a slow,
+  network-dependent surprise traded for a rounding error of disk.
+- Worth knowing: RHEL ships `keepcache=0`, so packages are normally removed after a
+  successful install. A large `.rpm` cache usually means an **interrupted** transaction,
+  which is precisely when reclaiming it helps.
+- Verified in an AlmaLinux container with a deliberately-populated cache: 17 rpms → 0,
+  metadata 32M before and after.
+- Snap revision pruning is **not** included. Debian has it as a private helper, and
+  snapd on RHEL needs EPEL; duplicating the helper for a rare case is worse than lifting
+  it to the base class for all three backends, which is a separate change.
+- Test fix: `test_default_run_says_which_actions_the_backend_cannot_do` pinned literal
+  action names and so asserted that `update` and `clean` were *unsupported* on RHEL — it
+  went stale the moment they landed. It now asserts the property (the line names the
+  skipped actions, and never names a supported one).
+
 ## [0.39.0] — `fettle -u` upgrades a RHEL box
 
 The headline action finally works on the RHEL family: `update` runs

@@ -405,6 +405,48 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- clean -------------------------------------------------------------------
+def _clean(ctx=None, which=True, **kw):
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake({}, calls)), \
+         patch("fettle.command.which", return_value=which):
+        result = RhelBackend().clean_caches(ctx or _ctx(**kw))
+    return result, [c for c, _ in calls]
+
+
+def test_clean_removes_packages_but_keeps_metadata():
+    """`clean all` would also drop the repo metadata (60M on the test box) and force
+    the next dnf command to re-download it — a slow, network-dependent surprise in
+    exchange for a rounding error of disk. `clean packages` freed 736M there."""
+    _, argvs = _clean()
+    assert ["dnf", "clean", "packages"] in argvs
+    assert not any(a[:3] == ["dnf", "clean", "all"] for a in argvs)
+    assert not any("expire-cache" in a or "metadata" in a for a in argvs)
+
+
+def test_clean_removes_unused_flatpaks():
+    _, argvs = _clean()
+    assert ["flatpak", "uninstall", "--unused", "-y"] in argvs
+
+
+def test_clean_skips_flatpak_when_absent():
+    _, argvs = _clean(which=False)
+    assert not any(a[:1] == ["flatpak"] for a in argvs)
+
+
+def test_clean_honors_flatpak_updater_none():
+    cfg = Config()
+    cfg.updaters = {"rhel": {"flatpak_updater": "none"}}
+    _, argvs = _clean(_ctx(cfg))
+    assert ["dnf", "clean", "packages"] in argvs
+    assert not any(a[:1] == ["flatpak"] for a in argvs)
+
+
+def test_clean_deletes_nothing_under_dry_run():
+    _, argvs = _clean(dry_run=True)
+    assert argvs == []
+
+
 # -- update + the unsigned-repo gate -----------------------------------------
 # Real /etc/yum.repos.d content from the RHEL 10.1 box: all enabled CentOS Stream repos
 # ship gpgcheck=0, so a `fettle -u` there would install ~341 packages unverified. The

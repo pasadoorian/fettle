@@ -91,7 +91,7 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 
 **RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
 `advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
-integrity check. Not yet built: `clean`, `orphans`, `kernel`, `config-drift`,
+integrity check, plus `clean`. Not yet built: `orphans`, `kernel`, `config-drift`,
 `auto-updates` and `rebuild-check` — those are reported as unsupported rather than
 silently skipped. Fedora is deliberately not claimed as a distro: it shares dnf, but its
 advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`

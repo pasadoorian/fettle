@@ -224,6 +224,7 @@ class RhelBackend(PackageBackend):
         "container_update",  # podman/docker, backend-independent
         "only_update",       # dnf makecache + report upgradable (no upgrade)
         "update",            # dnf upgrade --refresh (+ flatpak/snap when present)
+        "clean",             # dnf clean packages (NOT clean all) + unused flatpaks
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -411,6 +412,33 @@ class RhelBackend(PackageBackend):
                          "rootless query — a subscribed RHEL host may have more updates "
                          "than shown")
         return Transaction(items=items, ok=True, notes=notes)
+
+    # -- clean ---------------------------------------------------------------
+    def clean_caches(self, ctx: Context) -> Result:
+        """Reclaim disk from downloaded packages, keeping the repo metadata.
+
+        **``clean packages``, deliberately not ``clean all``.** The two are very
+        differently priced: measured on the RHEL 10.1 box, ``/var/cache/dnf`` held 796M
+        of which 736M was ``.rpm`` files and 60M was metadata. ``clean packages`` frees
+        the 736M; ``clean all`` would also throw away the metadata, so the very next dnf
+        command re-downloads it — a slow, network-dependent surprise in exchange for a
+        rounding error of disk.
+
+        Worth knowing: RHEL ships ``keepcache=0``, so packages are normally removed
+        after a successful install. A large ``.rpm`` cache therefore usually means an
+        *interrupted* transaction, which is exactly the case where reclaiming it helps.
+
+        The one confirmation for the whole action already lives in ``actions._clean``.
+        """
+        out = ctx.output
+        _, flatpak, _snap = self._updaters(ctx)
+        ctx.execute(["dnf", "clean", "packages"], quiet=True,
+                    msg="dnf package cache cleared")
+        if flatpak != "none" and command.which("flatpak"):
+            ctx.execute(["flatpak", "uninstall", "--unused", "-y"], quiet=True,
+                        msg="unused flatpaks removed")
+        out.summary_add("caches cleaned")
+        return Result(summary="caches cleaned")
 
     # -- update --------------------------------------------------------------
     def _unsigned_repos(self, ctx: Context) -> list[str]:

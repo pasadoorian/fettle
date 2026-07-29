@@ -333,8 +333,16 @@ def test_default_run_says_which_actions_the_backend_cannot_do(capsys):
         cli_main(["-a", "--dry-run"])
     out = capsys.readouterr().out
     assert "not implemented by the rhel backend" in out
-    assert "update" in out and "clean" in out            # names them
     assert out.count("not implemented by the rhel backend") == 1   # ONE line, not nine
+    # Assert the *property* rather than specific action names: the line names the
+    # skipped actions, and never names one the backend actually supports. Pinning
+    # literal names meant this test claimed `update` and `clean` were unsupported on
+    # RHEL, which went stale the moment those landed.
+    named = {n.strip() for n in
+             next(ln for ln in out.splitlines() if "not implemented" in ln)
+             .split(":", 1)[1].split(",")}
+    assert named
+    assert not (named & RhelBackend.supported)
 
 
 def test_backend_supporting_everything_says_nothing(capsys):
