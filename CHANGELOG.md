@@ -4,6 +4,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.32.0] — advisory-check on the RHEL family
+
+New `rhel` advisory provider reading errata from the repositories' own `updateinfo`
+metadata via dnf — local, authoritative for the repos you actually use, and needing no
+network beyond what dnf already has.
+
+- Reports `RHSA`/`ALSA`/`RLSA` advisories with severity, affected package and CVEs.
+  RHEL's `Important` maps to fettle's **High** (RHEL has no "High"); `Moderate` → Medium.
+- **Names the blind spot rather than implying safety.** `updateinfo` only knows what a
+  repository publishes, and CentOS Stream publishes no security errata. A real RHEL
+  10.1 box was observed with **341 pending updates and zero security advisories** —
+  reporting that as "no findings" would be a clean bill of health for a system a year
+  behind. When there are no advisories *and* packages are upgradable, it now says so.
+- Everything is `FIXED_AVAILABLE`: `updateinfo` describes advisories that *have* a fix.
+  "Vulnerable, no fix yet" isn't knowable this way and would need Red Hat's CSAF/VEX
+  feed — stated in the report rather than left to silence.
+
+Two things the research got wrong and the live box corrected:
+
+- **RHEL 10.1 ships dnf 4.20 with no dnf5 at all** (`dnf` → `/usr/bin/dnf-3`), so the
+  planned dnf5 `advisory list --json` path is unreachable there and is deliberately not
+  written. A note records that `dnf --version` containing `dnf5` is the discriminator
+  when such a system appears.
+- **Red Hat publishes no OVAL for RHEL 10+**, so the approach used for Ubuntu does not
+  transfer. OSV was also rejected: it carries a `Red Hat` ecosystem, but a probe
+  returned 550 records for one kernel version because it includes RHBA/RHEA bug and
+  enhancement advisories.
+
+Parsing notes, since `dnf updateinfo` output has three traps: the block *title*
+(`  Important: acl security update`) looks like a `Key: value` field; `Bugs:` and
+`CVEs:` both use `<pad>: value` continuation lines, so keying only on `Key: value`
+drops every CVE after the first; and `Description:` continuations contain colons of
+their own. Restricting the parser to a known key set handles all three. The
+`--with-cve` variant is deliberately unused — it emits three rows per advisory (the
+upstream RHSA, the CVE, and the distro's own id).
+
 ## [0.31.0] — RHEL family: detection and package audit
 
 fettle raised `UnknownDistro` on RHEL, so nothing ran there. New `rhel` backend covering

@@ -18,12 +18,13 @@ from . import base, db
 from .arch_source import ArchAdvisorySource
 from .debian_source import DebianAdvisorySource
 from .osv_source import OsvLanguageSource
+from .rhel_source import RhelAdvisorySource
 from .ubuntu_source import UbuntuAdvisorySource
 
 
 def _providers():
     return [ArchAdvisorySource(), DebianAdvisorySource(), UbuntuAdvisorySource(),
-            OsvLanguageSource()]
+            RhelAdvisorySource(), OsvLanguageSource()]
 
 
 def _cfg(ctx) -> dict:
@@ -183,6 +184,12 @@ def _render(findings, uncovered, manjaro, sources):
     if "debian" in sources:
         lines += ["", "Note: Debian coverage is by source package from the tracker; "
                   "third-party/local .debs aren't separately flagged yet."]
+    if "rhel" in sources:
+        lines += ["", "Note: RHEL-family findings come from the repositories' own "
+                  "updateinfo metadata, so coverage depends on your repo mix — "
+                  "CentOS Stream publishes no security errata. Only advisories that "
+                  "HAVE a fix are knowable this way; 'vulnerable, no fix yet' would "
+                  "need Red Hat's CSAF/VEX feed."]
     if "ubuntu" in sources:
         lines += ["", "Note: Ubuntu fix-available findings come from the OVAL feed. "
                   "'Vulnerable, no fix yet' (pending) is opt-in via [advisories] "
@@ -211,8 +218,8 @@ def run(ctx) -> None:
     out = ctx.output
     provs = [p for p in _providers() if p.is_present(ctx)]
     if not provs:
-        out.warn("no advisory provider for this system yet "
-                 "(Arch/Manjaro supported; Debian/Ubuntu planned).")
+        out.warn("no advisory provider for this system "
+                 "(Arch/Manjaro, Debian/Ubuntu and the RHEL family are supported).")
         return
     cfg = _cfg(ctx)
     conn = db.connect(db.db_path(ctx))
