@@ -150,39 +150,72 @@ def test_malformed_json_lines_are_skipped():
     assert [x.package for x in f] == ["ok:latest"]
 
 
-# -- podman compatibility ----------------------------------------------------
-# RHEL ships podman, not docker, so podman-only systems are the main new platform
-# and cannot be exercised on a docker box. Two format differences matter, and both
-# are pinned here because a silent mismatch would report zero findings forever.
-def test_podman_created_at_without_a_zone_abbreviation_is_parsed():
-    """docker emits `2026-06-15 10:30:30 -0400 EDT` (4 fields); podman documents
-    `YYYY-MM-DD HH:MM:SS +nnnn` (3 fields, no zone NAME). Both must parse, or image
-    age silently stops being reported on every podman host."""
+# -- podman compatibility (verified against real podman output) --------------
+# RHEL ships podman, not docker, so podman-only hosts are the main new platform.
+# An earlier version of this file asserted the two runtimes agreed, based on
+# podman's manual listing .Repository/.Tag/.ID/.CreatedAt as --format placeholders.
+# Those are the accessors you may WRITE, not the JSON tags the struct serialises
+# to: `podman images --format "{{json .}}"` really emits lowercase repository/tag
+# plus Id and Created. Reading it as docker's shape produced NO findings at all,
+# silently. Fixtures below are real `podman images --format json` output.
+_PODMAN_JSON = """[
+    {
+     "Id": "d529dd0c6e5597ac7e4a3e2dea65c3fcc6173f4cae713c409265c1dd9914a11b",
+     "Repository": "docker.io/library/alpine",
+     "Tag": "latest",
+     "Created": 1781568089,
+     "CreatedAt": "2026-06-16T00:01:29Z",
+     "Size": 8709729,
+     "Names": ["docker.io/library/alpine:latest"],
+     "Digest": "sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b"
+    }
+]"""
+
+
+def test_podman_uses_a_different_flag_than_docker():
+    """podman's `{{json .}}` has the wrong keys; its plain `--format json` is right."""
+    from fettle.supplychain.container_source import images_argv
+    assert images_argv("docker")[-1] == "{{json .}}"
+    assert images_argv("podman")[-1] == "json"
+
+
+def test_parse_images_reads_podmans_json_array():
+    from fettle.supplychain.container_source import parse_images
+    imgs = parse_images(_PODMAN_JSON)
+    assert len(imgs) == 1
+    assert imgs[0]["Repository"] == "docker.io/library/alpine"
+    assert imgs[0]["Tag"] == "latest"
+    assert imgs[0]["ID"].startswith("d529dd0c")        # podman spells it `Id`
+    assert imgs[0]["Size"] == "9MB"                    # podman gives raw bytes
+
+
+def test_parse_images_normalises_podmans_lowercase_template_keys():
+    """`{{json .}}` on podman emits lowercase repository/tag — accepted defensively
+    so a host that somehow produces that shape is not silently empty."""
+    from fettle.supplychain.container_source import parse_images
+    imgs = parse_images('{"repository":"quay.io/x/y","tag":"1.0","Id":"abc","Size":5000000}')
+    assert imgs[0]["Repository"] == "quay.io/x/y" and imgs[0]["Tag"] == "1.0"
+    assert imgs[0]["ID"] == "abc"
+
+
+def test_created_at_parses_both_runtimes():
+    """docker `2026-06-15 10:30:30 -0400 EDT`; podman ISO `2026-06-16T00:01:29Z`."""
     from fettle.supplychain.container_source import _created
-    docker_form = _created("2026-06-15 10:30:30 -0400 EDT")
-    podman_form = _created("2026-06-15 10:30:30 -0400")
-    assert docker_form is not None and podman_form is not None
-    assert docker_form == podman_form
+    assert _created("2026-06-15 10:30:30 -0400 EDT") is not None
+    assert _created("2026-06-16T00:01:29Z") is not None
+    assert _created("") is None and _created("not a date") is None
 
 
-def test_podman_template_json_keys_are_the_ones_we_read():
-    """`--format "{{json .}}"` serialises podman's reporter struct, whose fields are
-    Repository/Tag/ID/CreatedAt/Size — the same names docker uses. `--format json`
-    would give lowercase `id`/`names`/`created` instead, which is why the provider
-    uses the template form and not the built-in JSON one."""
-    from fettle.supplychain.container_source import ContainerSource, parse_images
-    podman_line = ('{"Repository":"registry.access.redhat.com/ubi10/ubi",'
-                   '"Tag":"latest","ID":"abc123","CreatedAt":"2026-01-15 10:30:30 -0500",'
-                   '"Size":"210MB","Digest":"","History":[],"IsReadOnly":false}')
-    parsed = parse_images(podman_line)
-    assert parsed and parsed[0]["Repository"].endswith("ubi10/ubi")
-    # and it flows all the way through to a finding
-    import json as _json
-    from unittest.mock import patch
+def test_podman_output_produces_real_findings_end_to_end():
+    """The regression that matters: podman's own output must yield findings, not
+    an empty list."""
     def fake_run(cmd, *, as_user=None, capture=False):
-        return command.Proc(0, podman_line, "")
+        return command.Proc(0, _PODMAN_JSON, "")
+
     with patch("fettle.command.run", side_effect=fake_run), \
          patch("fettle.command.which", side_effect=lambda n: n == "podman"):
-        f = ContainerSource().findings(_ctx())
-    assert any(x.package == "registry.access.redhat.com/ubi10/ubi:latest" for x in f)
-    assert _json.loads(podman_line)["CreatedAt"].count(" ") == 2   # 3 fields, not 4
+        f = ContainerSource().findings(_ctx(max_age_days=1))
+    pkgs = {x.package for x in f}
+    assert "docker.io/library/alpine:latest" in pkgs
+    assert any(x.question == MUTABLE_REFERENCE for x in f)     # :latest
+    assert any(x.question == STALE_OR_ABANDONED for x in f)    # age parsed from ISO

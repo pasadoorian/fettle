@@ -51,29 +51,80 @@ def _cfg(ctx) -> tuple[int, list[str]]:
     return max_age, [str(p) for p in (c.get("ignore", []) or [])]
 
 
+def images_argv(runtime: str) -> list[str]:
+    """The image-listing command for a runtime. **They need different flags.**
+
+    docker's ``--format '{{json .}}'`` emits the documented
+    ``Repository``/``Tag``/``ID``/``CreatedAt`` keys. Podman's *looks* like it should
+    too — its manual lists those same names as template placeholders — but those are
+    the accessors you may write, not the JSON tags the struct serialises to: podman's
+    ``{{json .}}`` actually emits lowercase ``repository``/``tag`` plus ``Id`` and
+    ``Created``, so reading it as docker's shape silently yields **no findings at
+    all**. Podman's plain ``--format json`` does carry the capitalised keys.
+    """
+    return ([runtime, "images", "--format", "json"] if runtime == "podman"
+            else [runtime, "images", "--format", "{{json .}}"])
+
+
 def parse_images(stdout: str) -> list[dict]:
-    """One JSON object per line (``--format '{{json .}}'``); skip unparseable lines."""
-    out = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    """Normalised image dicts from either runtime's JSON.
+
+    Accepts docker's newline-delimited objects *and* podman's single JSON array,
+    then squares up the field names so the caller sees one shape.
+    """
+    raw: list = []
+    text = stdout.strip()
+    if text.startswith("["):                       # podman: one JSON array
         try:
-            obj = json.loads(line)
+            parsed = json.loads(text)
+            raw = [o for o in parsed if isinstance(o, dict)]
         except ValueError:
-            continue
-        if isinstance(obj, dict):
-            out.append(obj)
+            raw = []
+    else:                                          # docker: one object per line
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(obj, dict):
+                raw.append(obj)
+
+    out = []
+    for o in raw:
+        img = dict(o)
+        # podman spells the id `Id`; docker `ID`.
+        img.setdefault("ID", o.get("Id") or o.get("id") or "")
+        # podman lowercases these under `{{json .}}`; harmless to accept both.
+        img.setdefault("Repository", o.get("repository") or "")
+        img.setdefault("Tag", o.get("tag") or "")
+        # podman gives Size as an integer number of bytes, docker a human string.
+        size = o.get("Size")
+        if isinstance(size, (int, float)):
+            img["Size"] = f"{size / 1e6:.0f}MB"
+        out.append(img)
     return out
 
 
 def _created(value: str):
-    """Parse docker's ``CreatedAt``, e.g. ``2026-06-15 10:30:30 -0400 EDT``.
+    """Parse either runtime's ``CreatedAt``.
 
-    The trailing zone *abbreviation* follows the numeric offset and ``%z`` cannot
-    read it, so only the first three whitespace-separated fields are used.
+    docker: ``2026-06-15 10:30:30 -0400 EDT`` — the trailing zone *abbreviation*
+    follows the numeric offset and ``%z`` cannot read it, so only the first three
+    whitespace-separated fields are used.
+    podman: ``2026-06-16T00:01:29Z`` — ISO 8601.
     """
-    parts = str(value).split()
+    text = str(value).strip()
+    if not text:
+        return None
+    try:                                           # podman / ISO 8601
+        stamp = datetime.fromisoformat(text)
+        return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    parts = text.split()
     if len(parts) < 3:
         return None
     try:
@@ -112,7 +163,7 @@ class ContainerSource(SourceProvider):
         runtime = next((r for r in RUNTIMES if command.which(r)), None)
         if runtime is None:
             return []
-        proc = command.run([runtime, "images", "--format", "{{json .}}"], capture=True)
+        proc = command.run(images_argv(runtime), capture=True)
         if proc.returncode != 0:
             # The daemon is down, or the user is not in the `docker` group. Reporting
             # nothing here would look identical to "no problems found".

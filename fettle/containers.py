@@ -22,7 +22,8 @@ without a human seeing the question. Note this deliberately bypasses
 from __future__ import annotations
 
 from . import command
-from .supplychain.container_source import RUNTIMES, image_ref, parse_images
+from .supplychain.container_source import (RUNTIMES, image_ref, images_argv,
+                                           parse_images)
 from .util import matches_any
 
 _NONE = "<none>"
@@ -57,7 +58,7 @@ def decide(ref: str, repo: str, cfg: dict) -> tuple[str, str]:
 
 def _images(runtime: str) -> tuple[list[tuple[str, str]], str]:
     """``([(ref, repo), …], error)`` — tagged images only (dangling can't be pulled)."""
-    proc = command.run([runtime, "images", "--format", "{{json .}}"], capture=True)
+    proc = command.run(images_argv(runtime), capture=True)
     if proc.returncode != 0:
         why = (proc.stderr or proc.stdout).strip().splitlines()
         return [], (f"exit {proc.returncode}" + (f": {why[0][:120]}" if why else ""))

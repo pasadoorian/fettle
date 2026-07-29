@@ -4,6 +4,31 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.32.2] — fix: the container audit found nothing on podman
+
+**0.32.1 claimed podman compatibility and was wrong.** That claim rested on podman's
+manual, which lists `.Repository`/`.Tag`/`.ID`/`.CreatedAt` as `--format` placeholders.
+Those are the accessors you may *write*; they are not the JSON tags the struct
+serialises to. `podman images --format "{{json .}}"` actually emits lowercase
+`repository`/`tag` plus `Id` and `Created`, so the docker-shaped parsing matched
+nothing and every podman host reported **zero container findings, silently** — the
+exact failure mode the provider was built to prevent. Verified against a real podman:
+1 image in, 0 findings out. RHEL ships podman, so this affected the whole new platform.
+
+- `images_argv()` now picks the right flag per runtime: docker keeps
+  `--format '{{json .}}'`; podman uses plain `--format json`, which *does* carry the
+  capitalised keys.
+- `parse_images()` accepts podman's single JSON array as well as docker's
+  newline-delimited objects, and normalises the differences: `Id` → `ID`, lowercase
+  `repository`/`tag`, and `Size` as an integer byte count rather than a human string.
+- `_created()` parses podman's ISO 8601 (`2026-06-16T00:01:29Z`) alongside docker's
+  `2026-06-15 10:30:30 -0400 EDT`.
+- Both call sites — the audit provider and `container-update` — go through
+  `images_argv()`, so the update action had the same bug and is fixed too.
+
+After: the same real podman image yields 2 findings (mutable `:latest` and image age).
+Tests are built from captured podman output rather than from the manual.
+
 ## [0.32.1] — pin podman format compatibility
 
 RHEL ships podman rather than docker, so podman-only hosts are now the main new
