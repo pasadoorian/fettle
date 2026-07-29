@@ -118,6 +118,8 @@ with a note**, so you install only what the commands you actually use need.
 | flatpak / snap | — | `flatpak`, `snapd` |
 | hardening audit (`-H`) | `checksec` | `checksec` |
 
+(RHEL family: `checksec` too — `dnf install checksec`.)
+
 Every tool above is optional and its check is skipped with a note when absent.
 The one you likely need to install is **`checksec`** for the hardening audit:
 

@@ -4,6 +4,26 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.36.0] — hardening-audit: a real baseline for the RHEL family
+
+`hardening-audit` ran on RHEL but scored binaries against the **generic** baseline,
+so its expectations were not the distribution's. It now derives them from rpm's own
+build macros, alongside the existing Arch (`makepkg.conf`) and Debian
+(`dpkg-buildflags`) sources.
+
+- The hardening flags live in **redhat-rpm-config**, a *build-time* package that is
+  normally absent from a running system — a stock RHEL 10.1 box and a stock AlmaLinux
+  container both lack it. Without it `%{build_cflags}` degrades to a bare `-O2 -g`,
+  which carries no hardening at all, so Red Hat's documented defaults are used
+  instead and the report says so. This mirrors how the Debian baseline falls back
+  when `dpkg-buildflags` is unavailable.
+- **An undefined rpm macro evaluates to its own literal text** (`%{build_ldflags}`),
+  not to an error or an empty string, so that is what distinguishes "no value" from a
+  real one.
+
+Verified live on RHEL 10.1: the baseline is now `rhel (rpm build macros)` with a
+`fortify_source` criterion the generic baseline never had.
+
 ## [0.35.0] — pkg-audit: DNF/YUM repository provenance
 
 New `dnf` provider for the RHEL family, the RPM analogue of the existing APT one.

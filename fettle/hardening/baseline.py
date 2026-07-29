@@ -130,12 +130,57 @@ def _debian(root: Path, runner=None) -> Baseline:
     return Baseline(name="debian (dpkg-buildflags)", criteria=crit, notes=notes)
 
 
+def _rpm_macro(run, name: str) -> str:
+    """``rpm --eval '%{name}'``, or ``""`` if the macro is undefined.
+
+    An undefined macro evaluates to its own literal text (``%{build_ldflags}``), not
+    to an error or an empty string — so the ``%{`` test is what distinguishes "no
+    value" from a real one.
+    """
+    val = (run(["rpm", "--eval", f"%{{{name}}}"], capture=True).stdout or "").strip()
+    return "" if "%{" in val else val
+
+
+def _rhel(root: Path, runner=None) -> Baseline:
+    """RHEL-family build flags from rpm's macros.
+
+    The hardening flags live in **redhat-rpm-config**, which is a *build-time*
+    package and is normally absent on a running system — a stock RHEL 10.1 box and a
+    stock AlmaLinux container both lack it. Without it ``%{build_cflags}`` degrades to
+    a bare ``-O2 -g`` and ``%{build_ldflags}`` does not expand at all, so the
+    documented defaults are used instead, exactly as the Debian baseline falls back
+    when ``dpkg-buildflags`` is missing.
+    """
+    run = runner or command.run
+    cflags = ldflags = ""
+    notes = []
+    if command.which("rpm"):
+        cflags = _rpm_macro(run, "build_cflags")
+        ldflags = _rpm_macro(run, "build_ldflags")
+    # `-O2 -g` is rpm's own bare default; it carries no hardening and means the
+    # redhat-rpm-config macros are not installed.
+    if not ldflags and cflags.replace("-O2", "").replace("-g", "").strip() == "":
+        cflags = ""
+    if not cflags and not ldflags:
+        # redhat-rpm-config's documented hardening set (RHEL 10 raised FORTIFY to 3).
+        cflags = ("-fstack-protector-strong -D_FORTIFY_SOURCE=3 -fPIE "
+                  "-specs=/usr/lib/rpm/redhat/redhat-hardened-cc1")
+        ldflags = "-Wl,-z,relro -Wl,-z,now -pie"
+        notes.append("redhat-rpm-config not installed (it is a build-time package) — "
+                     "using Red Hat's documented hardening defaults")
+    pie, ssp = _gcc_defaults(runner)
+    crit = _criteria_from_flags(cflags, ldflags, default_pie=pie, default_ssp=ssp)
+    return Baseline(name="rhel (rpm build macros)", criteria=crit, notes=notes)
+
+
 def resolve(distro: str, *, root: Path = Path("/"), runner=None) -> Baseline:
-    """Build the criteria set for ``distro`` (``arch`` | ``debian``)."""
+    """Build the criteria set for ``distro`` (``arch`` | ``debian`` | ``rhel``)."""
     if distro == "arch":
         return _arch(root, runner)
     if distro == "debian":
         return _debian(root, runner)
+    if distro == "rhel":
+        return _rhel(root, runner)
     return Baseline(
         name="generic",
         criteria={"nx": GOOD_NX, "relro": GOOD_RELRO_FULL, "pie": GOOD_PIE,

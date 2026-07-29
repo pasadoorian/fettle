@@ -297,3 +297,59 @@ def test_unknown_distro_gets_generic_baseline():
 def test_baseline_wants_accessor():
     assert ARCH_BASE.wants("relro") == bl.GOOD_RELRO_FULL
     assert ARCH_BASE.wants("nope") is None
+
+
+# -- RHEL baseline -----------------------------------------------------------
+# The hardening flags live in redhat-rpm-config, a BUILD-time package absent from a
+# stock running system: a real RHEL 10.1 box and a stock AlmaLinux container both
+# lack it, leaving `%{build_cflags}` as a bare `-O2 -g` and `%{build_ldflags}`
+# UNEXPANDED (it evaluates to its own literal text, not an error or empty string).
+def _rpm_runner(macros):
+    from fettle import command
+
+    def run(cmd, *, as_user=None, capture=False):
+        c = list(cmd)
+        if c[:2] == ["rpm", "--eval"]:
+            key = c[2].strip("%{}")
+            return command.Proc(0, macros.get(key, c[2]), "")   # undefined -> literal
+        return command.Proc(0, "", "")
+    return run
+
+
+def test_rhel_baseline_uses_real_macros_when_present():
+    from unittest.mock import patch
+    from fettle.hardening.baseline import resolve
+    macros = {
+        "build_cflags": "-O2 -flto=auto -Wp,-D_FORTIFY_SOURCE=3 "
+                        "-fstack-protector-strong -fPIE",
+        "build_ldflags": "-Wl,-z,relro -Wl,-z,now -pie",
+    }
+    with patch("fettle.command.which", return_value=True):
+        b = resolve("rhel", runner=_rpm_runner(macros))
+    assert "rpm build macros" in b.name
+    assert not any("documented" in n for n in b.notes)     # real values were found
+
+
+def test_rhel_baseline_detects_an_unexpanded_macro():
+    """`%{build_ldflags}` evaluates to its own literal text when undefined — the only
+    signal that redhat-rpm-config is missing."""
+    from unittest.mock import patch
+    from fettle.hardening.baseline import resolve
+    with patch("fettle.command.which", return_value=True):
+        b = resolve("rhel", runner=_rpm_runner({"build_cflags": "-O2 -g"}))
+    assert any("redhat-rpm-config not installed" in n for n in b.notes)
+    assert b.criteria                                       # still yields criteria
+
+
+def test_rhel_is_no_longer_the_generic_baseline():
+    from unittest.mock import patch
+    from fettle.hardening.baseline import resolve
+    with patch("fettle.command.which", return_value=True):
+        b = resolve("rhel", runner=_rpm_runner({}))
+    assert b.name != "generic"
+    assert not any("no build-flag source" in n for n in b.notes)
+
+
+def test_unknown_distro_still_gets_the_generic_baseline():
+    from fettle.hardening.baseline import resolve
+    assert resolve("gentoo").name == "generic"
