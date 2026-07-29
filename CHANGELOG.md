@@ -4,6 +4,31 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.34.0] — sys-audit package integrity on RHEL (`rpm -Va`)
+
+`sys-audit`'s `packages` category reported "not implemented for the rhel backend".
+`RhelBackend.verify_integrity` now fills it — the RPM analogue of debsums/paccheck.
+
+- **Separates the signal from the noise.** Config files you edited, ghost files created
+  at runtime and documentation all legitimately differ from their package, and on a
+  stock system they are most of `rpm -Va`'s output. Rows with **no file-type marker**
+  are packaged files — binaries and libraries — and only those are reported as altered;
+  the rest are summarised as expected differences (full list under `-v`).
+- **`rpm -Va`'s exit code cannot detect failure, in both directions.** It exits **1
+  merely for finding discrepancies**, so treating non-zero as failure would mark every
+  real system unverifiable; and it exits **0 with no output when the database is
+  unreadable**, which is byte-identical to a clean system. The rpm database is
+  therefore proven queryable first, and only that stands between "could not look" and
+  "all verified".
+- Paths are matched by anchoring on the leading `/` rather than splitting on
+  whitespace, so a path containing spaces is not truncated and the optional file-type
+  marker stays unambiguous.
+
+Verified live on AlmaLinux 10: tampering with `/usr/bin/gzip` moved the altered count
+3→4 and listed it as `S.5....T.`; removing the rpm database (which on RHEL 10 lives at
+`/usr/lib/sysimage/rpm`, not `/var/lib/rpm`) produced `UNKNOWN … NOT verified` where
+raw `rpm -Va` returned exit 0 and no output.
+
 ## [0.33.0] — advisory-check: dnf5 support
 
 The RHEL provider parsed **dnf4 output only**, and dnf5's is a completely different
