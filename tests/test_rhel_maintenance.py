@@ -405,6 +405,158 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- automatic updates -------------------------------------------------------
+# dnf-automatic's real defaults (dnf4 /etc/dnf/automatic.conf, dnf5 the /usr/share copy).
+_AUTO_CONF_OFF = ("[commands]\nupgrade_type = default\ndownload_updates = yes\n"
+                  "apply_updates = no\nreboot = never\n")
+_AUTO_CONF_ON = _AUTO_CONF_OFF.replace("apply_updates = no", "apply_updates = yes")
+_ALL_TIMERS = ("dnf-automatic-install.timer", "dnf-automatic-download.timer",
+               "dnf-automatic-notifyonly.timer", "dnf-automatic.timer",
+               "dnf5-automatic.timer")
+
+
+def _auto(tmp_path, *, enabled=(), present=True, conf=_AUTO_CONF_OFF,
+          conf_at="etc/dnf/automatic.conf", system="running", which=True):
+    """Run check_auto_updates against a synthetic systemd + config state."""
+    if conf is not None:
+        path = tmp_path / conf_at
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(conf)
+    ctx = _ctx(root=tmp_path)
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        if cmd[:2] == ["systemctl", "is-enabled"]:
+            unit = cmd[2]
+            if unit in enabled:
+                return command.Proc(0, "enabled\n", "")
+            if not present and unit in _ALL_TIMERS:
+                # systemd reports not-found on stderr with a non-zero code.
+                return command.Proc(1, "", "not-found\n")
+            return command.Proc(1, "disabled\n", "")
+        if cmd[:2] == ["systemctl", "is-system-running"]:
+            return command.Proc(0 if system == "running" else 1, system + "\n", "")
+        return command.Proc(0, "", "")
+
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=which):
+        RhelBackend().check_auto_updates(ctx)
+    return ctx
+
+
+def _said(capsys):
+    cap = capsys.readouterr()
+    return cap.out + cap.err
+
+
+def test_install_timer_beats_apply_updates_no(tmp_path, capsys):
+    """THE bug this action exists to avoid. `dnf-automatic-install.service` passes
+    --installupdates, so the host upgrades itself nightly even though automatic.conf says
+    apply_updates = no. Reading the config alone reports OFF on exactly that machine."""
+    _auto(tmp_path, enabled=("dnf-automatic-install.timer",), conf=_AUTO_CONF_OFF)
+    said = _said(capsys)
+    assert "ENABLED" in said
+    assert "regardless of apply_updates" in said
+
+
+def test_download_only_timer_does_not_count_as_on(tmp_path, capsys):
+    """The mirror image: -download passes --no-installupdates, so nothing is applied even
+    with apply_updates = yes. Calling that ON would be just as wrong."""
+    _auto(tmp_path, enabled=("dnf-automatic-download.timer",), conf=_AUTO_CONF_ON)
+    said = _said(capsys)
+    assert "DISABLED" in said
+    assert "only downloads or notifies" in said
+
+
+def test_plain_timer_defers_to_the_config(tmp_path, capsys):
+    _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=_AUTO_CONF_ON)
+    assert "ENABLED" in _said(capsys)
+
+
+def test_plain_timer_with_apply_updates_off_is_disabled(tmp_path, capsys):
+    _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=_AUTO_CONF_OFF)
+    said = _said(capsys)
+    assert "DISABLED" in said and "apply_updates is not set" in said
+
+
+def test_dnf5_unit_name_is_recognised(tmp_path, capsys):
+    """dnf5 ships dnf5-automatic.timer; checking only the dnf4 name misses it."""
+    _auto(tmp_path, enabled=("dnf5-automatic.timer",), conf=_AUTO_CONF_ON)
+    assert "ENABLED" in _said(capsys)
+
+
+def test_dnf5_ghost_config_falls_back_to_the_shipped_copy(tmp_path, capsys):
+    """On dnf5 both /etc paths are rpm *ghost* files that never exist on disk, so the
+    effective config is the one under /usr/share."""
+    _auto(tmp_path, enabled=("dnf5-automatic.timer",), conf=_AUTO_CONF_ON,
+          conf_at="usr/share/dnf5/dnf5-plugins/automatic.conf")
+    assert "ENABLED" in _said(capsys)
+
+
+def test_not_installed_is_distinguished_from_installed_but_disabled(tmp_path, capsys):
+    _auto(tmp_path, present=False, conf=None)
+    said = _said(capsys)
+    assert "not installed" in said
+
+    _auto(tmp_path, present=True, enabled=())
+    said2 = _said(capsys)
+    assert "installed but none of its timers are enabled" in said2
+
+
+def test_a_self_rebooting_host_is_warned_about(tmp_path, capsys):
+    """A server that reboots itself after patching is a bigger operational fact than the
+    patching. Only warned about when updates are actually applied."""
+    conf = _AUTO_CONF_ON.replace("reboot = never", "reboot = when-needed")
+    ctx = _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=conf)
+    said = _said(capsys)
+    assert "REBOOT ITSELF" in said
+    assert any("reboots itself" in s for s in ctx.output._summary)
+
+
+def test_reboot_setting_is_not_warned_about_when_nothing_is_applied(tmp_path, capsys):
+    conf = _AUTO_CONF_OFF.replace("reboot = never", "reboot = when-needed")
+    _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=conf)
+    assert "REBOOT ITSELF" not in _said(capsys)
+
+
+def test_a_container_says_the_timers_cannot_actually_fire(tmp_path, capsys):
+    """`systemctl is-enabled` reads unit FILES, so it answers happily with no systemd —
+    which is how a container can report a timer as enabled that will never run."""
+    _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=_AUTO_CONF_ON,
+          system="offline")
+    assert "not running as init" in _said(capsys)
+
+
+def test_a_real_host_carries_no_such_caveat(tmp_path, capsys):
+    _auto(tmp_path, enabled=("dnf-automatic.timer",), conf=_AUTO_CONF_ON, system="running")
+    assert "not running as init" not in _said(capsys)
+
+
+def test_no_systemctl_means_unknown_not_off(tmp_path, capsys):
+    """A check that could not look must not read as a clean "off"."""
+    _auto(tmp_path, which=False)
+    said = _said(capsys)
+    assert "cannot determine" in said
+    assert "DISABLED" not in said
+
+
+def test_auto_updates_runs_no_mutating_command(tmp_path):
+    """It is in cli.READ_ONLY_ACTIONS."""
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        calls.append(list(cmd))
+        return command.Proc(1, "disabled\n", "")
+
+    (tmp_path / "etc/dnf").mkdir(parents=True)
+    (tmp_path / "etc/dnf/automatic.conf").write_text(_AUTO_CONF_OFF)
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=True):
+        RhelBackend().check_auto_updates(_ctx(root=tmp_path))
+    assert all(c[0] == "systemctl" for c in calls)
+    assert all(c[1] in ("is-enabled", "is-system-running") for c in calls)
+
+
 # -- config drift ------------------------------------------------------------
 # Real `dnf check` bodies. dnf4 writes one line per problem; dnf5 writes the package on
 # one line with an indented `missing require` beneath it. Both put the count on stderr.

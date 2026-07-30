@@ -91,9 +91,9 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 
 **RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
 `advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
-integrity check, plus `clean`, `orphans`, `config-drift` and `firmware-check` (the
+integrity check, plus `clean`, `orphans`, `config-drift`, `auto-updates` and `firmware-check` (the
 `fwupdmgr` path is shared with the other backends — fwupd is distro-neutral). Not yet
-built: `kernel`, `auto-updates` and `rebuild-check` — those are reported as unsupported
+built: `kernel` and `rebuild-check` — those are reported as unsupported
 rather than silently skipped. Fedora is deliberately not claimed as a distro: it shares
 dnf, but its advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`
 (`--distro rhel` still works there, and is how the dnf5 code path is tested).
@@ -255,7 +255,7 @@ just Debian — each revision confirmed individually.
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | — (not built; `needs-restarting` is the intended tool) |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
-| `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | — (not built; `dnf-automatic` has four timers that override its own config) |
+| `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) | — (not built; dnf enforces `installonly_limit` itself) |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |

@@ -4,6 +4,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.44.0] — RHEL: does this host patch itself?
+
+`fettle -x` now works on the RHEL family, reporting whether `dnf-automatic` installs
+updates unattended.
+
+- **The timer overrides the config, so all four timers are checked.** `dnf-automatic`
+  ships `dnf-automatic.timer` plus `-install`, `-download` and `-notifyonly` variants,
+  and the `ExecStart` lines differ: `-install` passes `--installupdates` and therefore
+  applies updates **even when `automatic.conf` says `apply_updates = no`**, while
+  `-download`/`-notifyonly` pass `--no-installupdates` and never apply them however the
+  file is set. Reading the config alone — or only the plain timer — gets both cases
+  backwards. Verified live in a container: with `apply_updates = no` on disk and
+  `dnf-automatic-install.timer` enabled, fettle reports ENABLED and says why.
+- **dnf5 differs in unit name and config location.** The package is
+  `dnf5-plugin-automatic`, the unit is `dnf5-automatic.timer`, and both `/etc` config
+  paths are rpm **ghost** entries that are never written to disk — so the effective
+  config is the shipped copy under `/usr/share`. Verified by flipping that file and
+  watching the verdict change.
+- **"Not installed" and "installed but no timer enabled" are different answers**, and so
+  is "systemctl is missing", which reports that it cannot tell rather than "off".
+- **A host configured to reboot itself after patching is warned about** — a bigger
+  operational fact than the patching. Only when updates are actually applied.
+- **A container cannot report a false ON.** `systemctl is-enabled` reads unit *files*, so
+  it answers happily with no systemd — which also means the whole matrix is testable in a
+  container, contrary to an earlier note here. `systemctl is-system-running` returns
+  `offline` there, and that caveat is printed. Exit codes are not a usable discriminator:
+  `not-found` came back rc=1 on the VM and rc=4 in a container, so the text is matched.
+- Also notes when repo metadata refreshes on `dnf-makecache.timer`.
+
+Verified on AlmaLinux (dnf4) across all four states, Fedora (dnf5) including the ghost
+config, and the live RHEL 10.1 VM read-only, where `dnf-automatic` is not installed.
+
 ## [0.43.4] — reconcile three sessions that shared one checkout
 
 Cleanup and documentation. **If the 0.43.0–0.43.3 entries are confusing, this is why:**

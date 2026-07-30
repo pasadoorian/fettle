@@ -131,6 +131,39 @@ def _strip_dnf_notices(text: str) -> str:
                      if ln.strip() and not ln.startswith(_DNF_STDOUT_NOTICES)).strip()
 
 
+# dnf-automatic's timers, and whether the *unit* forces a behaviour that overrides
+# `automatic.conf`. Read out of the shipped .service files rather than guessed:
+#   dnf-automatic.service            --timer
+#   dnf-automatic-install.service    --timer --installupdates
+#   dnf-automatic-download.service   --timer --downloadupdates --no-installupdates
+#   dnf-automatic-notifyonly.service --timer --no-installupdates --no-downloadupdates
+#
+# So `-install` applies updates even with `apply_updates = no`, and `-download` /
+# `-notifyonly` never apply them even with `apply_updates = yes`. Reading the config alone
+# — or only the plain `dnf-automatic.timer` — reports "auto-updates OFF" on a machine that
+# upgrades itself every night. True/False force it; None defers to the config file.
+_AUTO_TIMERS = {
+    "dnf-automatic-install.timer": True,
+    "dnf-automatic-download.timer": False,
+    "dnf-automatic-notifyonly.timer": False,
+    "dnf-automatic.timer": None,
+    "dnf5-automatic.timer": None,     # dnf5 ships its own unit under a second name
+}
+
+# Checked in order, first one that exists wins. On dnf5 both `/etc` entries are rpm
+# **ghost** files that are never written to disk, so the shipped defaults under
+# `/usr/share` are what actually applies unless an admin created one of the others.
+_AUTO_CONF_PATHS = (
+    "etc/dnf/dnf5-plugins/automatic.conf",
+    "etc/dnf/automatic.conf",
+    "usr/share/dnf5/dnf5-plugins/automatic.conf",
+)
+
+# `systemctl is-enabled` states that mean the unit will actually be started. Everything
+# else — disabled, static, indirect, masked, generated, not-found — will not.
+_UNIT_ON = ("enabled", "enabled-runtime")
+
+
 def _have_root() -> bool:
     """Whether this process can run ``dnf upgrade``, which refuses to run otherwise."""
     return os.geteuid() == 0
@@ -278,6 +311,7 @@ class RhelBackend(PackageBackend):
         "orphans",           # repoquery --unneeded/--extras; kernels never offered
         "config_drift",      # .rpmnew/.rpmsave/.rpmorig + dnf check
         "firmware_check",    # fwupd; the base-class impl, nothing RPM-specific
+        "auto_updates",      # dnf-automatic: four timers, and they override the config
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -467,6 +501,119 @@ class RhelBackend(PackageBackend):
         return Transaction(items=items, ok=True, notes=notes)
 
     # -- config drift --------------------------------------------------------
+    # -- automatic-update posture --------------------------------------------
+    @staticmethod
+    def _unit_state(unit: str) -> str:
+        """``systemctl is-enabled`` for one unit, as its *text*.
+
+        Keyed on the text and not the exit code deliberately: `not-found` came back
+        rc=1 on the RHEL VM and rc=4 in a container, so the code cannot be compared
+        against a fixed value. The text is stable across both.
+        """
+        proc = command.run(["systemctl", "is-enabled", unit], capture=True)
+        # `not-found` arrives on stderr in some systemd versions and stdout in others.
+        text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        return text.splitlines()[0].strip() if text else ""
+
+    def _automatic_conf(self, ctx: Context) -> tuple[dict, str]:
+        """``([commands] as a dict, path used)`` from dnf-automatic's config.
+
+        Returns ``({}, "")`` when no config exists anywhere, which is a real state on
+        dnf5: its ``/etc`` entries are rpm ghost files. Both generations default
+        ``apply_updates`` to ``no``, so an absent file is not permissive — but the
+        shipped ``/usr/share`` copy is read rather than that assumption hardcoded.
+        """
+        import configparser
+
+        for rel in _AUTO_CONF_PATHS:
+            path = ctx.root / rel
+            if not path.is_file():
+                continue
+            # interpolation off: `reboot_command` carries quotes and shell text.
+            cp = configparser.ConfigParser(strict=False, interpolation=None)
+            try:
+                cp.read_string(path.read_text(errors="replace"))
+            except (OSError, configparser.Error):
+                continue
+            return (dict(cp["commands"]) if cp.has_section("commands") else {}), str(path)
+        return {}, ""
+
+    def check_auto_updates(self, ctx: Context) -> Result:
+        """Report whether this host installs updates by itself (read-only).
+
+        The subtle part is that **the timer overrides the config**. `dnf-automatic` ships
+        four timers; `-install` passes `--installupdates` and so applies updates even when
+        `automatic.conf` says ``apply_updates = no``, while `-download` and `-notifyonly`
+        pass `--no-installupdates` and never apply them however the file is set. A check
+        that reads only the config, or only the plain timer, gets both cases backwards.
+        """
+        out = ctx.output
+        if not command.which("systemctl"):
+            out.note("systemctl not found; cannot determine the automatic-update state.")
+            return Result()
+
+        states = {unit: self._unit_state(unit) for unit in _AUTO_TIMERS}
+        if all(s == "not-found" for s in states.values()):
+            out.note("automatic updates: DISABLED (dnf-automatic is not installed — none "
+                     "of its timers exist).")
+            out.summary_add("auto-updates: OFF")
+            out.next_step("to enable: dnf install dnf-automatic, set apply_updates=yes "
+                          "in /etc/dnf/automatic.conf, then enable dnf-automatic.timer")
+            return Result()
+
+        enabled = [u for u, s in states.items() if s in _UNIT_ON]
+        forced_on = [u for u in enabled if _AUTO_TIMERS[u] is True]
+        forced_off = [u for u in enabled if _AUTO_TIMERS[u] is False]
+        by_config = [u for u in enabled if _AUTO_TIMERS[u] is None]
+        commands, conf_path = self._automatic_conf(ctx)
+        apply_updates = str(commands.get("apply_updates", "no")).strip().lower() \
+            in ("yes", "true", "1")
+
+        if forced_on:
+            out.note(f"automatic updates: ENABLED — {', '.join(forced_on)} installs "
+                     "upgrades. That unit passes --installupdates, so it applies them "
+                     f"regardless of apply_updates in {conf_path or 'automatic.conf'}.")
+            out.summary_add("auto-updates: ON (dnf-automatic)")
+        elif by_config and apply_updates:
+            out.note(f"automatic updates: ENABLED — {', '.join(by_config)} with "
+                     f"apply_updates=yes in {conf_path}.")
+            out.summary_add("auto-updates: ON (dnf-automatic)")
+        else:
+            reasons = []
+            if not enabled:
+                installed = [u for u, s in states.items() if s != "not-found"]
+                reasons.append("dnf-automatic is installed but none of its timers are "
+                               f"enabled ({', '.join(sorted(installed))})")
+            if by_config and not apply_updates:
+                where = conf_path or "no automatic.conf found; dnf's default is off"
+                reasons.append(f"apply_updates is not set ({where})")
+            if forced_off:
+                # Not the same as "off": updates are fetched, so a later manual upgrade
+                # is fast, and nothing is applied. Worth stating rather than collapsing.
+                reasons.append(f"{', '.join(forced_off)} only downloads or notifies — it "
+                               "passes --no-installupdates, so nothing is applied even "
+                               "with apply_updates=yes")
+            out.note("automatic updates: DISABLED (" + "; ".join(reasons) + ").")
+            out.summary_add("auto-updates: OFF")
+
+        reboot = str(commands.get("reboot", "never")).strip().lower()
+        if reboot != "never" and (forced_on or (by_config and apply_updates)):
+            # A server rebooting itself is a bigger operational fact than the updates.
+            out.warn(f"this host is configured to REBOOT ITSELF after applying updates "
+                     f"(reboot = {reboot} in {conf_path}).")
+            out.summary_add("auto-updates: host reboots itself")
+
+        if self._unit_state("dnf-makecache.timer") in _UNIT_ON:
+            out.note("repo metadata refreshes on a timer (dnf-makecache.timer).")
+
+        # Unit files are readable without systemd running, so "enabled" can be true on
+        # disk while nothing will ever start it — true inside a container.
+        running = command.run(["systemctl", "is-system-running"], capture=True)
+        if "offline" in ((running.stdout or "") + (running.stderr or "")).lower():
+            out.warn("systemd is not running as init here, so the timer state above was "
+                     "read from unit files and nothing will actually fire.")
+        return Result()
+
     def check_config_drift(self, ctx: Context) -> Result:
         """Pending config merges, plus a package-database sanity check.
 
