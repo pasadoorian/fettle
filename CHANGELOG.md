@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.46.1] — README: a support matrix you can read at a glance
+
+Documentation only. "Supported distributions" listed the three families and described RHEL
+in prose, but there was no way to answer *"will `-k` run on my box?"* without reading the
+whole maintenance-actions table, whose cells describe behaviour rather than support.
+
+- New **What works where** table: every action against every family, with the actions that
+  run by default marked, and the totals (Arch 15/15, Debian 12/15, RHEL 12/15) alongside a
+  note that the three gaps are Arch-only by nature — so Debian and RHEL are *complete*,
+  not partial.
+- Footnotes for the two RHEL differences that a tick would otherwise overstate: kernels are
+  reported but never removed (dnf prunes them itself), and the hardening audit needs
+  `checksec`, which is not packaged for RHEL 10 even in EPEL.
+- States plainly which features are distro-independent, which distros have native CVE feeds,
+  and that `pkg-audit` covers the same seven ecosystems everywhere.
+
 ## [0.46.0] — RHEL: kernels and binary attribution — the family is complete
 
 The last two gaps close, bringing the RHEL backend to **parity with Debian**: every action

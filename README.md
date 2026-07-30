@@ -27,6 +27,7 @@ real unit-test coverage the bash originals never had.
 
 - [What it does](#what-it-does)
 - [Supported distributions](#supported-distributions)
+  - [What works where](#what-works-where)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
@@ -94,6 +95,48 @@ are Arch-only by nature (`aur-audit`, `aur-ioc-scan`, and `python-rebuild-check`
 handles itself). Fedora is deliberately not claimed as a *distro*: it shares dnf, but its
 advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
 still works there, and is how the dnf5 code path is tested).
+
+### What works where
+
+● supported · — not applicable to this family · ✔︎ runs by default when you type plain
+`fettle`. Per-distro *behaviour* is in [Maintenance actions](#maintenance-actions); this is
+the at-a-glance "will it run on my box" view.
+
+| | Flag | Arch | Debian | RHEL | Default |
+|---|---|:--:|:--:|:--:|:--:|
+| Update everything | `-u` | ● | ● | ● | ✔︎ |
+| Refresh metadata + report upgradable | `-O` | ● | ● | ● | |
+| Clean package caches | `-c` | ● | ● | ● | ✔︎ |
+| Orphaned / unused packages | `-o` | ● | ● | ● | ✔︎ |
+| Rebuilds & service restarts | `-r` | ● | ● | ● | ✔︎ |
+| Pending config-file merges | `-d` | ● | ● | ● | ✔︎ |
+| Automatic-update posture | `-x` | ● | ● | ● | ✔︎ |
+| Firmware updates | `-f` | ● | ● | ● | ✔︎ |
+| Kernel management | `-k` | ● | ● | ●¹ | |
+| Supply-chain audit | `-P` | ● | ● | ● | ✔︎ |
+| Binary hardening audit | `-H` | ● | ● | ●² | |
+| Container image updates | `-C` | ● | ● | ● | |
+| Python rebuild check | `-y` | ● | — | — | ✔︎ |
+| AUR health census | `-A` | ● | — | — | |
+| AUR compromise (IoC) scan | `-I` | ● | — | — | ✔︎ |
+| | | **15/15** | **12/15** | **12/15** | |
+
+The three gaps are the same on Debian and RHEL and are Arch-only by nature — there is no
+AUR elsewhere, and both apt and dnf handle Python interpreter transitions themselves. So
+Debian and RHEL are *complete*, not partial.
+
+¹ Reported, never removed: dnf enforces `installonly_limit` and prunes old kernels itself.
+Arch and Debian do offer removal, because pacman and apt do not.
+² Needs `checksec`, which is **not packaged for RHEL 10 — EPEL included** — so in practice
+this cannot run there yet. The code and tests are in place for when it is.
+
+**Distro-independent features** work the same everywhere: the `sys-audit` firmware/boot
+scan (`-S`, only its package-integrity check is per-distro), `fettle remote` over ssh, the
+AI upgrade checker (`-U`), the HTML report and the web UI. `advisory-check` has native CVE
+feeds for **Arch, Debian, Ubuntu and RHEL**, plus language dependencies via OSV. And
+`pkg-audit` covers the **same seven ecosystems on every distro** — the native one
+(AUR / apt / dnf) plus flatpak, snap, containers, GNOME extensions, VS Code extensions and
+GitHub CLI extensions.
 
 Three RHEL-specific things worth knowing:
 
