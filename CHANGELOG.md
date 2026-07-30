@@ -4,6 +4,43 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.43.0] — snap pruning is not a Debian feature
+
+`fettle -c` offers to reclaim superseded ("disabled") snap revisions on **every** distro,
+not just Debian and Ubuntu.
+
+- **`_prune_disabled_snaps` moved from `DebianBackend` to `PackageBackend`**, and Arch and
+  RHEL now call it too. snapd installs and refreshes identically everywhere — an Arch box
+  with the AUR `snapd` package accumulates exactly the same reclaimable revisions a Debian
+  one does, and fettle never offered them. This is the same asymmetry already fixed for
+  the supply-chain providers, which used to hang off the Debian backend alone and so
+  audited an Arch box with flatpaks as though it had none.
+- **Behaviour is unchanged, deliberately.** Each revision is still confirmed
+  *individually* — removing an installed snap revision must never happen without asking,
+  and only `--yes` opts into all. Parsing still keys on the `Notes` column of
+  `snap list --all` containing "disabled".
+- Self-gated on `snap` being on PATH, so a machine without snapd pays one `which` call.
+  `[updaters.debian]` / `[updaters.rhel]` `snap_updater = "none"` still opts out; there is
+  no `[updaters.arch] snap_updater` key to consult, and none was invented — every revision
+  is confirmed individually regardless.
+- Two dry-run tests that asserted `clean` runs *no* command at all now allow the read-only
+  `snap list --all`, which is what previews the revisions a real run would offer. Nothing
+  that changes the system runs under `--dry-run` (`ctx.select` declines everything).
+
+Not live-verified end to end: wopr has snapd active but no snaps installed, so the live
+run exercised the gate and the nothing-to-do path only. The removal path rests on the unit
+tests, which drive all three backends against one real `snap list --all` fixture.
+
+### Also in this release, from in-flight RHEL work committed alongside
+
+- `RhelBackend` now claims `firmware_check`. The base-class `firmware_updates` was always
+  inherited and always worked; the missing *claim* made `fettle -f` on a RHEL box report
+  "not supported by the rhel backend", and `fettle remote <rhel-host>` skip it silently.
+  Covered by two new tests, including the measured case where `fwupdmgr get-updates` exits
+  **2** and writes "No updatable devices" to *stderr* with stdout empty.
+- `_AUTO_TIMERS` / `_AUTO_CONF_PATHS` groundwork for RHEL `check_auto_updates`, not yet
+  wired to an action.
+
 ## [0.42.0] — RHEL: config drift, and `.rpmsave` is not the same as `.rpmnew`
 
 `fettle -d` now works on the RHEL family: pending config merges under `/etc`, plus

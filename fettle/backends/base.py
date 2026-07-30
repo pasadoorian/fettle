@@ -275,3 +275,41 @@ class PackageBackend(abc.ABC):
         else:
             out.ok("no firmware updates available.")
         return Result()
+
+    # -- snap is distro-neutral too: snapd works everywhere -------------------
+    def _prune_disabled_snaps(self, ctx: Context) -> None:
+        """Offer to remove superseded (disabled) snap revisions left after a refresh.
+
+        Distro-agnostic for the same reason as :meth:`supply_chain_sources`: snapd
+        installs and refreshes identically on every distribution, so an Arch or RHEL
+        box with snapd accumulates exactly the same reclaimable revisions a Debian one
+        does. This used to hang off the Debian backend alone, so those revisions were
+        never offered anywhere else. Self-gated on ``snap`` being present, so a box
+        without snapd pays one ``which`` call.
+
+        Each revision is confirmed individually — removing an installed snap
+        revision is never done without asking (only ``--yes`` opts into all).
+        """
+        from .. import command
+
+        if not command.which("snap"):
+            return
+        # `snap list --all` lists every revision; the Notes column marks the
+        # superseded ones "disabled". Header row skipped.
+        out = command.run(["snap", "list", "--all"], capture=True).stdout
+        disabled = []  # (name, revision)
+        for line in out.splitlines()[1:]:
+            cols = line.split()
+            if len(cols) >= 6 and "disabled" in cols[5]:
+                disabled.append((cols[0], cols[2]))
+        if not disabled:
+            return
+        ctx.output.note("disabled (superseded) snap revisions:")
+        labels = [f"{name} (rev {rev})" for name, rev in disabled]
+        for label in labels:
+            print(f"    {label}")
+        by_label = dict(zip(labels, disabled))
+        for label in ctx.select(labels, prompt="remove disabled snap revision"):
+            name, rev = by_label[label]
+            ctx.execute(["snap", "remove", name, f"--revision={rev}"],
+                        quiet=True, msg=f"removed disabled snap {name} (rev {rev})")

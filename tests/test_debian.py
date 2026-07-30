@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from conftest import SNAP_LIST_ALL
+
 from fettle import command
 from fettle.backends.base import Context
 from fettle.backends.debian import DebianBackend
@@ -27,10 +29,9 @@ def _fake(responses, calls):
 
 
 # -- clean -------------------------------------------------------------------
-_SNAPS = ("Name Version Rev Tracking Publisher Notes\n"
-          "core20 20230622 1974 latest/stable canonical base\n"
-          "core20 20230801 2015 latest/stable canonical disabled\n"
-          "firefox 117.0 3026 latest/stable mozilla disabled\n")
+# The snap fixture lives in conftest.py: pruning moved to the base backend, so Arch and
+# RHEL are checked against the same bytes (see test_base.py).
+_SNAPS = SNAP_LIST_ALL
 
 
 def test_clean_apt_flatpak_and_prunes_disabled_snaps():

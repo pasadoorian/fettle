@@ -754,7 +754,9 @@ def test_clean_honors_flatpak_updater_none():
 
 def test_clean_deletes_nothing_under_dry_run():
     _, argvs = _clean(dry_run=True)
-    assert argvs == []
+    # Only the read-only snap listing, which previews the disabled revisions a real run
+    # would offer (dry-run declines every prompt). Nothing that changes the system.
+    assert argvs == [["snap", "list", "--all"]]
 
 
 # -- update + the unsigned-repo gate -----------------------------------------
@@ -934,3 +936,45 @@ def test_refresh_changes_nothing_under_dry_run():
          patch("fettle.command.which", return_value=True):
         RhelBackend().refresh_metadata(_ctx(dry_run=True))
     assert calls == []
+
+
+# -- firmware ----------------------------------------------------------------
+# `firmware_updates` is the base class's, unchanged: fwupd is distro-neutral and the
+# RPM family gets it from the `fwupd` package like everyone else. What was missing was
+# the *claim* — `firmware_check` absent from `supported` made `fettle -f` on a RHEL box
+# report "not supported by the rhel backend" and do nothing, and since firmware-check is
+# in REMOTE_DEFAULT_ACTIONS, `fettle remote <rhel-host>` silently skipped it too.
+def test_rhel_claims_firmware_check():
+    """Guards the claim itself — the concrete base method is useless unadvertised.
+
+    Deliberately not expressible in test_action_registry's
+    `test_claimed_actions_are_actually_implemented`: that check asserts a backend
+    *overrides* a method it claims, and firmware_check is exempt there precisely
+    because inheriting it is correct. So nothing generic can notice the omission.
+    """
+    assert "firmware_check" in RhelBackend.supported
+
+
+def test_firmware_no_updatable_devices_is_not_an_error(capsys):
+    """`fwupdmgr get-updates` exits **2** with nothing to do, and on RHEL 10.1 says so
+    on *stderr* while leaving stdout empty.
+
+    Measured on the live host (fwupd 1.9.31, daemon active, get-devices exit 0 — so
+    this is a real "nothing to update", not a broken install). Two traps in one:
+    trusting the exit code would report a failure, and matching "No updatable devices"
+    in *stdout* would miss it. The emptiness of stdout is what carries the result here.
+    """
+    err = ("Idle…: 0%\nWARNING: UEFI capsule updates not available or enabled in "
+           "firmware setup\nNo updatable devices\n")
+
+    def run(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["fwupdmgr", "get-updates"]:
+            return command.Proc(2, "", err)
+        return command.Proc(0, "", "")
+
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=True):
+        RhelBackend().firmware_updates(_ctx())
+    out = capsys.readouterr().out
+    assert "no firmware updates" in out.lower()
+    assert "available:" not in out  # never the "updates available" branch

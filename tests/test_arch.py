@@ -347,9 +347,12 @@ def test_invalid_updater_falls_back_with_warning(capsys):
 
 def test_dry_run_executes_no_commands():
     calls, fake = _recorder()
-    with patch("fettle.command.run", side_effect=fake):
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
         ArchBackend().clean_caches(_ctx(dry_run=True))
-    assert calls == []  # dry-run never touches command.run
+    # Only the read-only snap listing, which previews the disabled revisions a real run
+    # would offer (dry-run declines every prompt). Nothing that changes the system.
+    assert [c for c, _ in calls] == [["snap", "list", "--all"]]
 
 
 # -- automatic updates -------------------------------------------------------

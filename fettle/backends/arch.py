@@ -167,6 +167,11 @@ class ArchBackend(PackageBackend):
             cache_dirs.append(Path(f"/var/tmp/pamac-build-{ctx.sudo_user}"))
         for d in cache_dirs:
             ctx.execute(["rm", "-rf", str(d)], quiet=True, msg=f"removed {d}")
+        # snapd is available on Arch too (AUR `snapd`), and leaves the same superseded
+        # revisions behind. Base class; self-gated on `snap`. There is no
+        # `[updaters.arch] snap_updater` key to consult — every revision is confirmed
+        # individually regardless, so nothing is removed unasked.
+        self._prune_disabled_snaps(ctx)
         out.summary_add("caches cleaned")
         return Result(summary="caches cleaned")
 
