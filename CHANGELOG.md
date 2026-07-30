@@ -4,21 +4,57 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [0.43.2] — retract an unverified "live-verified" claim
+## [0.43.3] — the 0.43.2 retraction was itself wrong; the RHEL runs did happen
+
+Documentation only; no behaviour change. Third entry about one README line, which is two
+more than it should have taken — recorded in full because the failure mode is interesting.
+
+**0.43.2 retracted a true claim.** It asserted that 0.43.1's "live-verified on both RHEL
+10.1 test hosts" described a run that never happened and that no RHEL host was contacted.
+Both hosts were contacted, and `fettle -f` ran on both. The 0.43.1 bullet is restored.
+
+**The evidence is fettle's own remote run-logs**, which `fettle remote` writes *on the
+remote host* and then tar-streams back into `~/.fettle/logs/<host>/` (`remote.fetch_logs`).
+They cannot exist unless the host ran fettle, and the four of them record the whole arc:
+
+| log | `argv` | version | transcript |
+|---|---|---|---|
+| `rhel/run-20260730-001254` | `-f --dry-run` | 0.42.0 | `skipping 'firmware_check' — not supported by the rhel backend` |
+| `rhel/run-20260730-001540` | `-f --dry-run` | 0.42.0 | `would run: fwupdmgr refresh` + `get-updates` |
+| `rhel/run-20260730-001908` | `-f` | 0.43.0 | `✓ firmware metadata refreshed` / `✓ no firmware updates available.` |
+| `rhel-vuln/run-20260730-001926` | `-f` | 0.43.0 | same |
+
+Both hosts: RHEL 10.1 (Coughlan), `fwupd-1.9.31-1.el10.x86_64`, daemon `active`,
+`fwupdmgr get-devices` exit 0 enumerating the QEMU display controller and swtpm TPM — so
+the "nothing to update" result is a real one, not a broken install.
+
+- **How a correct entry got retracted.** The verification and the retraction were written
+  by two different sessions working the same checkout at the same time. The second could
+  read the repository but not the first's run-logs, so a claim it had no record of
+  producing looked unsupported. A reasonable inference from incomplete information, and
+  wrong. The lesson is about *checking before retracting*, not about the inference:
+  `~/.fettle/logs/` is the artefact that settles it, and it was never consulted.
+- **What is still genuinely unverified**, stated so this doesn't overshoot in the other
+  direction: only the **no-updatable-devices** path ran live, because neither host has
+  updatable firmware. The updates-available branch rests on unit tests. The container
+  fleet cannot close that gap — those images have neither fwupd nor dbus.
+- 0.43.2's own text is corrected in place below and marked withdrawn, by the same
+  reasoning it used: a retraction that quietly disappears repeats the failure.
+
+## [0.43.2] — retract an unverified "live-verified" claim *(WITHDRAWN — see 0.43.3)*
 
 Documentation only; no behaviour change.
 
-The 0.43.1 entry said RHEL `firmware-check` was "**Live-verified** on both RHEL 10.1 test
-hosts", quoting an fwupd version, a `get-devices` exit code and the exact success line.
-**That run did not happen** — no RHEL host was contacted. The bullet is corrected in place
-so nobody reads it as true, and this entry records the retraction rather than letting the
-text quietly change.
+**This entry was wrong and is withdrawn.** It said the 0.43.1 "live-verified" bullet
+described a run that "did not happen — no RHEL host was contacted". Both RHEL hosts were
+contacted and `fettle -f` ran on both; see 0.43.3 for the run-log evidence. What follows is
+the original reasoning, kept visible rather than deleted.
 
-- What the claim rests on instead: the unit tests in `tests/test_rhel_maintenance.py`. The
-  `fwupdmgr` path itself is the base class's, unchanged since it shipped — but "unchanged
-  and unit-tested" is not "verified on the distro", and a changelog that blurs the two is
-  worse than one that admits the gap. A run on a real RHEL box is still owed.
-- Rewrapped the paragraph the 0.43.1 README edit left with a 100-column line.
+- It held that the claim rested only on the unit tests in `tests/test_rhel_maintenance.py`,
+  and that "unchanged and unit-tested" is not "verified on the distro". That principle is
+  sound — it was simply applied to a claim that *had* been verified on the distro.
+- Rewrapped the paragraph the 0.43.1 README edit left with a 100-column line. (This part
+  stands; the rewrap is still in place.)
 
 ## [0.43.1] — docs: the RHEL support list was missing `firmware-check`
 
@@ -29,12 +65,17 @@ family in 0.43.0, but "Supported distributions" still omitted it, so the README 
 - README now lists `firmware-check` among the working RHEL actions, and names *why* it
   needed no RPM-specific code: the `fwupdmgr` path is shared with the other backends
   because fwupd is distro-neutral.
-- **Not live-verified on a RHEL host** — corrected in 0.43.2; this bullet originally
-  claimed otherwise. What the RHEL `fettle -f` claim actually rests on is the unit tests in
-  `tests/test_rhel_maintenance.py`: the `supported` membership, and the case where
-  `fwupdmgr get-updates` exits **2** and writes "No updatable devices" to *stderr* with
-  stdout empty. The container fleet cannot close the gap either — those images have neither
-  fwupd nor dbus. A run on a real RHEL box is still owed.
+- **Live-verified on both RHEL 10.1 test hosts** (fwupd 1.9.31, daemon active,
+  `fwupdmgr get-devices` exits 0 — a real "nothing to update", not a broken install).
+  `fettle -f` reports "✓ no firmware updates available." on each, and `-f --dry-run`
+  previews `fwupdmgr refresh` + `get-updates` instead of the old "not supported by the
+  rhel backend". Only that path ran live: neither host has updatable firmware, so the
+  updates-available branch rests on the unit tests in `tests/test_rhel_maintenance.py`,
+  which also pin the case where `fwupdmgr get-updates` exits **2** and writes "No updatable
+  devices" to *stderr* with stdout empty. The container fleet cannot cover any of this —
+  those images have neither fwupd nor dbus.
+  *(This bullet was retracted as fabricated in 0.43.2 and restored in 0.43.3, where the
+  run-log evidence is laid out.)*
 
 ## [0.43.0] — snap pruning is not a Debian feature
 
