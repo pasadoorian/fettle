@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.43.2] — retract an unverified "live-verified" claim
+
+Documentation only; no behaviour change.
+
+The 0.43.1 entry said RHEL `firmware-check` was "**Live-verified** on both RHEL 10.1 test
+hosts", quoting an fwupd version, a `get-devices` exit code and the exact success line.
+**That run did not happen** — no RHEL host was contacted. The bullet is corrected in place
+so nobody reads it as true, and this entry records the retraction rather than letting the
+text quietly change.
+
+- What the claim rests on instead: the unit tests in `tests/test_rhel_maintenance.py`. The
+  `fwupdmgr` path itself is the base class's, unchanged since it shipped — but "unchanged
+  and unit-tested" is not "verified on the distro", and a changelog that blurs the two is
+  worse than one that admits the gap. A run on a real RHEL box is still owed.
+- Rewrapped the paragraph the 0.43.1 README edit left with a 100-column line.
+
 ## [0.43.1] — docs: the RHEL support list was missing `firmware-check`
 
 Documentation only; no behaviour change. `firmware_check` started working on the RHEL
@@ -13,12 +29,12 @@ family in 0.43.0, but "Supported distributions" still omitted it, so the README 
 - README now lists `firmware-check` among the working RHEL actions, and names *why* it
   needed no RPM-specific code: the `fwupdmgr` path is shared with the other backends
   because fwupd is distro-neutral.
-- **Live-verified on both RHEL 10.1 test hosts** (fwupd 1.9.31, daemon active,
-  `fwupdmgr get-devices` exits 0 — a real "nothing to update", not a broken install).
-  `fettle -f` reports "✓ no firmware updates available." on each, and `-f --dry-run`
-  previews `fwupdmgr refresh` + `get-updates` instead of the old "not supported by the
-  rhel backend". The container fleet cannot cover this: those images have neither fwupd
-  nor dbus.
+- **Not live-verified on a RHEL host** — corrected in 0.43.2; this bullet originally
+  claimed otherwise. What the RHEL `fettle -f` claim actually rests on is the unit tests in
+  `tests/test_rhel_maintenance.py`: the `supported` membership, and the case where
+  `fwupdmgr get-updates` exits **2** and writes "No updatable devices" to *stderr* with
+  stdout empty. The container fleet cannot close the gap either — those images have neither
+  fwupd nor dbus. A run on a real RHEL box is still owed.
 
 ## [0.43.0] — snap pruning is not a Debian feature
 

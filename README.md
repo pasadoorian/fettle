@@ -94,9 +94,9 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 integrity check, plus `clean`, `orphans`, `config-drift` and `firmware-check` (the
 `fwupdmgr` path is shared with the other backends — fwupd is distro-neutral). Not yet
 built: `kernel`, `auto-updates` and `rebuild-check` — those are reported as unsupported
-rather than silently skipped. Fedora is deliberately not claimed as a distro: it shares dnf, but its
-advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
-still works there, and is how the dnf5 code path is tested).
+rather than silently skipped. Fedora is deliberately not claimed as a distro: it shares
+dnf, but its advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`
+(`--distro rhel` still works there, and is how the dnf5 code path is tested).
 
 Two RHEL-specific things worth knowing:
 
