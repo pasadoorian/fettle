@@ -4,6 +4,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.43.1] — docs: the RHEL support list was missing `firmware-check`
+
+Documentation only; no behaviour change. `firmware_check` started working on the RHEL
+family in 0.43.0, but "Supported distributions" still omitted it, so the README said
+`fettle -f` was unavailable there while the code ran it fine.
+
+- README now lists `firmware-check` among the working RHEL actions, and names *why* it
+  needed no RPM-specific code: the `fwupdmgr` path is shared with the other backends
+  because fwupd is distro-neutral.
+- **Live-verified on both RHEL 10.1 test hosts** (fwupd 1.9.31, daemon active,
+  `fwupdmgr get-devices` exits 0 — a real "nothing to update", not a broken install).
+  `fettle -f` reports "✓ no firmware updates available." on each, and `-f --dry-run`
+  previews `fwupdmgr refresh` + `get-updates` instead of the old "not supported by the
+  rhel backend". The container fleet cannot cover this: those images have neither fwupd
+  nor dbus.
+
 ## [0.43.0] — snap pruning is not a Debian feature
 
 `fettle -c` offers to reclaim superseded ("disabled") snap revisions on **every** distro,
