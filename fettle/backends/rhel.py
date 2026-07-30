@@ -131,35 +131,6 @@ def _strip_dnf_notices(text: str) -> str:
                      if ln.strip() and not ln.startswith(_DNF_STDOUT_NOTICES)).strip()
 
 
-# dnf-automatic's timers, and whether the *unit* forces a behaviour that overrides
-# `automatic.conf`. Read out of the shipped .service files rather than guessed:
-#   dnf-automatic.service            --timer
-#   dnf-automatic-install.service    --timer --installupdates
-#   dnf-automatic-download.service   --timer --downloadupdates --no-installupdates
-#   dnf-automatic-notifyonly.service --timer --no-installupdates --no-downloadupdates
-#
-# So `-install` applies updates even with `apply_updates = no`, and `-download` /
-# `-notifyonly` never apply them even with `apply_updates = yes`. Checking the config
-# alone — or only the plain `dnf-automatic.timer` — reports "auto-updates OFF" on a
-# machine that upgrades itself every night. True/False force it; None defers to the file.
-_AUTO_TIMERS = {
-    "dnf-automatic-install.timer": True,
-    "dnf-automatic-download.timer": False,
-    "dnf-automatic-notifyonly.timer": False,
-    "dnf-automatic.timer": None,
-    "dnf5-automatic.timer": None,     # dnf5 ships its own unit under a second name
-}
-
-# Checked in order, first one that exists wins. On dnf5 both `/etc` entries are rpm
-# **ghost** files that are not written to disk, so the shipped defaults under
-# `/usr/share` are what actually applies unless an admin created one of the others.
-_AUTO_CONF_PATHS = (
-    "etc/dnf/dnf5-plugins/automatic.conf",
-    "etc/dnf/automatic.conf",
-    "usr/share/dnf5/dnf5-plugins/automatic.conf",
-)
-
-
 def _have_root() -> bool:
     """Whether this process can run ``dnf upgrade``, which refuses to run otherwise."""
     return os.geteuid() == 0

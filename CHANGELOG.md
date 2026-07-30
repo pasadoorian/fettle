@@ -4,6 +4,49 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.43.4] — reconcile three sessions that shared one checkout
+
+Cleanup and documentation. **If the 0.43.0–0.43.3 entries are confusing, this is why:**
+three sessions had `~/src/fettle` open at once — RHEL maintenance (waves W2–W4), the snap
+lift, and the RHEL firmware-check claim. Their edits interleaved, so the commits do not
+line up with the work.
+
+**What actually shipped in 0.43.0–0.43.3, by subject rather than by commit:**
+
+| Real change | Where it landed | Verified |
+|---|---|---|
+| snap pruning moved to `PackageBackend` (Arch + RHEL gained it) | `6b9015f` | removal path **not** live-verified — wopr has snapd but zero snaps |
+| `firmware_check` added to `RhelBackend.supported` | `6b9015f` — *not* its subject | live on both RHEL 10.1 hosts, fwupd 1.9.31 |
+| two unused `dnf-automatic` constants | `6b9015f` — accidental | dead code; **removed here** |
+| one README line about firmware-check | `9895867`, `bb995f3`, `543dd42` | — |
+
+So `6b9015f` ("snap pruning is not a Debian feature") carried three sessions' code, and
+three of the four commits were docs churn over a single README line — including a
+retraction of a *true* claim (`bb995f3`) that `543dd42` then had to withdraw.
+
+- **Removed the dead code.** `_AUTO_TIMERS` and `_AUTO_CONF_PATHS` were research constants
+  for an unstarted wave, swept in mid-edit. Nothing referenced them, and ruff does not flag
+  unused module-level constants. The findings they encoded are kept in
+  `~/src/claude-scratchpad/fettle-w5-auto-updates-findings-2026-07-29.md`.
+- **The firmware verification is settled, from two independent directions.** `543dd42`
+  cited fettle's own remote run-logs; this session separately re-ran `fettle remote rhel -f`
+  and `fettle remote rhel-vuln -f` and saw `no firmware updates available.` on both, with
+  `get-updates` exiting 2, stdout empty and `No updatable devices` on stderr. Still only
+  the no-updatable-devices path — neither host has updatable firmware.
+- **Docs:** the maintenance-actions table had **no RHEL column at all** despite RHEL
+  supporting nine actions; it has one now, including the deliberate `clean packages`
+  (not `clean all`), the kernel exclusion in `orphans`, and `check-update`'s exit 100.
+  Snap-revision pruning moved out of the Debian-only cell, since it is now every distro's.
+  The RHEL notes list said "Two" over three bullets.
+
+### Known risk carried forward, not fixed
+
+`PackageBackend.firmware_updates` infers "no updates" from **empty stdout alone**, ignoring
+the exit code. Correct on these hosts — but a host whose fwupd *daemon* is down also emits
+empty stdout, and would be reported as "no firmware updates available": a clean answer from
+a check that could not look. Measuring that case means stopping a service on a live box, so
+nothing was changed on a guess. It affects every backend.
+
 ## [0.43.3] — the 0.43.2 retraction was itself wrong; the RHEL runs did happen
 
 Documentation only; no behaviour change. Third entry about one README line, which is two
