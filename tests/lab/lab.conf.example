@@ -26,4 +26,7 @@ SSH_PUBKEY=~/.ssh/id_ed25519.pub
 #LIBVIRT_URI=qemu:///system
 #VM_PREFIX=fettle-
 #RAM_MB=2048
+# UEFI VARS template, only used by targets whose firmware is uefi. Distro paths vary
+# (Arch: /usr/share/edk2/x64/OVMF_VARS.4m.fd, Debian: /usr/share/OVMF/OVMF_VARS_4M.fd).
+#OVMF_VARS=/usr/share/edk2/x64/OVMF_VARS.4m.fd
 #VCPUS=2

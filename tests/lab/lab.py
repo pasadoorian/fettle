@@ -77,7 +77,7 @@ TARGETS = {
     "debian": {
         "url": "https://cloud.debian.org/images/cloud/trixie/latest/"
                "debian-13-genericcloud-amd64.qcow2",
-        "user": "debian", "disk": "5G", "osinfo": "debian13",
+        "user": "debian", "disk": "5G", "osinfo": "debian13", "firmware": "uefi",
         "note": "328 MiB, smallest of the lot; genericcloud has a reduced driver set (virtio only)",
     },
     "rocky9": {
@@ -158,6 +158,9 @@ def load_conf() -> dict:
     conf.setdefault("LIBVIRT_URI", "qemu:///system")
     conf.setdefault("RAM_MB", "2048")
     conf.setdefault("VCPUS", "2")
+    # Only consulted for targets that ask for UEFI.
+    conf.setdefault("OVMF_VARS", "/usr/share/edk2/x64/OVMF_VARS.4m.fd")
+    conf.setdefault("OVMF_CODE", "/usr/share/edk2/x64/OVMF_CODE.4m.fd")
     return conf
 
 
@@ -392,6 +395,29 @@ def cmd_build(conf, args) -> int:
     # explicit boot order. So each target says what it needs.
     seed_attach = ("device=disk,bus=virtio,readonly=on" if spec.get("seed") == "disk"
                    else "device=cdrom")
+    # Firmware, per target. `--boot uefi` is the modern flag; BIOS must emit **nothing**,
+    # because current virt-install rejects `--boot bios` as an unknown option. (Both
+    # conventions taken from the labctl lab manager in ~/src/bifrost, which drives this
+    # same hypervisor.)
+    firmware_arg = ""
+    if spec.get("firmware") == "uefi":
+        # UEFI needs one more thing than just `--boot uefi`: libvirt refuses an internal
+        # snapshot of a pflash VM unless the NVRAM is qcow2 ("internal snapshots of a VM
+        # with pflash based firmware require QCOW2 nvram format"), and virt-install 5.1
+        # has no `nvram.format`. It does have `nvram.templateFormat` — so convert the
+        # firmware's VARS template to qcow2 once and let libvirt inherit the format.
+        nvram_tpl = f"{base}/OVMF_VARS.qcow2"
+        host_run(conf, f"[ -f {shlex.quote(nvram_tpl)} ] || qemu-img convert -f raw "
+                       f"-O qcow2 {shlex.quote(conf['OVMF_VARS'])} "
+                       f"{shlex.quote(nvram_tpl)}", quiet=True)
+        # The loader is named explicitly rather than using `--boot uefi`: libvirt's
+        # firmware auto-selection matches against its shipped descriptors, and handing it
+        # a qcow2 VARS template makes that match fail outright ("Unable to find 'efi'
+        # firmware that is compatible with the current configuration").
+        firmware_arg = (f"--boot loader={shlex.quote(conf['OVMF_CODE'])},"
+                        f"loader.readonly=yes,loader.type=pflash,"
+                        f"nvram.template={shlex.quote(nvram_tpl)},"
+                        f"nvram.templateFormat=qcow2 ")
     print(f"==> virt-install {name}")
     host_run(conf,
              f"virt-install --connect {conf['LIBVIRT_URI']} --name {name} "
@@ -400,7 +426,8 @@ def cmd_build(conf, args) -> int:
              f"--disk path={shlex.quote(seed)},{seed_attach},boot.order=2 "
              f"--network network={conf['NETWORK']},model=virtio "
              f"--channel unix,target.type=virtio,target.name=org.qemu.guest_agent.0 "
-             f"--osinfo name={spec['osinfo']},require=off "
+             f"--osinfo name={spec['osinfo']},require=off --virt-type kvm "
+             f"{firmware_arg}"
              f"--serial file,path={shlex.quote(imgdir + '/' + name + '-console.log')} "
              f"--graphics none --noautoconsole")
 

@@ -4,6 +4,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.3] — lab: Debian unblocked; three distros, three boot recipes
+
+Test tooling. `debian` joins `arch` and `ubuntu`; per-target firmware is now supported.
+
+Debian's genericcloud image does not boot under BIOS here — it printed ``Booting `Debian
+GNU/Linux'`` and reset ~1400 times with no kernel output at all. **UEFI fixes it**, but
+needs two things beyond `--boot uefi`, each discovered by hitting it:
+
+- libvirt refuses an internal snapshot of a pflash VM unless the NVRAM is **qcow2**, and
+  virt-install 5.1 has no `nvram.format`. It does have `nvram.templateFormat`, so the
+  firmware VARS template is converted once and libvirt inherits the format.
+- Handing a qcow2 template to `--boot uefi` then defeats libvirt's firmware
+  auto-selection entirely ("Unable to find 'efi' firmware that is compatible with the
+  current configuration"), so the loader is named explicitly.
+
+Conventions adopted from the `labctl` lab manager in `~/src/bifrost`, which drives the same
+hypervisor: `--boot uefi` is the modern flag, BIOS must emit **nothing** (current
+virt-install rejects `--boot bios`), and `--virt-type kvm` is explicit. Its documented
+reboot-loop investigation — bootloader message repeating ~1/s, no kernel output, root cause
+machine type — is the same symptom shape Debian showed, and is what pointed at firmware.
+
+Arch (BIOS + cdrom seed), Ubuntu (BIOS + virtio-disk seed) and Debian (UEFI) each need a
+different combination. Every one was forced by a failure that produced no error message.
+
 ## [0.47.2] — lab: Ubuntu builds, and four fixes the VMs forced
 
 Test tooling. `ubuntu` joins `arch` as a working target; `debian` is blocked and documented

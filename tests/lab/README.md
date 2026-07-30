@@ -49,10 +49,35 @@ for networks it manages.
 
 | Target | State |
 |---|---|
-| `arch` | **working** — built, snapshotted, `fettle remote` verified |
-| `ubuntu` | **working** — needs the seed as a virtio disk (see below) |
-| `debian` | **blocked**: boots to GRUB, prints ``Booting `Debian GNU/Linux'`` and resets, forever, with no kernel output at all. Ruled out: seed as cdrom *and* as virtio disk, explicit `boot.order`, and the `osinfo` id (it is `debian13`, not `debian12`). The disk chain is intact — a `qemu-img info` failure while investigating was only the running-VM lock. Untried: UEFI firmware, a different machine type, the `generic` image instead of `genericcloud` |
+| `arch` | **working** — BIOS, cdrom seed |
+| `ubuntu` | **working** — BIOS, **virtio-disk seed** (see below) |
+| `debian` | **working** — **UEFI** with an explicit loader + qcow2 NVRAM (see below) |
 | `rocky9`, `alma9`, `fedora` | not yet attempted |
+
+Three distros, three different boot/seed combinations. That is not incidental complexity —
+each was forced by a failure that produced no error message at all.
+
+### What each one needed, and why
+
+**Ubuntu — the seed must be a virtio disk, not a cdrom.** cloud-init's early `ds-identify`
+pass did not recognise an emulated SCSI cdrom on 26.04, and when it finds no datasource it
+disables cloud-init for the entire boot *silently*: no console output, no
+`/var/log/cloud-init.log`, a guest that reaches a login prompt with none of the requested
+config applied.
+
+**Debian — UEFI.** Under BIOS the genericcloud image printed ``Booting `Debian GNU/Linux'``
+and reset, ~1400 times, with no kernel output whatsoever. Ruled out first: the seed as cdrom
+*and* as virtio disk, explicit `boot.order`, and the `osinfo` id. (The same symptom shape —
+bootloader message looping ~1/s with no kernel output — is documented in the bifrost lab for
+a different guest, where the cause was machine type.)
+
+**Debian's UEFI needs two more things than `--boot uefi`:**
+1. libvirt refuses an internal snapshot of a pflash VM unless the NVRAM is qcow2, and
+   virt-install 5.1 has no `nvram.format`. It does have `nvram.templateFormat`, so the
+   firmware VARS template is converted to qcow2 once and libvirt inherits the format.
+2. Handing a qcow2 template to `--boot uefi` then breaks libvirt's firmware
+   auto-selection ("Unable to find 'efi' firmware compatible with the current
+   configuration"), so the loader is named explicitly instead.
 
 ## Known limits
 
