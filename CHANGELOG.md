@@ -4,6 +4,40 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.2] — lab: Ubuntu builds, and four fixes the VMs forced
+
+Test tooling. `ubuntu` joins `arch` as a working target; `debian` is blocked and documented
+rather than left looking unattempted.
+
+Everything here was found by building real VMs, and every one of them failed *silently* in
+its own way — which is the argument for the lab existing at all.
+
+- **cloud-init needs `package_update: true`.** It was set false to keep the guest behind,
+  but that also stops the apt-list refresh, so installing the guest agent fails on a
+  minimal image and the build hangs forever with no agent. The pair that actually matters
+  is `package_update: true` (refresh lists — nothing changes version) with
+  `package_upgrade: false` (which is what would consume the pending updates).
+- **The serial console is now logged to a file.** Without it a guest that never brings up
+  networking is undiagnosable: nothing to read, and `virsh console` needs an interactive
+  tty. Every diagnosis below came from this.
+- **Ubuntu 26.04 needs the seed as a virtio disk, not a cdrom.** Its early `ds-identify`
+  pass did not recognise an emulated SCSI cdrom, and when ds-identify finds no datasource
+  it disables cloud-init for the entire boot **silently** — no console output, no
+  `/var/log/cloud-init.log`, a guest that reaches a login prompt with none of the requested
+  config applied. Seed attachment is now per-target, because forcing virtio on everything
+  breaks Debian instead.
+- **`osinfo` ids are pinned properly** — `debian13` was being hinted as `debian12`, and
+  `--osinfo` needs `name=` when combined with `require=off` or the bare id parses as an
+  unknown key.
+
+### Debian is blocked, and that is recorded
+
+It boots to GRUB, prints ``Booting `Debian GNU/Linux'`` and resets, forever, with no kernel
+output. Ruled out: the seed as cdrom *and* as virtio disk, explicit `boot.order`, and the
+osinfo id. The disk chain is intact — a `qemu-img info` failure during investigation turned
+out to be only the running-VM lock. Untried: UEFI firmware, another machine type, and the
+`generic` image in place of `genericcloud`.
+
 ## [0.47.1] — a VM test lab, and the first Arch coverage
 
 Test tooling; no change to fettle itself. `tests/lab/` builds small disposable distro VMs on

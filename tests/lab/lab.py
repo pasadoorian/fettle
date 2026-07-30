@@ -71,13 +71,13 @@ TARGETS = {
     "ubuntu": {
         "url": "https://cloud-images.ubuntu.com/minimal/releases/resolute/release/"
                "ubuntu-26.04-minimal-cloudimg-amd64.img",
-        "user": "ubuntu", "disk": "6G", "osinfo": "ubuntu24.04",
+        "user": "ubuntu", "disk": "6G", "osinfo": "ubuntu24.04", "seed": "disk",
         "note": "407 MiB; 'minimal' strips man pages/editors/Recommends — tools may be absent",
     },
     "debian": {
         "url": "https://cloud.debian.org/images/cloud/trixie/latest/"
                "debian-13-genericcloud-amd64.qcow2",
-        "user": "debian", "disk": "5G", "osinfo": "debian12",
+        "user": "debian", "disk": "5G", "osinfo": "debian13",
         "note": "328 MiB, smallest of the lot; genericcloud has a reduced driver set (virtio only)",
     },
     "rocky9": {
@@ -116,7 +116,8 @@ users:
     ssh_authorized_keys:
       - {pubkey}
 ssh_pwauth: true
-package_update: false
+package_update: true
+package_upgrade: false
 packages:
   - qemu-guest-agent
   - python3
@@ -125,9 +126,13 @@ runcmd:
 final_message: "fettle-lab ready after $UPTIME seconds"
 """
 
-# `package_update: false` is deliberate: the whole point of this lab is a host that is
-# BEHIND. Letting cloud-init refresh and upgrade on first boot would consume exactly the
-# pending updates the tests need to find.
+# `package_update: true` + `package_upgrade: false` is the exact pair that matters, and the
+# distinction is easy to get backwards. `package_update` only refreshes package LISTS — no
+# package changes version, so the host stays exactly as far behind as its base image. It has
+# to be on, because on a minimal image the lists are empty and installing the guest agent
+# below would simply fail (measured: the first Ubuntu build hung forever with no agent, for
+# precisely this reason). `package_upgrade` is what would actually consume the pending
+# updates the tests need, and stays off.
 
 
 def die(msg: str) -> None:
@@ -277,7 +282,9 @@ def wait_ready(conf: dict, target: str, *, tries: int = 60) -> str:
         time.sleep(10)
         print("    ...")
     die(f"{vm_name(conf, target)} never became reachable"
-        + (f" (agent reports {addr}; check `virsh console`)" if addr else ""))
+        + (f" (agent reports {addr})" if addr else " (no address from the guest agent)")
+        + f"\n     console log: {conf['LAB_HOST']}:{conf['IMAGE_DIR']}/"
+          f"{vm_name(conf, target)}-console.log")
     return ""
 
 
@@ -349,6 +356,22 @@ def cmd_build(conf, args) -> int:
                    f"  genisoimage -quiet -output {shlex.quote(seed)} -volid cidata "
                    f"    -joliet -rock $d/user-data $d/meta-data; fi; rm -rf $d")
 
+    # `boot.order` is explicit, and is not optional once the seed is a second virtio
+    # disk: without it the firmware tried to boot the seed on Debian and looped forever
+    # printing "Booting `Debian GNU/Linux'". Ubuntu happened to survive the same layout,
+    # which is exactly why this needs pinning rather than leaving to chance.
+    #
+    # The seed is attached as a read-only virtio DISK, not a cdrom. NoCloud finds it
+    # either way in principle — it probes for a filesystem labelled `cidata` — but
+    # cloud-init's early `ds-identify` pass did not see it as an emulated SCSI cdrom on
+    # Ubuntu 26.04, and when ds-identify finds no datasource it disables cloud-init for
+    # that boot **silently**: no console output, no /var/log/cloud-init.log, a guest that
+    # boots perfectly to a login prompt with none of your config applied.
+    #
+    # The serial console is logged to a file: without it, a guest that never brings up
+    # networking or the agent is undiagnosable — there is nothing to look at, and `virsh
+    # console` needs an interactive tty. Measured the hard way on the first Ubuntu build.
+    #
     # `name=` is required: --osinfo takes EITHER a bare short-id OR key=value pairs, so a
     # bare id with a comma after it parses as an unknown KEY ("Unknown --osinfo options").
     # `require=off` because brand-new releases are often missing from the local osinfo-db
@@ -356,15 +379,29 @@ def cmd_build(conf, args) -> int:
     #
     # Default (BIOS/SeaBIOS) boot: every cloud image here carries a BIOS boot partition,
     # and firmware selection is one more thing to go wrong for no benefit in a test lab.
+    # How the seed is attached is per-target, because the distros genuinely differ:
+    #
+    #   * cdrom  — works everywhere it works, and is the conventional NoCloud form.
+    #   * disk   — needed on Ubuntu 26.04, whose early `ds-identify` pass did not see an
+    #     emulated SCSI cdrom and therefore disabled cloud-init for the whole boot,
+    #     SILENTLY: no console output, no /var/log/cloud-init.log, a guest that reaches a
+    #     login prompt with none of the requested config applied.
+    #
+    # Forcing `disk` on everything is not the answer: Debian's genericcloud image then
+    # loops at GRUB forever printing "Booting `Debian GNU/Linux\'", with or without an
+    # explicit boot order. So each target says what it needs.
+    seed_attach = ("device=disk,bus=virtio,readonly=on" if spec.get("seed") == "disk"
+                   else "device=cdrom")
     print(f"==> virt-install {name}")
     host_run(conf,
              f"virt-install --connect {conf['LIBVIRT_URI']} --name {name} "
              f"--memory {conf['RAM_MB']} --vcpus {conf['VCPUS']} --import "
-             f"--disk path={shlex.quote(disk)},format=qcow2,bus=virtio "
-             f"--disk path={shlex.quote(seed)},device=cdrom "
+             f"--disk path={shlex.quote(disk)},format=qcow2,bus=virtio,boot.order=1 "
+             f"--disk path={shlex.quote(seed)},{seed_attach},boot.order=2 "
              f"--network network={conf['NETWORK']},model=virtio "
              f"--channel unix,target.type=virtio,target.name=org.qemu.guest_agent.0 "
              f"--osinfo name={spec['osinfo']},require=off "
+             f"--serial file,path={shlex.quote(imgdir + '/' + name + '-console.log')} "
              f"--graphics none --noautoconsole")
 
     print("==> waiting for the guest to become usable (address, then ssh)")

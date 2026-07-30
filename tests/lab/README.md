@@ -45,6 +45,15 @@ for networks it manages.
 | `lab.py ip <t>` / `ssh <t>` | address / shell |
 | `lab.py destroy <t>` | remove VM and disks (base image kept) |
 
+## Target status
+
+| Target | State |
+|---|---|
+| `arch` | **working** — built, snapshotted, `fettle remote` verified |
+| `ubuntu` | **working** — needs the seed as a virtio disk (see below) |
+| `debian` | **blocked**: boots to GRUB, prints ``Booting `Debian GNU/Linux'`` and resets, forever, with no kernel output at all. Ruled out: seed as cdrom *and* as virtio disk, explicit `boot.order`, and the `osinfo` id (it is `debian13`, not `debian12`). The disk chain is intact — a `qemu-img info` failure while investigating was only the running-VM lock. Untried: UEFI firmware, a different machine type, the `generic` image instead of `genericcloud` |
+| `rocky9`, `alma9`, `fedora` | not yet attempted |
+
 ## Known limits
 
 Even with VMs, some things stay out of reach, and the runner should report them as
