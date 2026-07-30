@@ -91,9 +91,9 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 
 **RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
 `advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
-integrity check, plus `clean`, `orphans`, `config-drift`, `auto-updates` and `firmware-check` (the
-`fwupdmgr` path is shared with the other backends — fwupd is distro-neutral). Not yet
-built: `kernel` and `rebuild-check` — those are reported as unsupported
+integrity check, plus `clean`, `orphans`, `config-drift`, `auto-updates`,
+`rebuild-check` and `firmware-check` (the
+`fwupdmgr` path is shared with the other backends — fwupd is distro-neutral). Not yet built: `kernel` — those are reported as unsupported
 rather than silently skipped. Fedora is deliberately not claimed as a distro: it shares
 dnf, but its advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`
 (`--distro rhel` still works there, and is how the dnf5 code path is tested).
@@ -252,7 +252,7 @@ just Debian — each revision confirmed individually.
 | `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
 | `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
-| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | — (not built; `needs-restarting` is the intended tool) |
+| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |

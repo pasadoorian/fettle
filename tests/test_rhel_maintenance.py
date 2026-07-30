@@ -405,6 +405,119 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- rebuilds / restarts -----------------------------------------------------
+# Real output. dnf4 `needs-restarting -r` and bare dnf5 `dnf needs-restarting` agree:
+# exit 0 = nothing to do, exit 1 = reboot required, with the cores named.
+_NR_CLEAN = ("No core libraries or services have been updated since boot-up.\n"
+             "Reboot should not be necessary.\n")
+_NR_REBOOT = ("Core libraries or services have been updated since boot-up:\n"
+              "  * glibc\n  * systemd\n\n"
+              "Reboot is required to fully utilize these updates.\n")
+
+
+def _rebuilds(*, standalone=True, hint=(0, _NR_CLEAN, ""), services=(0, "", ""),
+              root=True):
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        calls.append(cmd)
+        if cmd[-1] == "-s":
+            return command.Proc(*services)
+        return command.Proc(*hint)
+
+    def which(name):
+        return standalone if name == "needs-restarting" else True
+
+    ctx = _ctx()
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", side_effect=which), \
+         patch("fettle.backends.rhel._have_root", return_value=root):
+        RhelBackend().check_rebuilds(ctx)
+    return ctx, calls
+
+
+def test_dnf4_uses_the_standalone_binary_with_r():
+    _, calls = _rebuilds(standalone=True)
+    assert ["needs-restarting", "-r"] in calls
+
+
+def test_dnf5_uses_the_subcommand_without_r():
+    """dnf5 ships no standalone binary, and its own -r is documented as having no effect
+    — bare `dnf needs-restarting` is the reboot hint."""
+    _, calls = _rebuilds(standalone=False)
+    assert ["dnf", "needs-restarting"] in calls
+    assert not any(c[:1] == ["needs-restarting"] for c in calls)
+    assert not any("-r" in c for c in calls)
+
+
+def test_exit_1_means_reboot_required(capsys):
+    ctx, _ = _rebuilds(hint=(1, _NR_REBOOT, ""))
+    said = capsys.readouterr()
+    assert "reboot is required" in said.err
+    assert "glibc" in said.out                       # names what changed
+    assert any("reboot required" in s for s in ctx.output._summary)
+
+
+def test_exit_0_is_the_only_way_to_report_no_reboot(capsys):
+    ctx, _ = _rebuilds(hint=(0, _NR_CLEAN, ""))
+    assert "no reboot required" in capsys.readouterr().out
+
+
+def test_an_error_is_never_reported_as_no_reboot_needed(capsys):
+    """The asymmetry that matters: a needless reboot is cheap, but wrongly reporting "no
+    reboot" leaves a host running the libraries it just patched. `dnf -C` with no cache
+    exits 1 with empty stdout, which must not read as clean."""
+    ctx, _ = _rebuilds(hint=(1, "", 'Cache-only enabled but no cache for repository'))
+    said = capsys.readouterr()
+    assert "NOT assessed" in said.err
+    assert "no reboot required" not in said.out
+    assert "Cache-only" in said.err                  # says why
+
+
+def test_a_localised_reboot_hint_still_warns(capsys):
+    """The body is printed verbatim rather than matched against an English phrase, so a
+    translated system still gets the warning."""
+    ctx, _ = _rebuilds(hint=(1, "Es ist ein Neustart erforderlich:\n  * glibc\n", ""))
+    said = capsys.readouterr()
+    assert "reboot is required" in said.err
+    assert "Neustart" in said.out
+
+
+def test_services_are_listed_and_summarised(capsys):
+    ctx, _ = _rebuilds(services=(1, "sshd.service\nchronyd.service\n", ""))
+    said = capsys.readouterr()
+    assert "sshd.service" in said.out
+    assert any("2 service(s) need restarting" in s for s in ctx.output._summary)
+    assert any("systemctl restart" in s for s in ctx.output._next_steps)
+
+
+def test_service_notices_are_not_counted_as_services(capsys):
+    """As root on an unregistered RHEL box, the whole of `-s` output is subscription
+    notices on stdout — three lines that would otherwise read as three services."""
+    notices = ("Updating Subscription Management repositories.\n"
+               "Unable to read consumer identity\n\n"
+               "This system is not registered with an entitlement server. You can use "
+               '"rhc" or "subscription-manager" to register.\n')
+    ctx, _ = _rebuilds(services=(0, notices, ""))
+    assert "no services need restarting" in capsys.readouterr().out
+
+
+def test_without_root_the_service_list_says_it_could_not_look(capsys):
+    """Measured on the VM: rootless `-s` prints no services at all while root prints the
+    real answer, so an empty rootless result is not "nothing to restart"."""
+    ctx, _ = _rebuilds(root=False)
+    said = capsys.readouterr()
+    assert "not root" in said.out
+    assert "no services need restarting" not in said.out
+
+
+def test_missing_needs_restarting_is_reported_not_silent(capsys):
+    with patch("fettle.command.which", return_value=False):
+        RhelBackend().check_rebuilds(_ctx())
+    assert "needs-restarting not found" in capsys.readouterr().out
+
+
 # -- automatic updates -------------------------------------------------------
 # dnf-automatic's real defaults (dnf4 /etc/dnf/automatic.conf, dnf5 the /usr/share copy).
 _AUTO_CONF_OFF = ("[commands]\nupgrade_type = default\ndownload_updates = yes\n"

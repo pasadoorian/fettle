@@ -4,6 +4,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.45.0] — RHEL: is a reboot or a service restart owed?
+
+`fettle -r` now works on the RHEL family, via `needs-restarting`.
+
+- **Two invocations, one meaning.** dnf4 ships a standalone `needs-restarting` (from
+  `yum-utils`) where `-r` is the reboot hint. **dnf5 ships no such binary** — the hint is
+  bare `dnf needs-restarting`, and its own `-r` is documented as *"Has no effect, kept for
+  compatibility with DNF 4"*. Keyed on which of the two exists, not on a version string.
+- **Only exit 0 is allowed to mean "no reboot required."** Exit 1 means a reboot is owed,
+  but it is also dnf's generic error code — `dnf -C` with no metadata cache exits 1 with
+  empty stdout. The asymmetry decides the tie: a needless reboot is cheap, while wrongly
+  reporting "no reboot" leaves a host running the very libraries it just patched. So exit
+  1 is either the hint or an explicit "could not determine", never a clean result.
+- **The hint body is printed verbatim rather than matched against an English phrase**, so
+  a localised host still gets the warning instead of a shrug.
+- **The service list needs root and returns nothing without it** — measured on the VM,
+  where rootless `-s` printed no services at all while root printed the real (empty)
+  answer. An unprivileged run now says it could not look. This matters under `--dry-run`,
+  which deliberately does not elevate.
+- On an unregistered RHEL box the *entire* `-s` output is dnf's subscription notices on
+  stdout; without stripping them, three notices read as three services needing a restart.
+
+Verified live on both generations by actually causing the condition: upgrading `glibc` and
+`systemd-libs` in an AlmaLinux container flipped it from "no reboot required" to naming
+both, and the same in a Fedora container through the subcommand path. The RHEL 10.1 VM
+read-only reports no reboot and no services, which matches `needs-restarting` run by hand.
+
 ## [0.44.0] — RHEL: does this host patch itself?
 
 `fettle -x` now works on the RHEL family, reporting whether `dnf-automatic` installs

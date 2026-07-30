@@ -312,6 +312,7 @@ class RhelBackend(PackageBackend):
         "config_drift",      # .rpmnew/.rpmsave/.rpmorig + dnf check
         "firmware_check",    # fwupd; the base-class impl, nothing RPM-specific
         "auto_updates",      # dnf-automatic: four timers, and they override the config
+        "rebuild_check",     # needs-restarting: standalone on dnf4, a subcommand on dnf5
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -501,6 +502,86 @@ class RhelBackend(PackageBackend):
         return Transaction(items=items, ok=True, notes=notes)
 
     # -- config drift --------------------------------------------------------
+    # -- rebuilds / restarts after an upgrade --------------------------------
+    def check_rebuilds(self, ctx: Context) -> Result:
+        """Whether a reboot or a service restart is owed after upgrading.
+
+        **Two invocations, one meaning.** dnf4 ships a standalone ``needs-restarting``
+        (from ``yum-utils``) where ``-r`` is the reboot hint. dnf5 ships **no such
+        binary** — the hint is bare ``dnf needs-restarting``, and its own ``-r`` is
+        documented as *"Has no effect, kept for compatibility with DNF 4"*. Keyed on which
+        of the two exists rather than on a version string.
+
+        **Exit codes, measured on both: 0 = no reboot needed, 1 = reboot required.** 1 is
+        also dnf's generic error code, so as everywhere else in this backend the output is
+        the discriminator — and the *safe* direction is asymmetric here. Wrongly saying
+        "reboot required" costs a needless reboot; wrongly saying "no reboot required"
+        leaves a machine running the old libraries it just patched. So only exit 0 is
+        allowed to mean "no reboot"; anything else is either the hint or an admission that
+        it could not be determined. Printing the body verbatim also keeps this working on
+        a localised system, where matching an English phrase would not.
+        """
+        out = ctx.output
+        standalone = command.which("needs-restarting")
+        if not standalone and not command.which("dnf"):
+            out.note("needs-restarting not found (dnf4: `dnf install yum-utils`; "
+                     "dnf5: `dnf install dnf5-plugin-needs-restarting`); skipping.")
+            return Result()
+
+        hint = ["needs-restarting", "-r"] if standalone else ["dnf", "needs-restarting"]
+        proc = command.run(hint, capture=True)
+        body = _strip_dnf_notices(proc.stdout or "")
+        if proc.returncode == 0:
+            out.ok("no reboot required.")
+        elif body:
+            out.warn("a reboot is required — core libraries or services were updated "
+                     "since this host booted:")
+            print(body)
+            out.summary_add("reboot required")
+            out.next_step("reboot to finish applying those updates")
+        else:
+            err = _strip_dnf_notices(proc.stderr or "").splitlines()
+            out.warn(f"could not determine whether a reboot is required (exit "
+                     f"{proc.returncode}) — NOT assessed."
+                     + (f" {err[0]}" if err else ""))
+
+        self._restartable_services(ctx, standalone=bool(standalone))
+        return Result()
+
+    @staticmethod
+    def _restartable_services(ctx: Context, *, standalone: bool) -> None:
+        """Services started before their dependencies were updated (``-s``).
+
+        Needs root, and **silently returns nothing without it** — measured on the RHEL VM,
+        where rootless ``-s`` printed no services at all while root printed the real
+        (empty) answer. So an unprivileged run has to say it could not look rather than
+        report a clean list. ``rebuild_check`` is outside ``cli.NO_ROOT_ACTIONS``, so a
+        normal run is already elevated; this guard is for ``--dry-run``.
+        """
+        out = ctx.output
+        if not _have_root():
+            out.note("not root, so the list of services needing a restart was not "
+                     "collected (it reads other users' processes).")
+            return
+        argv = ["needs-restarting", "-s"] if standalone \
+            else ["dnf", "needs-restarting", "-s"]
+        proc = command.run(argv, capture=True)
+        if proc.returncode not in (0, 1):
+            out.warn(f"could not list services needing a restart (exit "
+                     f"{proc.returncode}).")
+            return
+        services = [ln.strip() for ln in
+                    _strip_dnf_notices(proc.stdout or "").splitlines() if ln.strip()]
+        if not services:
+            out.ok("no services need restarting.")
+            return
+        out.note("services started before their dependencies were updated:")
+        for svc in services[:40]:
+            print(f"    {svc}")
+        out.summary_add(f"{len(services)} service(s) need restarting")
+        out.next_step("restart them: sudo systemctl restart " + " ".join(services[:5])
+                      + (" …" if len(services) > 5 else ""))
+
     # -- automatic-update posture --------------------------------------------
     @staticmethod
     def _unit_state(unit: str) -> str:
