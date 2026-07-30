@@ -13,6 +13,7 @@ Updater knobs live under ``[updaters.debian]`` in the config:
 
 from __future__ import annotations
 
+import json
 import re
 
 from .. import command, reports
@@ -124,6 +125,49 @@ class DebianBackend(PackageBackend):
                 out[path.strip()] = pkgs.split(",")[0].split(":")[0].strip()
         return out
 
+
+    # -- Ubuntu Pro / ESM ----------------------------------------------------
+    @staticmethod
+    def _pro_security_status() -> dict | None:
+        """``pro security-status --format json``, or ``None`` when unavailable.
+
+        Ubuntu-only, and gated on the **binary** rather than the distro ID, so Debian and
+        Mint simply skip it. The JSON form is the one ``pro`` itself asks for: its human
+        output opens with a warning that the text is "subject to change" and that scripts
+        should prefer the machine-readable data.
+
+        Read-only and rootless — verified on a live Ubuntu 24.04 host.
+        """
+        if not command.which("pro"):
+            return None
+        proc = command.run(["pro", "security-status", "--format", "json"], capture=True)
+        if proc.returncode != 0:
+            return None
+        try:
+            data = json.loads(proc.stdout or "")
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    @staticmethod
+    def _esm_hidden_updates(data: dict) -> tuple[int, int]:
+        """``(esm_infra, esm_apps)`` security updates apt cannot currently see.
+
+        Zero when the host is attached, because the ESM pockets are then real apt
+        sources and the ordinary upgrade paths already count them.
+        """
+        summary = data.get("summary") or {}
+        if (summary.get("ua") or {}).get("attached"):
+            return (0, 0)
+
+        def _n(key):
+            try:
+                return max(0, int(summary.get(key) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        return (_n("num_esm_infra_updates"), _n("num_esm_apps_updates"))
+
     # -- pending upgrades (UC1) ----------------------------------------------
     def pending_upgrades(self, ctx: Context) -> list[tuple[str, str, str]]:
         if not command.which("apt"):
@@ -163,6 +207,16 @@ class DebianBackend(PackageBackend):
             return Transaction(ok=False, notes=["apt-get not found"])
         items = _parse_apt_sim(self._query([apt, "-s", "dist-upgrade"]))
         notes: list[str] = []
+        # Security updates that exist but are invisible to apt on an unattached host.
+        # Reporting the smaller number without saying so understates the exposure.
+        pro = self._pro_security_status()
+        if pro:
+            infra, apps = self._esm_hidden_updates(pro)
+            if infra or apps:
+                notes.append(
+                    f"{infra + apps} further security update(s) are NOT shown above: this "
+                    f"host is not attached to Ubuntu Pro, so apt cannot see the esm-infra "
+                    f"({infra}) and esm-apps ({apps}) pockets")
         if sync:
             age = self._apt_lists_age_days(ctx)
             if age is not None and age >= 7:
@@ -411,7 +465,48 @@ class DebianBackend(PackageBackend):
             out.summary_add("auto-updates: OFF")
         if lists != "0":
             out.note(f"package lists auto-refresh is on (Update-Package-Lists={lists}).")
+        self._report_pro_coverage(ctx)
         return Result()
+
+    def _report_pro_coverage(self, ctx: Context) -> None:
+        """Which of this host's packages are actually receiving security updates.
+
+        "Automatic updates are on" is only half the posture on Ubuntu: unattended-upgrades
+        can be working perfectly while a whole class of packages quietly receives no
+        security updates at all. Universe/Multiverse packages are covered by `esm-apps`,
+        and after an LTS leaves its main window Main/Restricted moves to `esm-infra` —
+        both only with an Ubuntu Pro subscription. Measured on a live Ubuntu 24.04 host:
+        18 of its 854 packages sit in that gap today.
+        """
+        out = ctx.output
+        data = self._pro_security_status()
+        if not data:
+            return                      # not Ubuntu, or `pro` absent — nothing to say
+        summary = data.get("summary") or {}
+        ua = summary.get("ua") or {}
+
+        def _n(key):
+            try:
+                return max(0, int(summary.get(key) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        if ua.get("attached"):
+            services = ", ".join(ua.get("enabled_services") or []) or "none enabled"
+            out.note(f"Ubuntu Pro: attached ({services}).")
+            return
+        infra, apps = self._esm_hidden_updates(data)
+        if infra or apps:
+            out.warn(f"Ubuntu Pro: not attached — {infra + apps} security update(s) are "
+                     f"unavailable to this host (esm-infra {infra}, esm-apps {apps}).")
+            out.summary_add(f"{infra + apps} security update(s) need Ubuntu Pro")
+            out.next_step("attach a subscription: sudo pro attach")
+            return
+        uncovered = _n("num_universe_packages") + _n("num_multiverse_packages")
+        if uncovered:
+            out.note(f"Ubuntu Pro: not attached — {uncovered} installed package(s) come "
+                     "from Universe/Multiverse and receive security updates only with "
+                     "Pro (esm-apps). None are outstanding right now.")
 
     # -- kernels -------------------------------------------------------------
     def manage_kernels(self, ctx: Context) -> Result:

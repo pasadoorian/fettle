@@ -1,5 +1,6 @@
 """Debian/Ubuntu backend — all exercised through the single command mock."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -497,3 +498,113 @@ def test_kernels_protects_running_and_newest_middle_case():
     assert "linux-image-6.8.0-31-generic" in purges           # oldest -> removed
     assert "linux-image-6.8.0-35-generic" not in purges       # running protected
     assert "linux-image-6.8.0-40-generic" not in purges       # newest protected
+
+
+# -- Ubuntu Pro / ESM --------------------------------------------------------
+# Real `pro security-status --format json` shape, measured on a live Ubuntu 24.04 host
+# (854 packages, unattached, 18 in Universe/Multiverse).
+def _pro_json(*, attached=False, infra=0, apps=0, universe=18, multiverse=0, services=()):
+    return json.dumps({
+        "_schema_version": "0.1",
+        "summary": {
+            "ua": {"attached": attached, "enabled_services": list(services),
+                   "entitled_services": []},
+            "num_installed_packages": 854,
+            "num_main_packages": 828,
+            "num_universe_packages": universe,
+            "num_multiverse_packages": multiverse,
+            "num_third_party_packages": 6,
+            "num_unknown_packages": 2,
+            "num_esm_infra_packages": 0, "num_esm_infra_updates": infra,
+            "num_esm_apps_packages": 0, "num_esm_apps_updates": apps,
+            "num_standard_security_updates": 0,
+            "reboot_required": False,
+        },
+        "livepatch": {"fixed_cves": []},
+        "packages": [],
+    })
+
+
+def _with_pro(payload, method="check_auto_updates", ctx=None, rc=0, have_pro=True):
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        calls.append(cmd)
+        if cmd[:2] == ["pro", "security-status"]:
+            return command.Proc(rc, payload, "")
+        if cmd[:2] == ["apt-get", "-s"]:
+            return command.Proc(0, "Inst foo [1.0] (2.0 Ubuntu:24.04 [amd64])\n", "")
+        return command.Proc(0, "", "")
+
+    def which(name):
+        return have_pro if name == "pro" else True
+
+    ctx = ctx or _ctx()
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", side_effect=which):
+        result = getattr(DebianBackend(), method)(ctx)
+    return ctx, result, calls
+
+
+def test_esm_updates_apt_cannot_see_are_surfaced_in_the_preview():
+    """The whole point: on an unattached host, apt reports the smaller number. Reporting
+    that without saying so understates the exposure."""
+    _, tx, _ = _with_pro(_pro_json(infra=7, apps=3), method="pending_transaction")
+    assert any("not attached to Ubuntu Pro" in n and "7" in n and "3" in n
+               for n in tx.notes)
+
+
+def test_an_attached_host_gets_no_hidden_update_note():
+    """Attached hosts have the ESM pockets as real apt sources, so the ordinary count
+    already includes them — a note would be double-counting."""
+    _, tx, _ = _with_pro(_pro_json(attached=True, infra=7, apps=3),
+                         method="pending_transaction")
+    assert not any("Ubuntu Pro" in n for n in tx.notes)
+
+
+def test_pro_is_gated_on_the_binary_so_debian_and_mint_skip_it():
+    """`pro` is Ubuntu-only. Gating on the binary rather than the distro ID means Debian
+    and Mint never invoke it."""
+    _, tx, calls = _with_pro(_pro_json(), method="pending_transaction", have_pro=False)
+    assert not any(c[:1] == ["pro"] for c in calls)
+    assert not any("Ubuntu Pro" in n for n in tx.notes)
+
+
+def test_a_failing_pro_call_is_not_treated_as_no_esm_updates():
+    """Best-effort: a broken `pro` must not silently become a clean report.
+
+    The payload here is deliberately VALID json with a non-zero exit — `pro` can emit a
+    body and still fail. An empty payload would pass this test even without the exit-code
+    check, because json.loads would raise anyway, so it would prove nothing.
+    """
+    _, tx, _ = _with_pro(_pro_json(infra=9, apps=9), method="pending_transaction", rc=1)
+    assert not any("Ubuntu Pro" in n for n in tx.notes)
+
+
+def test_unparseable_pro_json_does_not_crash_the_run():
+    _, tx, _ = _with_pro("not json at all", method="pending_transaction")
+    assert tx.ok
+
+
+def test_auto_updates_warns_when_security_updates_need_pro(capsys):
+    ctx, _, _ = _with_pro(_pro_json(infra=5, apps=2))
+    said = capsys.readouterr()
+    assert "not attached" in said.err and "7 security update(s)" in said.err
+    assert any("need Ubuntu Pro" in s for s in ctx.output._summary)
+    assert any("pro attach" in s for s in ctx.output._next_steps)
+
+
+def test_auto_updates_names_the_coverage_gap_when_nothing_is_outstanding(capsys):
+    """Measured on ec1: fully patched, unattached, but 18 Universe packages that receive
+    no security updates at all without Pro. "Up to date" alone would hide that."""
+    _with_pro(_pro_json(infra=0, apps=0, universe=18))
+    said = capsys.readouterr()
+    assert "18 installed package(s)" in said.out
+    assert "Universe/Multiverse" in said.out
+
+
+def test_auto_updates_reports_an_attached_host_plainly(capsys):
+    _with_pro(_pro_json(attached=True, services=("esm-infra", "esm-apps")))
+    said = capsys.readouterr().out
+    assert "attached" in said and "esm-infra" in said

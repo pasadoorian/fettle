@@ -4,6 +4,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.0] — Ubuntu: stop under-reporting security updates
+
+On an Ubuntu host **not attached to Ubuntu Pro**, `apt` cannot see the `esm-infra` and
+`esm-apps` pockets — so the count of available security updates it reports is smaller than
+the truth, and fettle repeated that smaller number without qualification. Same failure shape
+as the RHEL bugs fixed through v0.37–v0.46: *a check that cannot see everything rendering as
+though it can.*
+
+- **The upgrade preview now names what apt cannot see** — "N further security update(s) are
+  NOT shown above", with the esm-infra and esm-apps split. Only when the host is unattached
+  *and* updates are actually being withheld; an attached host already has those pockets as
+  real apt sources, so adding a note there would double-count.
+- **`-x` reports the coverage gap even when nothing is outstanding.** Measured on a live
+  Ubuntu 24.04 host: automatic updates enabled, zero packages pending — and **18 installed
+  packages that receive no security updates at all** without a subscription. "Up to date"
+  alone hides that entirely.
+- Data comes from `pro security-status --format json`, which is the interface `pro` itself
+  asks scripts to use: its human output opens with a warning that the text is "subject to
+  change". Gated on the **binary**, not the distro ID, so Debian and Mint skip it untouched.
+- Best-effort throughout: a missing, failing, or unparseable `pro` yields no claim rather
+  than a clean report.
+
+### Two sibling issues investigated and NOT fixed — deliberately
+
+**Linux Mint's `apt` wrapper: not a bug.** A research pass claimed Mint's
+`/usr/local/bin/apt` shim auto-prepends `sudo`, which would have made our read-only upgrade
+query block on a password prompt. Reading `mintsystem`'s source settled it: `list` dispatches
+to `/usr/bin/apt` unchanged, and is **not** in the tuple of subcommands that receive `sudo`.
+The claim's own quoted code contradicted its conclusion. No change made, and none needed.
+(Two real wrapper behaviours that do not affect us: `apt search` routes to aptitude, and
+`apt clean`/`autoclean` route to `apt-get` and do take sudo — we already call `apt-get`
+directly through the elevated path.)
+
+**Ubuntu phased updates: real, but unverifiable today, so untouched.** Ubuntu withholds a
+percentage of updates per machine, and `apt list --upgradable` may list packages that will
+not install yet. No package was mid-phase on any host or container available while this was
+written — `apt-get -s upgrade` with `Always-Include-Phased-Updates` both true and false gave
+identical results — so neither the bug nor a fix could be demonstrated. Shipping an
+unverified fix for an unreproduced bug is how the wrong thing gets locked in; it waits for
+the Ubuntu VM in the test lab.
+
 ## [0.46.1] — README: a support matrix you can read at a glance
 
 Documentation only. "Supported distributions" listed the three families and described RHEL

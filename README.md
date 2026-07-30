@@ -138,6 +138,13 @@ feeds for **Arch, Debian, Ubuntu and RHEL**, plus language dependencies via OSV.
 (AUR / apt / dnf) plus flatpak, snap, containers, GNOME extensions, VS Code extensions and
 GitHub CLI extensions.
 
+**Ubuntu-specific:** on a host not attached to **Ubuntu Pro**, `apt` cannot see the
+`esm-infra` / `esm-apps` pockets, so the number of available security updates it reports is
+smaller than reality. fettle reads `pro security-status` and says so — both in the upgrade
+preview when updates are being withheld, and in `-x`, which names how many installed
+packages (typically Universe/Multiverse) receive no security updates at all without a
+subscription.
+
 Three RHEL-specific things worth knowing:
 
 - **`-u --dry-run` shows upgrades only.** dnf has no rootless equivalent of
