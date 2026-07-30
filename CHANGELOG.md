@@ -4,6 +4,43 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.42.0] — RHEL: config drift, and `.rpmsave` is not the same as `.rpmnew`
+
+`fettle -d` now works on the RHEL family: pending config merges under `/etc`, plus
+`dnf check` as the analogue of Debian's `dpkg --audit`.
+
+- **The three rpm suffixes are reported differently, because they mean opposite things.**
+  With a `.rpmnew`, *your* file is still in effect and a new default sits unmerged beside
+  it — informational. With a `.rpmsave` or `.rpmorig`, rpm moved your file aside and the
+  **package's** version is now live, so settings someone deliberately made silently
+  stopped applying. Those warn. Lumping them together (as the Debian backend does for its
+  own suffixes) would hide the case that actually costs you something.
+- `rpmconf -a` is suggested for reconciling them, and named as something to install when
+  it is absent rather than suggested blindly.
+- **`dnf check` exits 1 for merely finding problems** — the same trap as `rpm -Va` and
+  `dnf check-update`. A genuinely broken dnf also exits 1 (measured: removing libxml2
+  breaks its own Python bindings), so the exit code cannot separate the two and the
+  presence of real output is the discriminator. A non-zero exit with no output is
+  reported as "NOT assessed", never as a clean bill of health.
+- The problem list is shown verbatim rather than parsed, because the generations disagree
+  on its shape: dnf4 writes one line per problem, dnf5 writes the package with an indented
+  `missing require` beneath. Only the count is taken, from the summary line both write to
+  *stderr* in different wording.
+
+### Fixed — a false positive found by running it, not by testing it
+
+**dnf writes several informational lines to `stdout`, not stderr**, and an unregistered
+RHEL box emits three of them from `dnf check` while exiting 0. The "was there output?"
+test therefore reported package problems on a completely clean machine — with no count,
+because there were no problems. Those notices are now stripped before the emptiness test,
+via a shared helper. The other parsers in this backend were already immune by
+construction: they require a specific row shape (three fields, or a whitespace-free
+`name.arch`) that no notice matches.
+
+Verified live on both generations: AlmaLinux and Fedora with real leftovers and a
+genuinely broken dependency, and the RHEL 10.1 VM read-only — which is where the false
+positive surfaced and where the fix was confirmed.
+
 ## [0.41.0] — RHEL: `orphans`, with kernels off the table
 
 `fettle -o` now works on the RHEL family: it reports installed packages that no enabled

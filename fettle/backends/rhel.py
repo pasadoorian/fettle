@@ -68,6 +68,21 @@ _REPOQUERY_QF = r"%{name}.%{arch}\n"
 # like `kernelshark` is spared needlessly) is the right direction to err in.
 _NEVER_REMOVE_PREFIXES = ("kernel",)
 
+# rpm's config leftovers. These are NOT interchangeable, and the difference is the whole
+# point: with a `.rpmnew` your file is still in effect and a new default sits unmerged
+# beside it, whereas with a `.rpmsave` or `.rpmorig` **your file is no longer in effect**
+# — rpm moved it aside and installed the package's version. Lumping them together (as the
+# Debian backend does for its own three suffixes) would hide the case where a machine
+# quietly stopped honouring settings someone deliberately made.
+_DRIFT_KINDS = {
+    ".rpmnew": (False, "the package shipped a new default; YOUR file is still in effect "
+                       "— review the .rpmnew for options worth adopting"),
+    ".rpmsave": (True, "YOUR file was moved aside and the PACKAGE's version is now in "
+                       "effect — settings you made are NOT active"),
+    ".rpmorig": (True, "the file present before the package owned it was moved aside; "
+                       "the package's version is now in effect"),
+}
+
 
 # Transaction-table section headers -> TxItem kind. Wording measured on dnf 4.20 and
 # dnf5 5.4.2, which agree on all of these.
@@ -90,6 +105,30 @@ _TX_SECTIONS = {
 # *removed*; accepting those would double every upgrade and list the outgoing version
 # as if it were incoming. dnf4 indents its obsoleted packages the same way.
 _TX_ROW = re.compile(r"^ (\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s|$)")
+
+
+# Informational lines dnf writes to **stdout** rather than stderr. They contaminate any
+# "did this command produce output?" test, and doing exactly that made `dnf check` report
+# package problems on a clean box: an unregistered RHEL host emits three of these and
+# exits 0. All measured on the live RHEL 10.1 machine, rootless and as root.
+_DNF_STDOUT_NOTICES = (
+    "Not root,",
+    "Last metadata expiration check",
+    "Updating Subscription Management repositories",
+    "Unable to read consumer identity",
+    "This system is not registered",
+)
+
+
+def _strip_dnf_notices(text: str) -> str:
+    """Drop dnf's informational stdout lines, leaving only real output.
+
+    The other parsers here are immune to these by construction — they require a specific
+    row shape (three fields, or a whitespace-free ``name.arch``) that no notice matches.
+    Anything that merely asks "was there output?" needs this.
+    """
+    return "\n".join(ln for ln in text.splitlines()
+                     if ln.strip() and not ln.startswith(_DNF_STDOUT_NOTICES)).strip()
 
 
 def _have_root() -> bool:
@@ -237,6 +276,7 @@ class RhelBackend(PackageBackend):
         "update",            # dnf upgrade --refresh (+ flatpak/snap when present)
         "clean",             # dnf clean packages (NOT clean all) + unused flatpaks
         "orphans",           # repoquery --unneeded/--extras; kernels never offered
+        "config_drift",      # .rpmnew/.rpmsave/.rpmorig + dnf check
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -424,6 +464,79 @@ class RhelBackend(PackageBackend):
                          "rootless query — a subscribed RHEL host may have more updates "
                          "than shown")
         return Transaction(items=items, ok=True, notes=notes)
+
+    # -- config drift --------------------------------------------------------
+    def check_config_drift(self, ctx: Context) -> Result:
+        """Pending config merges, plus a package-database sanity check.
+
+        Scans ``/etc`` only, matching the Debian backend. rpm can drop these leftovers
+        elsewhere, but configuration is what a human needs to reconcile, and walking the
+        whole filesystem to find a stray ``.rpmnew`` under ``/usr/share`` is not worth
+        the cost.
+        """
+        out = ctx.output
+        etc = ctx.root / "etc"
+        found = {suffix: sorted(str(p) for p in etc.rglob(f"*{suffix}"))
+                 for suffix in _DRIFT_KINDS} if etc.is_dir() else {}
+        total = sum(len(v) for v in found.values())
+
+        if not total:
+            out.ok("no pending config-file merges.")
+        else:
+            for suffix, (lost, advice) in _DRIFT_KINDS.items():
+                files = found.get(suffix) or []
+                if not files:
+                    continue
+                # `.rpmsave`/`.rpmorig` mean a setting silently stopped applying, which
+                # is worse than an unmerged default — so they warn rather than note.
+                emit = out.warn if lost else out.note
+                emit(f"{len(files)} {suffix} file(s): {advice}")
+                for path in files:
+                    print(f"    {path}")
+            out.summary_add(f"{total} config file(s) to review")
+            if command.which("rpmconf"):
+                out.next_step("reconcile them interactively: sudo rpmconf -a")
+            else:
+                out.next_step("merge them by hand, or install rpmconf "
+                              "(dnf install rpmconf) and run: sudo rpmconf -a")
+        self._dnf_check(ctx)
+        return Result()
+
+    @staticmethod
+    def _dnf_check(ctx: Context) -> None:
+        """``dnf check`` — the analogue of Debian's ``dpkg --audit``.
+
+        **Exit 1 means "problems were found", not "the check failed"** — the same trap as
+        ``rpm -Va`` and ``dnf check-update``. But a genuinely broken dnf *also* exits 1:
+        measured, removing libxml2 breaks dnf's own Python bindings and it exits 1 with a
+        traceback. The code alone cannot separate the two, so the presence of output on
+        stdout is the discriminator, and a non-zero exit with nothing on stdout is
+        reported as "not assessed" rather than as a clean bill of health.
+
+        The problem list is shown verbatim rather than parsed, because the two
+        generations disagree about its shape: dnf4 writes one line per problem
+        (``pkg has missing requires of dep``), dnf5 writes the package on one line with an
+        indented ``missing require "dep"`` beneath it. Only the count is extracted, from
+        the summary line both write to *stderr*.
+        """
+        if not command.which("dnf"):
+            return
+        proc = command.run(["dnf", "check"], capture=True)
+        # Notices must go before the emptiness test, not after: an unregistered RHEL box
+        # writes three of them to stdout and exits 0, which read as "problems found".
+        body = _strip_dnf_notices(proc.stdout or "")
+        if proc.returncode == 0 and not body:
+            ctx.output.ok("dnf check: no package problems.")
+            return
+        if not body:
+            ctx.output.warn(f"dnf check could not run (exit {proc.returncode}) — "
+                            "package problems were NOT assessed.")
+            return
+        match = re.search(r"(\d+)\s+problem", proc.stderr or "")
+        count = f"{match.group(1)} " if match else ""
+        ctx.output.warn(f"dnf check found {count}package problem(s):")
+        print("\n".join(body.splitlines()[:40]))
+        ctx.output.summary_add("dnf check found package problems")
 
     # -- orphans / foreign packages ------------------------------------------
     @staticmethod

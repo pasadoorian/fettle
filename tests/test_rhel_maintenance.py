@@ -405,6 +405,163 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- config drift ------------------------------------------------------------
+# Real `dnf check` bodies. dnf4 writes one line per problem; dnf5 writes the package on
+# one line with an indented `missing require` beneath it. Both put the count on stderr.
+_CHECK4 = ("httpd-2.4.63-13.el10_2.4.x86_64 has missing requires of "
+           "httpd-core = 2.4.63-13.el10_2.4\n"
+           "mod_lua-2.4.63-13.el10_2.4.x86_64 has missing requires of "
+           "httpd-mmn = 20120211x8664\n")
+_CHECK5 = ('httpd-0:2.4.68-1.fc44.x86_64\n missing require "httpd-core = 0:2.4.68-1.fc44"\n'
+           'mod_lua-0:2.4.68-1.fc44.x86_64\n missing require "httpd-mmn = 20120211x8664"\n')
+
+
+def _drift_root(tmp_path, names=()):
+    etc = tmp_path / "etc"
+    (etc / "dnf").mkdir(parents=True)
+    for name in names:
+        (etc / name).write_text("x")
+    return tmp_path
+
+
+def _drift(root, check=(0, "", ""), which=True):
+    """Returns (ctx, calls) — ctx so a test can read `output._next_steps`, which are
+    queued for the summary rather than printed as they happen."""
+    calls = []
+    ctx = _ctx(root=root)
+
+    def run(cmd, *, as_user=None, capture=False):
+        calls.append(list(cmd))
+        if list(cmd)[:2] == ["dnf", "check"]:
+            return command.Proc(*check)
+        return command.Proc(0, "", "")
+
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=which):
+        RhelBackend().check_config_drift(ctx)
+    return ctx, calls
+
+
+def test_rpmnew_says_your_file_is_still_in_effect(tmp_path, capsys):
+    _drift(_drift_root(tmp_path, ["sshd_config.rpmnew"]))
+    shown = capsys.readouterr()
+    text = shown.out + shown.err
+    assert "YOUR file is still in effect" in text
+    assert "sshd_config.rpmnew" in text
+
+
+def test_rpmsave_warns_that_settings_are_no_longer_active(tmp_path, capsys):
+    _drift(_drift_root(tmp_path, ["sshd_config.rpmsave"]))
+    shown = capsys.readouterr()
+    assert "NOT active" in shown.out + shown.err
+    # It must be a warning, not a note: this is a silent loss of configuration.
+    assert "rpmsave" in shown.err
+
+
+def test_rpmorig_is_also_treated_as_a_displaced_file(tmp_path, capsys):
+    _drift(_drift_root(tmp_path, ["hosts.rpmorig"]))
+    assert "rpmorig" in capsys.readouterr().err
+
+
+def test_a_clean_etc_reports_no_merges(tmp_path, capsys):
+    _drift(_drift_root(tmp_path))
+    assert "no pending config-file merges" in capsys.readouterr().out
+
+
+def test_leftovers_are_found_in_nested_directories(tmp_path, capsys):
+    root = _drift_root(tmp_path)
+    (root / "etc/dnf/dnf.conf.rpmnew").write_text("x")
+    _drift(root)
+    assert "dnf.conf.rpmnew" in capsys.readouterr().out
+
+
+def test_rpmconf_is_suggested_without_telling_you_to_install_it_twice(tmp_path):
+    ctx, _ = _drift(_drift_root(tmp_path, ["a.rpmnew"]), which=True)
+    steps = " ".join(ctx.output._next_steps)
+    assert "rpmconf -a" in steps and "dnf install rpmconf" not in steps
+
+
+def test_absent_rpmconf_is_named_as_something_to_install(tmp_path):
+    ctx, _ = _drift(_drift_root(tmp_path, ["a.rpmnew"]), which=False)
+    assert "dnf install rpmconf" in " ".join(ctx.output._next_steps)
+
+
+# -- dnf check (the dpkg --audit analogue) ------------------------------------
+def test_dnf_check_exit_1_with_output_means_problems_found(tmp_path, capsys):
+    """Exit 1 means "problems found", not "the check failed" — the same trap as
+    `rpm -Va` and `dnf check-update`."""
+    _drift(_drift_root(tmp_path),
+           check=(1, _CHECK4, "Error: Check discovered 4 problem(s)"))
+    shown = capsys.readouterr()
+    assert "found 4 package problem(s)" in shown.err
+    assert "has missing requires of" in shown.out
+
+
+def test_dnf_check_parses_the_count_from_either_generation(tmp_path, capsys):
+    _drift(_drift_root(tmp_path),
+           check=(1, _CHECK5, "Check discovered 4 problem(s) in 3 package(s)"))
+    shown = capsys.readouterr()
+    assert "found 4 package problem(s)" in shown.err
+    assert 'missing require "httpd-core' in shown.out
+
+
+def test_dnf_check_exit_1_with_no_output_is_not_a_clean_bill_of_health(tmp_path, capsys):
+    """A broken dnf also exits 1 — measured: removing libxml2 breaks its Python bindings
+    and it exits 1 with a traceback. Reporting that as "no problems" would be the worst
+    possible answer."""
+    _drift(_drift_root(tmp_path), check=(1, "", "ImportError: libxml2.so.2"))
+    shown = capsys.readouterr()
+    assert "NOT assessed" in shown.err
+    assert "no package problems" not in shown.out
+
+
+# Exactly what an unregistered RHEL 10.1 box writes to STDOUT — with exit code 0.
+_UNREGISTERED = ("Updating Subscription Management repositories.\n"
+                 "Unable to read consumer identity\n"
+                 "\n"
+                 "This system is not registered with an entitlement server. You can use "
+                 '"rhc" or "subscription-manager" to register.\n'
+                 "\n")
+
+
+def test_an_unregistered_box_is_not_reported_as_having_package_problems(tmp_path, capsys):
+    """Caught by running it for real, not by a unit test. dnf writes these notices to
+    *stdout* and exits 0, so a bare "was there output?" test called a completely clean
+    machine broken — and printed no problem count, because there were no problems."""
+    _drift(_drift_root(tmp_path), check=(0, _UNREGISTERED, ""))
+    shown = capsys.readouterr()
+    assert "no package problems" in shown.out
+    assert "problem(s):" not in shown.err
+
+
+def test_the_rootless_notice_is_also_stripped(tmp_path, capsys):
+    _drift(_drift_root(tmp_path),
+           check=(0, "Not root, Subscription Management repositories not updated\n", ""))
+    assert "no package problems" in capsys.readouterr().out
+
+
+def test_real_problems_still_survive_the_notice_filter(tmp_path, capsys):
+    """The filter must not swallow the signal it sits in front of."""
+    _drift(_drift_root(tmp_path), check=(1, _UNREGISTERED + _CHECK4,
+                                         "Error: Check discovered 4 problem(s)"))
+    shown = capsys.readouterr()
+    assert "found 4 package problem(s)" in shown.err
+    assert "has missing requires of" in shown.out
+    assert "not registered" not in shown.out          # notices are not echoed as problems
+
+
+def test_dnf_check_clean_says_so(tmp_path, capsys):
+    _drift(_drift_root(tmp_path), check=(0, "", ""))
+    assert "no package problems" in capsys.readouterr().out
+
+
+def test_config_drift_writes_nothing(tmp_path):
+    """Read-only: it is in cli.READ_ONLY_ACTIONS, so it must not run a mutating command
+    even without --dry-run."""
+    _, calls = _drift(_drift_root(tmp_path, ["a.rpmnew"]))
+    assert calls == [["dnf", "check"]]
+
+
 # -- orphans -----------------------------------------------------------------
 # Real `dnf repoquery --queryformat` output. dnf4 already terminates each record, so the
 # `\n` dnf5 needs makes dnf4 double-space; and dnf puts its rootless notice on stdout.
