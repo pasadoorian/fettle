@@ -47,15 +47,18 @@ for networks it manages.
 
 ## Target status
 
-| Target | State |
-|---|---|
-| `arch` | **working** — BIOS, cdrom seed |
-| `ubuntu` | **working** — BIOS, **virtio-disk seed** (see below) |
-| `debian` | **working** — **UEFI** with an explicit loader + qcow2 NVRAM (see below) |
-| `rocky9`, `alma9`, `fedora` | not yet attempted |
+| Target | Firmware | Seed | State |
+|---|---|---|---|
+| `arch` | BIOS | cdrom | **working** |
+| `ubuntu` | BIOS | **virtio disk** | **working** |
+| `debian` | **UEFI** | cdrom | **working** |
+| `rocky9` | **UEFI** | cdrom | **working** |
+| `alma9`, `fedora` | — | — | not yet attempted |
 
-Three distros, three different boot/seed combinations. That is not incidental complexity —
-each was forced by a failure that produced no error message at all.
+Four distros, three different boot/seed combinations, and **half of them will not boot under
+BIOS at all**. That is not incidental complexity — each was forced by a failure that
+produced no error message. All four images are BIOS+UEFI hybrids by partition layout, so
+the layout does not predict which will work.
 
 ### What each one needed, and why
 
@@ -64,6 +67,9 @@ pass did not recognise an emulated SCSI cdrom on 26.04, and when it finds no dat
 disables cloud-init for the entire boot *silently*: no console output, no
 `/var/log/cloud-init.log`, a guest that reaches a login prompt with none of the requested
 config applied.
+
+**Debian and Rocky 9 — UEFI.** Rocky under BIOS was worse than Debian: it produced an
+**entirely empty** serial log, never reaching a bootloader at all.
 
 **Debian — UEFI.** Under BIOS the genericcloud image printed ``Booting `Debian GNU/Linux'``
 and reset, ~1400 times, with no kernel output whatsoever. Ruled out first: the seed as cdrom

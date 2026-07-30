@@ -4,6 +4,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.4] — lab: Rocky 9 lands, and the RHEL backend meets EL9 at last
+
+Test tooling. Phase 2 of the lab is complete: `arch`, `ubuntu`, `debian` and `rocky9` all
+build, snapshot and revert.
+
+**Rocky 9 also needs UEFI**, and failed more obscurely than Debian did — under BIOS its
+serial log was *entirely empty*, never reaching a bootloader. All four base images are
+BIOS+UEFI hybrids by partition layout, so the layout does not predict which will boot; half
+of them simply will not, and only a console log distinguishes the failures.
+
+### The RHEL backend has now run on EL9 — 53% of the enterprise fleet, previously untested
+
+Everything was built and verified against EL10 (~1% of the fleet). EL9 differs concretely,
+and the differences are exactly the ones that could have broken it:
+
+- **dnf 4.14** on EL9 against 4.20 on EL10.
+- **`rpm -E %{_dbpath}` is `/var/lib/rpm`**, not EL10's `/usr/lib/sysimage/rpm`. That path
+  difference was flagged as a risk when the integrity check was written; it survives because
+  the check probes with `rpm -q rpm` rather than assuming a path.
+
+`-O`, `-d`, `-x`, `-k` and `-r` all behave. Two things worth noting from the run:
+
+- `-O` correctly classified the kernel packages as **new dependencies** rather than
+  upgrades, which is right for installonly packages.
+- `-x` exercised a branch that had only ever been unit-tested: Rocky's cloud image **ships
+  `dnf-automatic` with no timer enabled**, so "installed but disabled" — distinct from the
+  "not installed" state on the RHEL test boxes — was confirmed against a real host.
+
 ## [0.47.3] — lab: Debian unblocked; three distros, three boot recipes
 
 Test tooling. `debian` joins `arch` and `ubuntu`; per-target firmware is now supported.

@@ -83,7 +83,7 @@ TARGETS = {
     "rocky9": {
         "url": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/"
                "Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
-        "user": "rocky", "disk": "10G", "osinfo": "rocky9",
+        "user": "rocky", "disk": "10G", "osinfo": "rocky9", "firmware": "uefi",
         "note": "EL9 is 53% of the enterprise fleet; Rocky publishes ~3x Alma's advisory rows",
     },
     "alma9": {
