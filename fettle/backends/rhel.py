@@ -120,6 +120,17 @@ _DNF_STDOUT_NOTICES = (
 )
 
 
+def _kernel_key(version: str) -> tuple[int, ...]:
+    """Numeric sort key for an rpm kernel version, so `6.12.0-218.el10` sorts above
+    `6.12.0-124.8.1.el10_1` — a plain string sort gets that backwards.
+
+    A digit-run comparison, not a real rpm vercmp (RHEL ships no guaranteed vercmp CLI).
+    Good enough because this report never *removes* anything: the worst a mis-sort can do
+    is mislabel which kernel boots next, not delete the wrong one.
+    """
+    return tuple(int(n) for n in re.findall(r"\d+", version))
+
+
 def _strip_dnf_notices(text: str) -> str:
     """Drop dnf's informational stdout lines, leaving only real output.
 
@@ -313,6 +324,7 @@ class RhelBackend(PackageBackend):
         "firmware_check",    # fwupd; the base-class impl, nothing RPM-specific
         "auto_updates",      # dnf-automatic: four timers, and they override the config
         "rebuild_check",     # needs-restarting: standalone on dnf4, a subcommand on dnf5
+        "kernel",            # informational: dnf enforces installonly_limit itself
     }
     # NOTE: `verify_integrity` below is NOT listed here. `supported` names *pipeline
     # actions*; sys-audit's `packages` category calls the backend method directly
@@ -502,6 +514,113 @@ class RhelBackend(PackageBackend):
         return Transaction(items=items, ok=True, notes=notes)
 
     # -- config drift --------------------------------------------------------
+    # -- file -> package attribution (for the hardening audit) ---------------
+    def map_files_to_packages(self, paths) -> dict[str, str]:
+        """Map each installed file to the rpm that owns it.
+
+        **Only paths that exist are queried**, because rpm handles its two failure modes
+        differently and only one of them keeps the output aligned with the input:
+
+        * a **missing** file → ``error: file …: No such file or directory`` on *stderr*
+          and the line is **skipped**, so every later result shifts up by one and gets
+          attributed to the wrong file;
+        * a file that exists but is **unowned** → ``file X is not owned by any package``
+          inline on *stdout*, which preserves the 1:1 mapping.
+
+        Filtering to existing paths turns the dangerous case into the safe one, and the
+        length check below refuses to guess if alignment is somehow still lost — an empty
+        map degrades the hardening report to "no package named", whereas a shifted map
+        would confidently blame the wrong package.
+        """
+        from pathlib import Path
+
+        wanted = [str(p) for p in paths]
+        if not wanted or not command.which("rpm"):
+            return {}
+        existing = [p for p in wanted if Path(p).exists()]
+        if not existing:
+            return {}
+        proc = command.run(["rpm", "-qf", "--qf", r"%{NAME}\n", *existing], capture=True)
+        lines = (proc.stdout or "").splitlines()
+        if len(lines) != len(existing):
+            return {}
+        return {path: name.strip() for path, name in zip(existing, lines)
+                if name.strip() and "not owned by any package" not in name}
+
+    # -- kernels -------------------------------------------------------------
+    def manage_kernels(self, ctx: Context) -> Result:
+        """Report installed kernels. Informational, because dnf prunes them itself.
+
+        Unlike apt, dnf enforces ``installonly_limit`` (3 by default) — installing a
+        fourth kernel removes the oldest automatically. So there is no routine cleanup to
+        offer, and the most dangerous operation in the tool is simply not performed here.
+        What is worth reporting is which kernel is running, whether a newer one is waiting
+        for a reboot, and how many of the limit's slots are used.
+
+        **``kernel-core`` is queried, not ``kernel``.** Measured on the RHEL 10.1 VM:
+        ``rpm -q kernel`` reported *one* version while ``kernel-core`` reported *two*,
+        including the running one. On RHEL 8+ ``kernel-core`` is the package that actually
+        carries the kernel, so querying ``kernel`` can hide the kernel you booted.
+        """
+        out = ctx.output
+        if not command.which("rpm"):
+            out.note("rpm not found; skipping the kernel report.")
+            return Result()
+        proc = command.run(["rpm", "-q", "kernel-core", "--qf",
+                            r"%{VERSION}-%{RELEASE}.%{ARCH}\n"], capture=True)
+        # rpm writes "package kernel-core is not installed" to *stdout*, not stderr.
+        installed = sorted((ln.strip() for ln in (proc.stdout or "").splitlines()
+                            if ln.strip() and "is not installed" not in ln),
+                           key=_kernel_key)
+        if not installed:
+            out.note("no kernel-core package is installed — normal in a container, and "
+                     "expected on an image-based host.")
+            return Result()
+
+        running = command.run(["uname", "-r"], capture=True).stdout.strip()
+        newest = installed[-1]
+        out.note(f"{len(installed)} kernel(s) installed:")
+        for ver in installed:
+            tags = []
+            if ver == running:
+                tags.append("running")
+            if ver == newest and ver != running:
+                tags.append("newest — boots next")
+            print(f"    {ver}{'  (' + ', '.join(tags) + ')' if tags else ''}")
+
+        if running and running != newest and _kernel_key(running) < _kernel_key(newest):
+            out.warn("a newer kernel is installed but not running — reboot to activate "
+                     f"it ({newest}).")
+            out.next_step("reboot to switch to the newest kernel")
+        elif running and running not in installed:
+            # Running a kernel rpm has no record of: a hand-built one, or the package was
+            # removed underneath it. Either way, not something to quietly ignore.
+            out.warn(f"the running kernel ({running}) is not owned by any installed "
+                     "kernel-core package.")
+
+        limit = self._installonly_limit(ctx)
+        out.note(f"dnf keeps at most {limit} kernel(s) (installonly_limit) and removes "
+                 f"the oldest itself — {len(installed)} of {limit} slots used, so no "
+                 "removal is offered here.")
+        if len(installed) > limit:
+            out.note("there are more kernels than the limit; dnf prunes on the next "
+                     "kernel install, or clear them now with: "
+                     "sudo dnf remove --oldinstallonly")
+        return Result()
+
+    @staticmethod
+    def _installonly_limit(ctx: Context) -> int:
+        """``installonly_limit`` from dnf.conf; dnf's own default is 3."""
+        conf = ctx.root / "etc/dnf/dnf.conf"
+        try:
+            for line in conf.read_text(errors="replace").splitlines():
+                key, sep, val = line.partition("=")
+                if sep and key.strip() == "installonly_limit":
+                    return max(1, int(val.strip()))
+        except (OSError, ValueError):
+            pass
+        return 3
+
     # -- rebuilds / restarts after an upgrade --------------------------------
     def check_rebuilds(self, ctx: Context) -> Result:
         """Whether a reboot or a service restart is owed after upgrading.

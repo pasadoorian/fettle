@@ -4,6 +4,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.46.0] — RHEL: kernels and binary attribution — the family is complete
+
+The last two gaps close, bringing the RHEL backend to **parity with Debian**: every action
+except the three that are Arch-only by nature (`aur-audit`, `aur-ioc-scan`, and
+`python-rebuild-check`, which dnf handles itself).
+
+**`fettle -k` — kernels, informational by design.** Unlike apt, dnf enforces
+`installonly_limit` (3 by default) and removes the oldest kernel itself when a fourth is
+installed. So there is no routine cleanup to offer, and the most dangerous operation in the
+tool is simply not performed on this backend. It reports what is installed, which is
+running, whether a newer one is waiting for a reboot, and how many slots are used.
+
+- **`kernel-core` is queried, not `kernel`.** On the RHEL 10.1 VM `rpm -q kernel` reported
+  **one** version while `kernel-core` reported **two** — including the running one. On
+  RHEL 8+ `kernel-core` carries the actual kernel, so querying `kernel` can hide the kernel
+  you booted.
+- Versions are sorted **numerically**. A string sort ranks `6.12.0-99` above
+  `6.12.0-124` because `'9' > '1'`, which would name the wrong kernel as next-to-boot and
+  miss a pending reboot entirely.
+- `rpm` writes *"package kernel-core is not installed"* to **stdout**, so it is filtered
+  rather than parsed as a version.
+- A running kernel that no installed `kernel-core` owns — a hand-built one, or the package
+  removed underneath it — is flagged rather than ignored.
+
+**`rpm -qf` binary attribution**, so `hardening-audit` can name the package behind a
+weakly-built binary instead of just a path.
+
+- **Only paths that exist are queried**, because rpm's two failure modes are not equally
+  safe: a **missing** file errors on *stderr* and the line is **skipped**, shifting every
+  later result up one so it is blamed on the wrong file; a file that exists but is
+  **unowned** gets *"file X is not owned by any package"* inline on *stdout*, preserving
+  the 1:1 mapping. Filtering to existing paths turns the dangerous case into the safe one.
+- If alignment is somehow still lost, an empty map is returned rather than a shifted one —
+  "no package named" degrades the report, a wrong package name corrupts it.
+
+Verified live on the RHEL 10.1 VM, read-only: `-k` reports both kernels with the running
+one tagged and 2 of 3 slots used, and the attribution maps `bash`, `coreutils`,
+`openssh-server` and `rpm` correctly while dropping an unowned file and a missing one with
+no shifting. `checksec` is not packaged for el10 even in EPEL, so the attribution was
+exercised directly rather than through `-H`.
+
 ## [0.45.0] — RHEL: is a reboot or a service restart owed?
 
 `fettle -r` now works on the RHEL family, via `needs-restarting`.

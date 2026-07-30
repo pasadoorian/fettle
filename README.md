@@ -87,16 +87,13 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 |---|---|---|---|
 | Arch / Manjaro | `arch` | pacman + yay/pamac + AUR | `arch`, `manjaro`, `endeavouros`, … |
 | Debian / Ubuntu | `debian` | apt/nala + flatpak + snap | `debian`, `ubuntu`, `linuxmint`, `pop`, … |
-| RHEL family *(partial)* | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
+| RHEL family | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
 
-**RHEL support is still filling in.** Working: `update`, `only-update`, `pkg-audit`,
-`advisory-check`, `hardening-audit`, `container-update` and the `sys-audit` package
-integrity check, plus `clean`, `orphans`, `config-drift`, `auto-updates`,
-`rebuild-check` and `firmware-check` (the
-`fwupdmgr` path is shared with the other backends — fwupd is distro-neutral). Not yet built: `kernel` — those are reported as unsupported
-rather than silently skipped. Fedora is deliberately not claimed as a distro: it shares
-dnf, but its advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*`
-(`--distro rhel` still works there, and is how the dnf5 code path is tested).
+**RHEL support is complete**, at parity with Debian: every action except the three that
+are Arch-only by nature (`aur-audit`, `aur-ioc-scan`, and `python-rebuild-check`, which dnf
+handles itself). Fedora is deliberately not claimed as a *distro*: it shares dnf, but its
+advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
+still works there, and is how the dnf5 code path is tested).
 
 Three RHEL-specific things worth knowing:
 
@@ -257,11 +254,11 @@ just Debian — each revision confirmed individually.
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
-| `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) | — (not built; dnf enforces `installonly_limit` itself) |
+| `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) | **informational only** — dnf enforces `installonly_limit` itself, so nothing is offered for removal; flags a pending reboot |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — | — |
 | `-P` | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
-| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros |
+| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.

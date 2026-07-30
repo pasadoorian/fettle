@@ -405,6 +405,166 @@ def test_rpm_ostree_is_suggested_without_sudo(tmp_path):
     assert "sudo" not in hint.split("rpm-ostree")[0]
 
 
+# -- kernels -----------------------------------------------------------------
+# Real `rpm -q kernel-core --qf` output from the RHEL 10.1 VM: TWO kernels, the newer one
+# running. `rpm -q kernel` on the same box reports only the OLDER one.
+_KERNELS = "6.12.0-124.8.1.el10_1.x86_64\n6.12.0-218.el10.x86_64\n"
+
+
+def _kernels(tmp_path, *, listing=_KERNELS, running="6.12.0-218.el10.x86_64",
+             limit="installonly_limit=3\n", which=True):
+    (tmp_path / "etc/dnf").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "etc/dnf/dnf.conf").write_text("[main]\n" + limit)
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        calls.append(cmd)
+        if cmd[:2] == ["rpm", "-q"]:
+            return command.Proc(0, listing, "")
+        if cmd[:1] == ["uname"]:
+            return command.Proc(0, running + "\n", "")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=which):
+        RhelBackend().manage_kernels(ctx)
+    return ctx, calls
+
+
+def test_kernel_core_is_queried_not_kernel(tmp_path):
+    """Measured on the VM: `rpm -q kernel` reported ONE version while `kernel-core`
+    reported TWO, including the running one. Querying `kernel` hides the booted kernel."""
+    _, calls = _kernels(tmp_path)
+    q = next(c for c in calls if c[:2] == ["rpm", "-q"])
+    assert q[2] == "kernel-core"
+
+
+def test_kernels_are_sorted_numerically_not_as_strings(tmp_path, capsys):
+    """A string sort ranks 6.12.0-218 BELOW 6.12.0-124.8.1, which would label the wrong
+    kernel as the one that boots next."""
+    _kernels(tmp_path, running="6.12.0-124.8.1.el10_1.x86_64")
+    said = capsys.readouterr().out + capsys.readouterr().err
+    assert "6.12.0-218.el10.x86_64" in said
+
+
+def test_a_string_sort_would_pick_the_wrong_newest_kernel(tmp_path, capsys):
+    """The fixture above does not discriminate: 124 and 218 sort the same either way.
+    This one does — a string sort ranks `-99` ABOVE `-124` because '9' > '1', so it would
+    call the running 99 kernel the newest and miss the pending reboot entirely.
+    """
+    listing = "6.12.0-99.el10.x86_64\n6.12.0-124.8.1.el10_1.x86_64\n"
+    ctx, _ = _kernels(tmp_path, listing=listing, running="6.12.0-99.el10.x86_64")
+    cap = capsys.readouterr()
+    assert "newer kernel is installed but not running" in cap.err
+    assert "6.12.0-124.8.1.el10_1.x86_64" in cap.err     # names the right one
+
+
+def test_a_pending_reboot_is_flagged(tmp_path, capsys):
+    """Running the older kernel with a newer one installed = reboot owed."""
+    ctx, _ = _kernels(tmp_path, running="6.12.0-124.8.1.el10_1.x86_64")
+    cap = capsys.readouterr()
+    assert "newer kernel is installed but not running" in cap.err
+    assert any("reboot" in s for s in ctx.output._next_steps)
+
+
+def test_running_the_newest_kernel_is_not_flagged(tmp_path, capsys):
+    _kernels(tmp_path, running="6.12.0-218.el10.x86_64")
+    assert "not running" not in capsys.readouterr().err
+
+
+def test_no_removal_is_ever_offered(tmp_path):
+    """dnf enforces installonly_limit itself, so the most dangerous operation in the tool
+    is simply not performed on this backend."""
+    _, calls = _kernels(tmp_path)
+    assert not any("remove" in " ".join(c) for c in calls)
+    assert not any(c[:1] == ["dnf"] for c in calls)
+
+
+def test_the_installonly_limit_is_read_from_dnf_conf(tmp_path, capsys):
+    _kernels(tmp_path, limit="installonly_limit=5\n")
+    assert "at most 5 kernel(s)" in capsys.readouterr().out
+
+
+def test_an_absent_limit_falls_back_to_dnfs_own_default(tmp_path, capsys):
+    _kernels(tmp_path, limit="")
+    assert "at most 3 kernel(s)" in capsys.readouterr().out
+
+
+def test_more_kernels_than_the_limit_names_the_cleanup(tmp_path, capsys):
+    listing = _KERNELS + "6.12.0-100.el10.x86_64\n6.12.0-90.el10.x86_64\n"
+    _kernels(tmp_path, listing=listing, limit="installonly_limit=3\n")
+    assert "--oldinstallonly" in capsys.readouterr().out
+
+
+def test_rpm_saying_not_installed_is_not_parsed_as_a_kernel(tmp_path, capsys):
+    """rpm writes "package kernel-core is not installed" to STDOUT, not stderr."""
+    _kernels(tmp_path, listing="package kernel-core is not installed\n")
+    said = capsys.readouterr().out
+    assert "no kernel-core package is installed" in said
+    assert "kernel(s) installed" not in said
+
+
+def test_a_running_kernel_rpm_does_not_know_is_flagged(tmp_path, capsys):
+    """A hand-built kernel, or the package removed underneath it — not something to
+    quietly ignore."""
+    _kernels(tmp_path, running="6.99.0-custom.x86_64")
+    assert "not owned by any installed kernel-core" in capsys.readouterr().err
+
+
+# -- file -> package attribution ---------------------------------------------
+def _mapfiles(paths, *, stdout, existing=None):
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        calls.append(list(cmd))
+        return command.Proc(0, stdout, "")
+
+    exists = set(existing if existing is not None else paths)
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=True), \
+         patch("pathlib.Path.exists", lambda self: str(self) in exists):
+        got = RhelBackend().map_files_to_packages(paths)
+    return got, calls
+
+
+def test_files_map_to_their_owning_packages():
+    got, _ = _mapfiles(["/usr/bin/bash", "/usr/bin/ls"], stdout="bash\ncoreutils\n")
+    assert got == {"/usr/bin/bash": "bash", "/usr/bin/ls": "coreutils"}
+
+
+def test_an_unowned_file_is_dropped_without_shifting_the_others():
+    """rpm reports "not owned by any package" INLINE on stdout, so alignment holds — the
+    unowned entry is dropped and the rest stay correctly attributed."""
+    got, _ = _mapfiles(["/usr/bin/bash", "/usr/local/bin/x", "/usr/bin/ls"],
+                       stdout="bash\nfile /usr/local/bin/x is not owned by any package\n"
+                              "coreutils\n")
+    assert got == {"/usr/bin/bash": "bash", "/usr/bin/ls": "coreutils"}
+
+
+def test_missing_paths_are_never_sent_to_rpm():
+    """The dangerous case: a MISSING file errors on stderr and rpm SKIPS the line, so
+    every later result shifts up one and is blamed on the wrong file."""
+    got, calls = _mapfiles(["/usr/bin/bash", "/gone", "/usr/bin/ls"],
+                           stdout="bash\ncoreutils\n",
+                           existing={"/usr/bin/bash", "/usr/bin/ls"})
+    assert "/gone" not in calls[0]
+    assert got == {"/usr/bin/bash": "bash", "/usr/bin/ls": "coreutils"}
+
+
+def test_a_length_mismatch_refuses_to_guess():
+    """If alignment is lost anyway, an empty map degrades the report to "no package
+    named"; a shifted map would confidently blame the wrong package."""
+    got, _ = _mapfiles(["/usr/bin/bash", "/usr/bin/ls"], stdout="bash\n")
+    assert got == {}
+
+
+def test_no_rpm_maps_nothing():
+    with patch("fettle.command.which", return_value=False):
+        assert RhelBackend().map_files_to_packages(["/usr/bin/bash"]) == {}
+
+
 # -- rebuilds / restarts -----------------------------------------------------
 # Real output. dnf4 `needs-restarting -r` and bare dnf5 `dnf needs-restarting` agree:
 # exit 0 = nothing to do, exit 1 = reboot required, with the cores named.
