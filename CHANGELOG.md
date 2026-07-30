@@ -4,6 +4,43 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.1] — a VM test lab, and the first Arch coverage
+
+Test tooling; no change to fettle itself. `tests/lab/` builds small disposable distro VMs on
+a KVM/libvirt host for the things containers cannot reach — systemd timers actually firing,
+snapd, fwupd, real reboots, the privilege model — and, most importantly, **`fettle remote`,
+which is how fettle is normally used and which nothing tested before**.
+
+Stdlib only; it shells out to ssh/virsh/qemu-img so `dependencies = []` is untouched. Host
+specifics live in a gitignored `lab.conf` (see `lab.conf.example`) because this repo is
+public.
+
+- **Cloud images, not installers**: Debian's genericcloud qcow2 is 328 MiB and boots in
+  seconds against 755 MiB for its netinst ISO. Every family publishes one, Arch included.
+- **Snapshot-pinned**: a cloud image is dated the day it was built, so a VM reverted to its
+  `pristine` snapshot always presents the *same* pending updates — and that set grows as the
+  archive moves on. cloud-init is told **not** to update on first boot for the same reason:
+  it would consume the very updates the tests need. Revert-to-usable measured at 17 seconds.
+- First target built and verified: **Arch**, which had no disposable coverage of any kind
+  despite being the most featured backend. `fettle remote` against it found real pending
+  upgrades including a kernel and systemd.
+
+### Three things the first VM taught, all now handled
+
+1. **An address is not readiness.** Arch's cloud image ships `qemu-guest-agent`
+   *preinstalled*, so the agent answered within seconds — long before cloud-init had
+   finished. Waiting on the address snapshotted a half-built machine. The gate is now a
+   successful ssh.
+2. **A bridged guest is unreachable until it speaks first.** Nothing upstream has learned
+   its MAC, so inbound ARP goes unanswered while the guest itself is perfectly healthy —
+   it had already taken a DHCP lease. The build now has the guest ping its gateway to prime
+   the path.
+3. **Recycled DHCP addresses break ssh two different ways.** A stale `known_hosts` entry
+   makes ssh refuse the new host; removing it leaves the host *unknown*, which is equally
+   fatal to anything non-interactive. `scp -q` reports either only as "Connection closed",
+   which reads like a broken guest. The harness now forgets the old key **and** records the
+   new one.
+
 ## [0.47.0] — Ubuntu: stop under-reporting security updates
 
 On an Ubuntu host **not attached to Ubuntu Pro**, `apt` cannot see the `esm-infra` and

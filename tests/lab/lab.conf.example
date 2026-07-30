@@ -1,0 +1,29 @@
+# fettle test lab — host-specific settings. Copy to lab.conf and edit.
+#
+# lab.conf is GITIGNORED on purpose: this repo is public, and the real file names an
+# internal host, network and key path. Nothing here belongs in git.
+
+# The KVM/libvirt host, as an ssh destination (must work with BatchMode, i.e. key auth).
+LAB_HOST=my-kvm-host
+
+# libvirt network to attach VMs to.
+#
+# Prefer a BRIDGED network so guests get ordinary LAN addresses: they are then reachable
+# directly, which is what makes `fettle remote <ip>` a realistic test, and it avoids
+# colliding with any NAT network the host already runs. libvirt only tracks DHCP leases
+# for networks it manages, so bridged guests are located via qemu-guest-agent instead —
+# cloud-init installs it on first boot.
+NETWORK=host-bridge
+
+# Where base images, overlays and seed ISOs live on the lab host.
+IMAGE_DIR=/var/lib/libvirt/images/fettle-lab
+
+# Public key injected into each guest. Use whichever key already reaches LAB_HOST —
+# there is no guarantee an id_rsa exists.
+SSH_PUBKEY=~/.ssh/id_ed25519.pub
+
+# Optional.
+#LIBVIRT_URI=qemu:///system
+#VM_PREFIX=fettle-
+#RAM_MB=2048
+#VCPUS=2

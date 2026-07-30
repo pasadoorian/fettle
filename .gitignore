@@ -23,3 +23,6 @@ PLAN.md
 .vscode/
 *.swp
 .DS_Store
+
+# Test-lab host specifics (real hostnames/keys — this repo is public)
+tests/lab/lab.conf
