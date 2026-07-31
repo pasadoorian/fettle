@@ -952,4 +952,7 @@ def _main(argv: list[str]) -> int:
                   full_preview=args.full_preview,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
-    return 0
+    # Non-zero when an action reported a failure. The pipeline used to return 0
+    # unconditionally, so a cron job could not tell a completed run from one whose
+    # work was blocked — the run log said so, the exit status did not.
+    return 1 if out.had_failures else 0

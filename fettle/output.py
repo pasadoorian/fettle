@@ -33,6 +33,7 @@ class Output:
     step_total: int = 0
     _step_cur: int = field(default=0, init=False)
     _summary: list[str] = field(default_factory=list, init=False)
+    _failures: list[str] = field(default_factory=list, init=False)
     _next_steps: list[str] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -120,6 +121,21 @@ class Output:
     def summary_add(self, line: str) -> None:
         self._summary.append(line)
 
+    def summary_fail(self, line: str) -> None:
+        """Record something that did NOT work, for the end-of-run summary.
+
+        Every summary line used to render with a green tick, so an action that failed
+        could only report itself as a success or say nothing — QA found a clean blocked
+        by a permission error signing off with `✓ caches already clean`. A failure needs
+        its own channel, and it sets the process exit status via :attr:`had_failures`.
+        """
+        self._failures.append(line)
+
+    @property
+    def had_failures(self) -> bool:
+        """Whether anything reported a failure — the process exit status."""
+        return bool(self._failures)
+
     def next_step(self, line: str) -> None:
         self._next_steps.append(line)
 
@@ -127,9 +143,11 @@ class Output:
         if self.quiet:
             return
         print(f"\n{self.B}{self.CYN}▸ Summary{self.NC}")
-        if self._summary:
+        if self._summary or self._failures:
             for line in self._summary:
                 print(f"  {self.GRN}✓{self.NC} {line}")
+            for line in self._failures:
+                print(f"  {self.RED}✗{self.NC} {line}")
         else:
             print(f"  {self.DIM}nothing to report{self.NC}")
         if self._next_steps:

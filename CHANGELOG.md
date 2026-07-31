@@ -4,6 +4,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.52.0] — a blocked action can no longer sign off green
+
+QA finding **F-12**, found by a `clean` case that had never been run: make one cached
+package undeletable and the clean fails, says so at the step level — and then reports
+success anyway.
+
+```
+✗ dnf package cache cleared failed (exit 1):
+[Errno 1] Operation not permitted: '.../bash-5.1.8-9.el9.x86_64.rpm'
+▸ Summary
+  ✓ caches already clean — nothing to reclaim      <- three rpms still on disk
+EXIT=0
+```
+
+Two causes, both now fixed.
+
+**The summary had no way to report a failure.** `print_summary` rendered every line with a
+green tick, so an action that failed could either claim success or say nothing. New
+`Output.summary_fail()` renders with a red `✗`, and `Output.had_failures` drives the exit
+status.
+
+**Nothing above the individual command knew it had failed.** `Context.execute` now records
+non-zero exits in `ctx.failed_commands`. Tracked centrally rather than at each call site so
+a backend cannot forget — this bug existed precisely because no layer above the command was
+watching. `actions._clean` compares the list before and after its own work, which separates
+*there was nothing to free* from *it could not be freed*; both free zero bytes, and the byte
+delta alone cannot tell them apart.
+
+**`fettle` now exits non-zero when an action reports a failure.** The maintenance pipeline
+returned 0 unconditionally, so a cron job could not distinguish a completed run from one
+whose work was blocked — the run log said so, the exit status did not. Only actions that
+call `summary_fail` affect it, so today that means `clean`; the channel is there for the
+rest as their QA passes land.
+
+Live-verified on Rocky 9 — blocked: `✗ clean did NOT complete — dnf failed (nothing was
+reclaimed)`, `EXIT=1`, three rpms still present; unblocked on the same host: `✓ caches
+cleaned — 3.0 MiB reclaimed`, `EXIT=0`. Three tests, two confirmed to fail without the fix.
+
+
 ## [0.51.1] — document `clean`: every platform, every invocation form, the config
 
 Documentation only; no behaviour change. Prompted by a plain question — *"do we ever say

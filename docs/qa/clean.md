@@ -6,10 +6,13 @@ versions on Arch (asks first; `--yes` to skip the prompt)"*.
 **Purpose as a user understands it:** reclaim disk space taken by downloaded packages,
 without breaking anything.
 
-Status: **two sweeps run.** Sweep 1 (v0.49.1) produced 11 findings, 7 since fixed
-(v0.50.0 / v0.51.0 / v0.51.1). Sweep 2 (v0.51.1) confirmed those fixes on all six lab guests
-and found one more. Four findings are open, three of them deferred by Paul pending research
-(see `qa-runs-outstanding-issues-questions.md`).
+Status: **DONE.** Two sweeps. Sweep 1 (v0.49.1) produced 11 findings; sweep 2 (v0.51.1)
+confirmed the fixes on all six lab guests and found a twelfth, fixed in v0.52.0.
+
+**8 of 12 findings fixed** (v0.50.0 → v0.52.0). The remaining three are deferred by Paul's
+decision pending research, not left open by omission — the pacman lock check, run-log
+permissions, and Fedora/exit-0, all written up in
+`~/src/claude-scratchpad/qa-runs-outstanding-issues-questions.md`.
 
 ---
 
@@ -164,18 +167,21 @@ config gating and the failure path — were added.
 | QA-CLEAN-23 | BLOCKED² | n/a | BLOCKED² | BLOCKED² | BLOCKED² | BLOCKED² | BLOCKED² |
 | QA-CLEAN-24 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
 | QA-CLEAN-25 | **DEFERRED** (F-08) | not run | **DEFERRED** | **DEFERRED** | **DEFERRED** | **DEFERRED** | **DEFERRED** |
-| QA-CLEAN-26 | BLOCKED³ | n/a | BLOCKED³ | BLOCKED³ | **FAIL (F-12)** | **FAIL (F-12)** | BLOCKED³ |
+| QA-CLEAN-26 | BLOCKED³ | n/a | BLOCKED³ | BLOCKED³ | **PASS** (F-12 fixed, v0.52.0) | PASS⁴ | BLOCKED³ |
 | QA-CLEAN-27 | n/a | n/a | PASS | PASS | n/a | n/a | n/a |
 | QA-CLEAN-28 | n/a | n/a | n/a | n/a | n/a | n/a | **DEFERRED** (F-10/F-11) |
 | QA-CLEAN-29 | PASS (`-k1`) | n/a | n/a | n/a | n/a | n/a | n/a |
 
-**29 cases × 7 = 203 cells — 96 PASS · 2 FAIL · 12 BLOCKED · 9 DEFERRED · 80 n/a · 4 not run.**
+**29 cases × 7 = 203 cells — 98 PASS · 0 FAIL · 12 BLOCKED · 9 DEFERRED · 80 n/a · 4 not run.**
+Every finding in `clean` is either fixed or deferred by decision; none is open and unowned.
 
 ¹ **Inconclusive, not passing.** `flatpak_updater = "none"` was set and no flatpak step ran
 — but flatpak is not installed on any guest, so "config honoured" and "tool absent" produce
 identical output. The case needs a guest with flatpak present to mean anything.
 
 ² Guests have passwordless sudo, so a double elevation leaves no visible symptom.
+
+⁴ alma9 shares the code path with rocky9 and was not re-run after the fix.
 
 ³ The failure injection (an immutable cached file) did not actually block anything on these
 targets: on arch the file was an *installed* package, which retention keeps by design, and
@@ -260,7 +266,7 @@ Two defects in one: **(a)** the mode should be set at creation
 empty logs should not be left behind at all — they also consume rotation slots, so under
 `[reports] keep = 5` a handful of empty files can push real logs out.
 
-### F-12 — a *blocked* clean reports "already clean". NEW in sweep 2, rocky9 + alma9
+### F-12 — a *blocked* clean reports "already clean". FIXED in v0.52.0
 
 Found by QA-CLEAN-26, a case that had never been run before. With one cached RPM made
 undeletable (`chattr +i`), the full output is:
@@ -291,9 +297,11 @@ Same invariant as the finding that started all this: *could not do it* must not 
 *nothing to do*. The distinction the summary now draws between "cleaned N" and "already
 clean" needs a third state for "tried and failed".
 
-**Fix direction:** `clean_caches` must report whether its commands succeeded — `ctx.execute`
-already returns the `Proc`, so the backends can track it — and `actions._clean` should
-choose the summary and the exit status from that rather than from the byte delta alone.
+**Fixed in v0.52.0.** `Context.execute` records non-zero exits centrally; `actions._clean`
+compares that list around its own work; `Output.summary_fail()` gives the summary a red-`✗`
+channel it never had; and the CLI exits non-zero when an action reports failure.
+Re-verified on rocky9: `✗ clean did NOT complete — dnf failed (nothing was reclaimed)`,
+`EXIT=1`, three rpms still present — and `EXIT=0` with `3.0 MiB reclaimed` once unblocked.
 
 Not reproduced on arch, debian, ubuntu or fedora: the injected immutable file was not a
 removal target there, so nothing was actually blocked. The defect is in shared code and

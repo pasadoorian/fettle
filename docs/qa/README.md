@@ -95,7 +95,7 @@ Status of each feature's QA pass. `—` = not started.
 
 | Feature | Flag | QA file | Status |
 |---|---|---|---|
-| clean | `-c` | [clean.md](clean.md) | **2 sweeps · 96 PASS / 2 FAIL · 7 findings fixed, 4 open (3 deferred)** |
+| clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 8 findings fixed, 3 deferred by decision** |
 | orphans | `-o` | — | — |
 | update | `-u` | — | — |
 | only-update | `-O` | — | — |

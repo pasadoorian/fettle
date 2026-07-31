@@ -113,6 +113,55 @@ def test_clean_dry_run_never_claims_success(tmp_path, capsys):
     assert "caches cleaned" not in out
 
 
+class _FailingCleanSpy(_CleanSpy):
+    """A backend whose cache command fails — e.g. a cached file it may not delete."""
+
+    def __init__(self, tmp_path):
+        super().__init__()
+        self._dir = tmp_path
+        (tmp_path / "stuck.pkg").write_bytes(b"x" * 4096)
+
+    def cache_paths(self, ctx):
+        return [self._dir]
+
+    def clean_caches(self, ctx):
+        super().clean_caches(ctx)
+        ctx.execute(["pkgtool", "clean"], quiet=True, msg="cache cleared")
+
+
+def _fail_proc(*a, **kw):
+    return Proc(1, "", "Operation not permitted")
+
+
+def test_clean_that_failed_is_not_reported_as_already_clean(tmp_path, capsys):
+    """A blocked clean freed nothing — but so did a clean with nothing to do.
+
+    Reporting the byte delta alone collapses the two, and the second leaves files on
+    disk while the summary reads green. QA measured exactly that on EL9: dnf could not
+    remove an immutable rpm, and fettle signed off `✓ caches already clean`.
+    """
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["clean"], _FailingCleanSpy(tmp_path), ctx)
+    out = capsys.readouterr().out
+    assert "already clean" not in out
+    assert "did NOT complete" in out and "pkgtool" in out
+
+
+def test_clean_failure_sets_the_exit_status(tmp_path):
+    """The run log said the clean failed; the exit status said everything was fine."""
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["clean"], _FailingCleanSpy(tmp_path), ctx)
+    assert ctx.output.had_failures is True
+
+
+def test_successful_clean_leaves_the_exit_status_clean(tmp_path):
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    actions.run(["clean"], _SizedCleanSpy(tmp_path, 2048), ctx)
+    assert ctx.output.had_failures is False
+
+
 def test_clean_prompt_names_only_what_this_family_removes():
     """Every backend used to ask about "build dirs"; only the Arch family has any."""
     from fettle.backends.base import PackageBackend

@@ -53,19 +53,32 @@ def _clean(backend: "PackageBackend", ctx: "Context") -> None:
 
     paths = backend.cache_paths(ctx)
     before = sum(dir_bytes(p) for p in paths)
+    failed_before = len(ctx.failed_commands)
     backend.clean_caches(ctx)
     freed = max(0, before - sum(dir_bytes(p) for p in paths))
+    failed = ctx.failed_commands[failed_before:]
 
     if ctx.dry_run:
-        summary = "would clean caches"
-    elif not paths:
+        ctx.output.summary_add("would clean caches")
+        return
+    if failed:
+        # A clean that could not run is NOT a clean cache. Reporting the byte delta
+        # alone collapses "nothing to free" and "could not free" into one sentence,
+        # and the second one leaves files on disk while the summary reads green.
+        tools = ", ".join(sorted(set(failed)))
+        detail = f"{human_bytes(freed)} reclaimed before it stopped" if freed \
+            else "nothing was reclaimed"
+        ctx.output.summary_fail(
+            f"clean did NOT complete — {tools} failed ({detail}). "
+            "The cache is not necessarily empty; see the errors above.")
+        return
+    if not paths:
         # Backend declared nothing measurable — say what happened, claim no figure.
-        summary = "caches cleaned"
+        ctx.output.summary_add("caches cleaned")
     elif freed:
-        summary = f"caches cleaned — {human_bytes(freed)} reclaimed"
+        ctx.output.summary_add(f"caches cleaned — {human_bytes(freed)} reclaimed")
     else:
-        summary = "caches already clean — nothing to reclaim"
-    ctx.output.summary_add(summary)
+        ctx.output.summary_add("caches already clean — nothing to reclaim")
 
 
 def _update(backend: "PackageBackend", ctx: "Context") -> None:

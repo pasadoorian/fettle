@@ -79,6 +79,10 @@ class Context:
     root: Path = Path("/")  # injected so filesystem reads are testable
     sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
     user_home: Path = Path.home()
+    # Names of commands run through `execute` that exited non-zero. Actions compare
+    # its length before and after their own work to tell "there was nothing to do"
+    # from "it could not be done" — a distinction the summary has to make.
+    failed_commands: list[str] = field(default_factory=list)
 
     # -- command execution (the dry-run gate lives here) ---------------------
     def execute(self, cmd, *, as_user: str | None = None, quiet: bool = False, msg: str = ""):
@@ -96,8 +100,15 @@ class Context:
             self.output.note(f"would run: {'(as ' + as_user + ') ' if as_user else ''}{shown}")
             return command.Proc(0)
         if quiet:
-            return self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
-        return self.output.run_streamed(argv, as_user=as_user)
+            proc = self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
+        else:
+            proc = self.output.run_streamed(argv, as_user=as_user)
+        # Remember what failed. Tracked centrally rather than at each call site so a
+        # backend cannot forget: QA found a clean blocked by a permission error still
+        # signing off green, because nothing above the individual command knew.
+        if not proc.ok:
+            self.failed_commands.append(argv[0])
+        return proc
 
     # -- interaction (all honor dry-run / assume_yes) ------------------------
     def confirm(self, question: str, *, default: bool = False) -> bool:
