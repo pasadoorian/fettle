@@ -39,8 +39,16 @@ def test_step_counter_reflects_action_count(capsys):
 
 
 class _CleanSpy:
+    # Mirrors the parts of the backend contract `actions._clean` uses. `cache_paths`
+    # returning [] is the "not measurable" path — the summary must then state what
+    # happened without inventing a figure.
+    clean_prompt = "remove downloaded package caches?"
+
     def __init__(self):
         self.ran = 0
+
+    def cache_paths(self, ctx):
+        return []
 
     def clean_caches(self, ctx):
         self.ran += 1
@@ -60,6 +68,60 @@ def test_clean_runs_without_prompt_when_assume_yes():
     spy = _CleanSpy()
     actions.run(["clean"], spy, ctx)
     assert spy.ran == 1
+
+
+class _SizedCleanSpy(_CleanSpy):
+    """A backend whose cache shrinks by a known amount when cleaned."""
+
+    def __init__(self, tmp_path, freed):
+        super().__init__()
+        self._dir = tmp_path
+        self._freed = freed
+        (tmp_path / "pkg.bin").write_bytes(b"x" * freed)
+
+    def cache_paths(self, ctx):
+        return [self._dir]
+
+    def clean_caches(self, ctx):
+        super().clean_caches(ctx)
+        if self._freed:
+            (self._dir / "pkg.bin").unlink()
+
+
+def test_clean_reports_what_was_actually_reclaimed(tmp_path, capsys):
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    actions.run(["clean"], _SizedCleanSpy(tmp_path, 2048), ctx)
+    assert "2 KiB reclaimed" in capsys.readouterr().out
+
+
+def test_clean_says_already_clean_when_nothing_freed(tmp_path, capsys):
+    """The distinguishing case: a run that frees nothing must not read like one
+    that freed hundreds of megabytes. Both printed `caches cleaned` before."""
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    actions.run(["clean"], _SizedCleanSpy(tmp_path, 0), ctx)
+    out = capsys.readouterr().out
+    assert "already clean" in out and "reclaimed" not in out
+
+
+def test_clean_dry_run_never_claims_success(tmp_path, capsys):
+    """A dry-run deletes nothing, so it must not report having cleaned anything."""
+    spy = _SizedCleanSpy(tmp_path, 2048)
+    ctx = _ctx()  # dry_run=True
+    actions.run(["clean"], spy, ctx)
+    out = capsys.readouterr().out
+    assert "would clean caches" in out
+    assert "caches cleaned" not in out
+
+
+def test_clean_prompt_names_only_what_this_family_removes():
+    """Every backend used to ask about "build dirs"; only the Arch family has any."""
+    from fettle.backends.base import PackageBackend
+    from fettle.backends.debian import DebianBackend
+    from fettle.backends.rhel import RhelBackend
+
+    assert "build" in ArchBackend.clean_prompt
+    for cls in (PackageBackend, DebianBackend, RhelBackend):
+        assert "build" not in cls.clean_prompt
 
 
 def test_clean_dry_run_shows_would_run_without_prompt(capsys):

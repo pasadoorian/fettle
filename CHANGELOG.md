@@ -4,6 +4,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.51.0] — `clean` tells the truth on every family, not just Arch
+
+The rest of the QA sweep's `clean` findings. v0.50.0 fixed the Arch no-op; these are the
+four that affected Debian, Ubuntu, Rocky, Alma and Fedora, where cleaning had always
+*worked* but described itself badly.
+
+**The summary moved out of the backends into `actions._clean`**, which now sizes the cache
+directories around the call. One truthful account for every family instead of three
+copies of `summary_add("caches cleaned")` — a line that used to print in three situations
+that are not the same thing:
+
+```
+✓ caches cleaned — 39.2 MiB reclaimed     (a run that freed something)
+✓ caches already clean — nothing to reclaim
+✓ would clean caches                      (--dry-run, which deleted nothing)
+```
+
+Backends now declare `cache_paths()` — what their clean reclaims — and the action measures
+it. Sizing the directory rather than parsing tool output is deliberate: parsing is exactly
+what would not have caught the Arch bug. `RhelBackend` lists **both** `/var/cache/dnf` and
+`/var/cache/libdnf5`, because dnf5 uses the latter and leaves the former present but empty
+— measuring only the traditional path reports a clean cache that was never looked at.
+
+**The confirmation prompt no longer asks about "build dirs" on families that have none.**
+It was `remove package-manager caches and build dirs?` everywhere; only the Arch family
+removes build directories, so Debian and RHEL users were consenting to something that
+could not happen, on a prompt whose safe default is No. Now `remove downloaded package
+caches?`, with the Arch backend overriding to name its AUR build directories.
+
+**`apt-get autoclean` no longer runs after `apt-get clean`.** `clean` empties the archive
+directory outright; `autoclean` removes only packages that can no longer be downloaded, so
+it had nothing left to consider. It printed its own success line regardless, so a user
+counted two operations where one had happened.
+
+Live-verified on Debian 13 and Rocky 9: 39.2 MiB and 3.0 MiB reclaimed respectively, a
+second run reporting `already clean`, and `--dry-run` reporting `would clean caches`.
+Seven new tests.
+
+
 ## [0.50.0] — `clean` has never cleaned anything on Arch. It does now.
 
 Found by the new manual QA plan (`docs/qa/`), first feature swept: `clean` across seven

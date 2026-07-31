@@ -34,6 +34,8 @@ from __future__ import annotations
 import os
 import re
 
+from pathlib import Path
+
 from .. import command, reports
 from ..util import matches_any
 from .base import Context, PackageBackend, Result, Transaction, TxItem
@@ -1004,6 +1006,16 @@ class RhelBackend(PackageBackend):
         return Result()
 
     # -- clean ---------------------------------------------------------------
+    def cache_paths(self, ctx: Context) -> list[Path]:
+        """Both dnf generations' cache roots.
+
+        dnf5 caches under ``/var/cache/libdnf5`` and leaves an **empty**
+        ``/var/cache/dnf`` behind — measuring only the latter on Fedora reports a clean
+        cache that was never looked at. Listing both means the size is right whichever
+        generation is installed, and the absent one contributes zero.
+        """
+        return [ctx.root / "var/cache/dnf", ctx.root / "var/cache/libdnf5"]
+
     def clean_caches(self, ctx: Context) -> Result:
         """Reclaim disk from downloaded packages, keeping the repo metadata.
 
@@ -1020,7 +1032,6 @@ class RhelBackend(PackageBackend):
 
         The one confirmation for the whole action already lives in ``actions._clean``.
         """
-        out = ctx.output
         _, flatpak, snap = self._updaters(ctx)
         ctx.execute(["dnf", "clean", "packages"], quiet=True,
                     msg="dnf package cache cleared")
@@ -1029,7 +1040,6 @@ class RhelBackend(PackageBackend):
                         msg="unused flatpaks removed")
         if snap != "none":
             self._prune_disabled_snaps(ctx)  # base class; self-gated on `snap`
-        out.summary_add("caches cleaned")
         return Result(summary="caches cleaned")
 
     # -- update --------------------------------------------------------------

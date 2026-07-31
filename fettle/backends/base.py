@@ -214,6 +214,21 @@ class PackageBackend(abc.ABC):
                 VSCodeSource(), GhSource()]
 
     # -- actions (overridden per backend; NotImplementedError = not yet built) --
+    # What the clean confirmation asks. Overridden where a family removes more than
+    # caches: QA found every backend asking to remove "build dirs", which only the
+    # Arch family has — so Debian and RHEL users were consenting to something that
+    # could not happen, on a prompt whose safe default is No.
+    clean_prompt = "remove downloaded package caches?"
+
+    def cache_paths(self, ctx: Context) -> list[Path]:
+        """Directories ``clean_caches`` reclaims, sized before and after by
+        ``actions._clean`` so the summary can state what was actually freed.
+
+        Returning ``[]`` means "not measurable here" and the summary stays silent
+        about figures rather than inventing one.
+        """
+        return []
+
     def clean_caches(self, ctx: Context) -> Result:
         raise NotImplementedError
 

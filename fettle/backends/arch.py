@@ -13,8 +13,7 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import (Context, PackageBackend, Result, Transaction, TxItem, dir_bytes,
-                   human_bytes)
+from .base import Context, PackageBackend, Result, Transaction, TxItem
 
 _PACMAN_CACHE = Path("/var/cache/pacman/pkg")
 # Versions of each *installed* package kept in the cache by `clean`. Two means one
@@ -204,40 +203,40 @@ class ArchBackend(PackageBackend):
             ctx.execute(["pacman", "-Sc", "--noconfirm"], quiet=True,
                         msg="removed cached packages that are no longer installed")
 
+    # The Arch family is the one that really does remove build directories — AUR
+    # helpers leave whole source trees behind — so the prompt says so here and
+    # nowhere else.
+    clean_prompt = "remove downloaded package caches and AUR build directories?"
+
+    def cache_paths(self, ctx: Context) -> list[Path]:
+        return [_PACMAN_CACHE, *self._user_cache_dirs(ctx)]
+
+    @staticmethod
+    def _user_cache_dirs(ctx: Context) -> list[Path]:
+        dirs = [ctx.user_home / ".cache/pamac",
+                ctx.user_home / ".cache/yay",
+                ctx.user_home / ".cache/paru"]
+        if ctx.sudo_user:
+            dirs.append(Path(f"/var/tmp/pamac-build-{ctx.sudo_user}"))
+        return dirs
+
     def clean_caches(self, ctx: Context) -> Result:
-        out = ctx.output
-        before = dir_bytes(_PACMAN_CACHE)
         ctx.execute(["rm", "-f", "/var/lib/pacman/db.lck"],
                     quiet=True, msg="removed stale pacman db lock")
         self._clean_pacman_cache(ctx)
         if ctx.sudo_user and command.which("pamac"):
             ctx.execute(["pamac", "clean", "--no-confirm"], as_user=ctx.sudo_user,
                         quiet=True, msg="pamac cache cleared")
-        cache_dirs = [
-            ctx.user_home / ".cache/pamac",
-            ctx.user_home / ".cache/yay",
-            ctx.user_home / ".cache/paru",
-        ]
-        if ctx.sudo_user:
-            cache_dirs.append(Path(f"/var/tmp/pamac-build-{ctx.sudo_user}"))
-        for d in cache_dirs:
+        for d in self._user_cache_dirs(ctx):
             ctx.execute(["rm", "-rf", str(d)], quiet=True, msg=f"removed {d}")
         # snapd is available on Arch too (AUR `snapd`), and leaves the same superseded
         # revisions behind. Base class; self-gated on `snap`. There is no
         # `[updaters.arch] snap_updater` key to consult — every revision is confirmed
         # individually regardless, so nothing is removed unasked.
         self._prune_disabled_snaps(ctx)
-        # Report what was actually reclaimed. Measuring the directory rather than
-        # trusting the tools' own summaries is the whole lesson of this fix.
-        freed = max(0, before - dir_bytes(_PACMAN_CACHE))
-        if ctx.dry_run:
-            summary = "would clean caches"
-        elif freed:
-            summary = f"caches cleaned — {human_bytes(freed)} reclaimed"
-        else:
-            summary = "caches already clean — nothing to reclaim"
-        out.summary_add(summary)
-        return Result(summary=summary)
+        # The summary lives in actions._clean, which sizes cache_paths() around this
+        # call — one truthful account for every family instead of three.
+        return Result(summary="caches cleaned")
 
     def update_system(self, ctx: Context) -> Result:
         out = ctx.output

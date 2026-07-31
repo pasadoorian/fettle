@@ -43,7 +43,10 @@ def test_clean_apt_flatpak_and_prunes_disabled_snaps():
         DebianBackend().clean_caches(_ctx(assume_yes=True))  # --yes accepts all prompts
     argvs = [c for c, _ in calls]
     assert ["apt-get", "clean"] in argvs
-    assert ["apt-get", "autoclean", "-y"] in argvs
+    # `autoclean` used to run straight after `clean`, which has already emptied the
+    # archive directory — it could never remove anything, but printed its own success
+    # line, so the user counted two operations where one had happened.
+    assert not any(c[:2] == ["apt-get", "autoclean"] for c in argvs)
     assert ["flatpak", "uninstall", "--unused", "-y"] in argvs
     # only the two disabled revisions get removed, by name+revision
     assert ["snap", "remove", "core20", "--revision=2015"] in argvs

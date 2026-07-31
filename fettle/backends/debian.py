@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import re
 
+from pathlib import Path
+
 from .. import command, reports
 from ..util import matches_any
 from .base import Context, PackageBackend, Result, Transaction, TxItem
@@ -237,17 +239,22 @@ class DebianBackend(PackageBackend):
         return max(0.0, (time.time() - mtime) / 86400)
 
     # -- clean ---------------------------------------------------------------
+    def cache_paths(self, ctx: Context) -> list[Path]:
+        return [ctx.root / "var/cache/apt/archives"]
+
     def clean_caches(self, ctx: Context) -> Result:
-        out = ctx.output
         _, flatpak, snap = self._updaters(ctx)
-        ctx.execute(["apt-get", "clean"], quiet=True, msg="apt cache cleared")
-        ctx.execute(["apt-get", "autoclean", "-y"], quiet=True, msg="apt autoclean done")
+        # `apt-get clean` empties the archive directory outright. `autoclean` — which
+        # ran here too — removes only packages that can no longer be downloaded, so
+        # after `clean` it has nothing left to consider. QA measured it succeeding
+        # against an empty directory and printing its own tick, which read as two
+        # operations where one had happened.
+        ctx.execute(["apt-get", "clean"], quiet=True, msg="apt package cache cleared")
         if flatpak != "none" and command.which("flatpak"):
             ctx.execute(["flatpak", "uninstall", "--unused", "-y"],
                         quiet=True, msg="unused flatpaks removed")
         if snap != "none":
             self._prune_disabled_snaps(ctx)  # base class; self-gated on `snap`
-        out.summary_add("caches cleaned")
         return Result(summary="caches cleaned")
 
     # -- update --------------------------------------------------------------

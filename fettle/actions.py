@@ -33,13 +33,39 @@ TITLES = {
 
 
 def _clean(backend: "PackageBackend", ctx: "Context") -> None:
+    """Confirm, clean, and report what was *actually* reclaimed.
+
+    The measuring and the summary live here rather than in each backend so all three
+    families tell the truth the same way. QA found the old arrangement reporting
+    ``✓ caches cleaned`` in three situations that are not the same thing: a run that
+    freed 41 MB, a run against an already-empty cache, and a ``--dry-run`` that deleted
+    nothing at all. Sizing the cache directories before and after distinguishes them
+    without trusting any package manager's own account of itself — which is the point,
+    since ``pacman -Scc --noconfirm`` reported success while removing nothing.
+    """
+    from .backends.base import dir_bytes, human_bytes
+
     # One confirmation for the whole clean (it deletes cache files). --yes and
     # non-interactive both proceed; a dry-run shows what would run without asking.
-    if not ctx.dry_run and not ctx.confirm(
-            "remove package-manager caches and build dirs?", default=False):
+    if not ctx.dry_run and not ctx.confirm(backend.clean_prompt, default=False):
         ctx.output.note("skipped cache cleaning.")
         return
+
+    paths = backend.cache_paths(ctx)
+    before = sum(dir_bytes(p) for p in paths)
     backend.clean_caches(ctx)
+    freed = max(0, before - sum(dir_bytes(p) for p in paths))
+
+    if ctx.dry_run:
+        summary = "would clean caches"
+    elif not paths:
+        # Backend declared nothing measurable — say what happened, claim no figure.
+        summary = "caches cleaned"
+    elif freed:
+        summary = f"caches cleaned — {human_bytes(freed)} reclaimed"
+    else:
+        summary = "caches already clean — nothing to reclaim"
+    ctx.output.summary_add(summary)
 
 
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
