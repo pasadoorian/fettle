@@ -1092,7 +1092,11 @@ class RhelBackend(PackageBackend):
         if ctx.assume_yes:
             # Never silently block automation — and never let it pass unremarked.
             out.warn("proceeding anyway (--yes): these packages are unverified.")
-            out.summary_add(f"upgraded from {len(repos)} unsigned repo(s)")
+            # A warning, not an achievement. This went out as a green ✓ — installing
+            # code whose signature was never checked, recorded in the summary as though
+            # it were something the run had accomplished.
+            out.summary_warn(f"installed packages from {len(repos)} repo(s) WITHOUT "
+                             "signature verification (gpgcheck=0)")
             return True
         return ctx.confirm("upgrade from these unverified repositories anyway?",
                            default=False)

@@ -10,6 +10,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.55.1] — installing unverified packages is not an achievement
+
+The RHEL-family half of the `update` sweep. With a `gpgcheck=0` repository enabled and
+`--yes`, the run ended:
+
+```
+▸ Summary
+  ✓ upgraded from 1 unsigned repo(s)
+  ✓ packages updated (dnf)          <- dnf had just failed
+```
+
+The signature gate does its job — it warns twice before proceeding — and then records the
+outcome in the summary **with a green tick**, as though installing code whose signature was
+never checked were something the run had accomplished. It is now a warning:
+
+```
+  ! installed packages from 1 repo(s) WITHOUT signature verification (gpgcheck=0)
+  ✗ update did NOT complete — dnf failed. …
+  EXIT=1
+```
+
+Verified on Rocky 9 with an unsigned, unreachable repo.
+
+
 ## [0.55.0] — `update` stops claiming upgrades that never happened
 
 QA pass on `update`/`upgrade`, the one action that installs software.
