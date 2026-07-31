@@ -44,6 +44,32 @@ for networks it manages.
 | `lab.py reset <t>` | revert to `pristine` — do this before every test run |
 | `lab.py ip <t>` / `ssh <t>` | address / shell |
 | `lab.py destroy <t>` | remove VM and disks (base image kept) |
+| `lab.py matrix [--only <t>]` | every action × every target → PASS/FAIL/SKIP |
+
+## The matrix sweep
+
+`lab.py matrix` runs each action against each built target through **`fettle remote`** —
+the path fettle is actually used by — and prints a grid.
+
+**Every cell is PASS, FAIL, or SKIP-with-a-reason.** There is no fourth, quieter state: an
+action that could not run must never look like one that ran and found nothing. That failure
+mode is why this lab exists, so the runner refuses to reproduce it, and every non-PASS cell
+prints why.
+
+Two things the isolation depends on:
+
+- **Read-only actions share one revert** (they cannot perturb each other); **every mutating
+  action gets its own**. `-u` consumes the pending upgrades `-O` exists to report, so
+  without that the sweep would measure whatever the previous action left behind.
+- **`--yes` on mutating actions.** Without a tty `ctx.confirm` returns its safe default, so
+  the action would decline and "pass" having done nothing — green and meaningless.
+
+`✗` in fettle's output is *not* treated as failure. It marks "this part could not run" as
+often as anything fatal: a real `-u` on Arch upgraded all 17 pending packages and then
+printed `✗ yay not found` for the AUR half. That is a SKIP — scoring it FAIL condemns a
+working action, scoring it PASS hides that half of it never happened.
+
+Per-cell output lands in `tests/lab/matrix-logs/`.
 
 ## Target status
 

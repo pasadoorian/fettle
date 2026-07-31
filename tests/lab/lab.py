@@ -36,7 +36,7 @@ Usage:
     ./lab.py reset arch                 # revert to the pristine snapshot
     ./lab.py ssh arch [command...]      # shell into it
     ./lab.py ip arch                    # print its address
-    ./lab.py destroy arch               # remove VM and disks
+    ./lab.py destroy arch               # remove VM and disks\n    ./lab.py matrix [--only arch]       # every action x every target -> PASS/FAIL/SKIP
 
 Host/network specifics live in `lab.conf` (gitignored) — see `lab.conf.example`.
 """
@@ -100,6 +100,9 @@ TARGETS = {
                "images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
         "user": "fedora", "disk": "6G", "osinfo": "fedora41", "firmware": "uefi",
         "packages": ["checksec"],
+        # Fedora is deliberately not a claimed distro (its advisories are Bodhi
+        # FEDORA-*, not RHSA), so the backend must be named explicitly.
+        "fettle_args": ["--distro", "rhel"],
         "note": "the ONLY dnf5 target, and the only dnf host where checksec is packaged",
     },
 }
@@ -486,6 +489,141 @@ def cmd_ssh(conf, args) -> int:
     return subprocess.run(cmd).returncode
 
 
+
+# ── the matrix sweep ──────────────────────────────────────────────────────────
+#
+# Read-only actions share one revert: none of them changes the system, so they cannot
+# perturb each other. Every MUTATING action gets its own fresh revert, because they
+# absolutely do — `-u` consumes the very pending upgrades `-O` exists to report, and an
+# `-o` that removed a package changes what `-P` sees. Without that isolation the sweep
+# would silently measure whatever the previous action left behind.
+READ_ONLY_ACTIONS = ["-P", "-H", "-d", "-x", "-r", "-k", "-f", "-O"]
+MUTATING_ACTIONS = ["-c", "-o", "-u"]
+
+# `--yes` on the mutating ones is deliberate. Without a tty `ctx.confirm` returns its safe
+# default, so the action would decline and "pass" without doing anything — the sweep would
+# be green and meaningless. The guests are disposable and reverted afterwards.
+_ACTION_NAMES = {"-P": "pkg-audit", "-H": "hardening", "-d": "config-drift",
+                 "-x": "auto-updates", "-r": "rebuild-chk", "-k": "kernel",
+                 "-f": "firmware", "-O": "only-update", "-c": "clean",
+                 "-o": "orphans", "-u": "update"}
+
+# Substrings that mean "this did not run", not "this ran and found nothing". Keeping them
+# in one place is the point: the whole sweep is worthless if a check that could not look
+# is scored the same as a clean result.
+_SKIP_MARKERS = (
+    "not supported by", "not implemented by", "skipping", "not found",
+    "did NOT run", "NOT assessed", "could not determine", "cannot determine",
+    "no fettle backend",
+)
+# Only a crash counts as a hard failure in the output itself. Notably `✗` does NOT:
+# fettle uses it for "this part could not run" as much as for anything fatal — a real
+# `-u` on Arch upgraded all 17 pending packages and *then* printed `✗ yay not found`
+# for the AUR half. Scoring that as FAIL would have condemned a working action, and
+# scoring the whole run PASS would have hidden that half of it never happened. It is a
+# SKIP, which is exactly what the third state is for.
+_FAIL_MARKERS = ("Traceback (most recent call last)",)
+
+
+def classify(rc: int, output: str, timed_out: bool) -> tuple[str, str]:
+    """One cell of the matrix: (PASS|FAIL|SKIP, reason).
+
+    A SKIP always carries its reason. An action that could not run must never be
+    indistinguishable from one that ran cleanly — that failure mode is the reason this
+    lab exists, so the runner refuses to reproduce it.
+    """
+    if timed_out:
+        return "FAIL", "timed out"
+    if rc != 0:
+        first = next((ln.strip() for ln in output.splitlines()
+                      if ln.strip() and not ln.startswith("Remote target")), "")
+        return "FAIL", f"exit {rc}: {first[:70]}"
+    for line in output.splitlines():
+        if any(m in line for m in _FAIL_MARKERS):
+            return "FAIL", line.strip()[:80]
+    for line in output.splitlines():
+        for marker in _SKIP_MARKERS:
+            if marker in line:
+                return "SKIP", line.strip().lstrip("✓!→ ")[:80]
+    return "PASS", ""
+
+
+def _run_action(conf, target, spec, addr, action, logdir):
+    """One `fettle remote <host> <action>` from the controlling machine.
+
+    Deliberately goes through `fettle remote` rather than running fettle on the guest:
+    that is how fettle is actually used, and it exercises the zipapp upload, sudo over
+    ssh and the run-log fetch-back at the same time.
+    """
+    import subprocess as sp
+    argv = ["python", "-m", "fettle", "remote", f"{spec['user']}@{addr}", action]
+    if action in MUTATING_ACTIONS:
+        argv.append("--yes")
+    argv += spec.get("fettle_args", [])
+    timed_out = False
+    try:
+        proc = sp.run(argv, capture_output=True, text=True, timeout=600,
+                      cwd=str(HERE.parent.parent))
+        rc, out = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except sp.TimeoutExpired as exc:
+        rc, out, timed_out = -1, (exc.stdout or b"").decode(errors="replace"), True
+    (logdir / f"{target}{action}.log").write_text(out)
+    return classify(rc, out, timed_out)
+
+
+def cmd_matrix(conf, args) -> int:
+    import datetime
+    targets = args.only or [t for t in TARGETS if vm_exists(conf, t)]
+    actions = READ_ONLY_ACTIONS + MUTATING_ACTIONS
+    logdir = HERE / "matrix-logs"
+    logdir.mkdir(exist_ok=True)
+    results, reasons = {}, {}
+
+    for target in targets:
+        spec = TARGETS.get(target)
+        if not spec or not vm_exists(conf, target):
+            print(f"== {target}: not built, skipping")
+            continue
+        print(f"\n== {target}")
+        results[target] = {}
+        addr = None
+        for i, action in enumerate(actions):
+            # Fresh baseline for the first action and before every mutating one.
+            if i == 0 or action in MUTATING_ACTIONS:
+                print("   (revert) ", end="", flush=True)
+                virsh(conf, f"snapshot-revert {vm_name(conf, target)} pristine --running")
+                addr = wait_ready(conf, target, tries=30)
+            verdict, reason = _run_action(conf, target, spec, addr, action, logdir)
+            results[target][action] = verdict
+            if reason:
+                reasons[(target, action)] = reason
+            print(f"{_ACTION_NAMES[action]}={verdict} ", end="", flush=True)
+        print()
+
+    # ── report ──
+    width = max([len(t) for t in results] + [len("target")]) + 2
+    print("\n" + "=" * 72)
+    print(f"{'target':<{width}}" + "".join(f"{_ACTION_NAMES[a][:11]:<12}" for a in actions))
+    for target, row in results.items():
+        print(f"{target:<{width}}" + "".join(f"{row.get(a, '-'):<12}" for a in actions))
+
+    tally = {v: sum(1 for r in results.values() for x in r.values() if x == v)
+             for v in ("PASS", "FAIL", "SKIP")}
+    print(f"\n{tally['PASS']} pass · {tally['FAIL']} FAIL · {tally['SKIP']} skip")
+
+    if reasons:
+        print("\nreasons (every SKIP and FAIL carries one — a blank cell would be a lie):")
+        for (target, action), reason in sorted(reasons.items()):
+            print(f"  {target:<10} {_ACTION_NAMES[action]:<12} {reason}")
+    print(f"\nfull output per cell: {logdir}")
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    (logdir / f"matrix-{stamp}.txt").write_text(
+        "\n".join(f"{t}\t{a}\t{v}\t{reasons.get((t, a), '')}"
+                  for t, row in results.items() for a, v in row.items()))
+    return 1 if tally["FAIL"] else 0
+
+
 def cmd_destroy(conf, args) -> int:
     name = vm_name(conf, args.target)
     if not vm_exists(conf, args.target):
@@ -512,6 +650,9 @@ def main(argv=None) -> int:
                             ("destroy", "remove the VM and its disks")]:
         sp = sub.add_parser(name, help=help_text)
         sp.add_argument("target")
+    sp = sub.add_parser("matrix", help="run every action on every built target")
+    sp.add_argument("--only", action="append", default=[],
+                    help="restrict to these targets (repeatable)")
     sp = sub.add_parser("ssh", help="ssh into the VM")
     sp.add_argument("target")
     sp.add_argument("rest", nargs=argparse.REMAINDER)
@@ -521,6 +662,7 @@ def main(argv=None) -> int:
     return {
         "targets": cmd_targets, "list": cmd_list, "build": cmd_build,
         "reset": cmd_reset, "ip": cmd_ip, "ssh": cmd_ssh, "destroy": cmd_destroy,
+        "matrix": cmd_matrix,
     }[args.cmd](conf, args)
 
 

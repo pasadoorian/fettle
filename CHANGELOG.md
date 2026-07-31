@@ -4,6 +4,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.49.0] — lab: the matrix sweep
+
+Test tooling. `lab.py matrix` runs every action against every built target through
+**`fettle remote`**, and prints a PASS/FAIL/SKIP grid with a reason on every non-PASS cell.
+
+**Three states, never two.** An action that could not run must not look like one that ran
+and found nothing — that is the failure mode this entire lab was built to catch, and a
+runner that scored it as a blank or a pass would reproduce it at scale. So a missing
+`checksec`, an unsupported action, and "the hardening audit did NOT run" are all SKIPs
+carrying their reason, distinct from both PASS and FAIL.
+
+Isolation is the other half:
+
+- **Read-only actions share one revert; every mutating action gets its own.** `-u` consumes
+  the pending upgrades `-O` exists to report, and an `-o` that removed something changes
+  what `-P` sees. Without that, the sweep measures whatever the previous action left behind.
+- **`--yes` on mutating actions**, because without a tty `ctx.confirm` returns its safe
+  default — the action would decline and "pass" having changed nothing.
+
+One classifier subtlety, found by reading a failure rather than trusting the verdict: **`✗`
+is not a failure signal.** A real `-u` on Arch upgraded all 17 pending packages and *then*
+printed `✗ yay not found` for the AUR half. Scoring that FAIL condemns a working action;
+scoring it PASS hides that half of it never happened. It is a SKIP.
+
+Per-cell output is kept under `tests/lab/matrix-logs/` so any verdict can be re-examined.
+
 ## [0.48.2] — lab: both checksec generations now covered
 
 Test tooling. `checksec` is declared on the `arch` target too (it is in `extra`, so
