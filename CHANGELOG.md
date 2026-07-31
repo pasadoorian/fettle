@@ -4,6 +4,27 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.47.5] — README: how this gets tested against real distros
+
+Documentation only. The Development section explained the unit suite but said nothing about
+the two harnesses that actually catch things, which is a gap for anyone wanting to
+contribute — and understates why the tests are trustworthy.
+
+Unit tests mock the package managers, which proves the parsing but not the assumptions
+behind it. A large share of the bugs fixed in 0.37–0.47 were formats and exit codes that
+documentation described incorrectly: `dnf check-update` exiting 100 on success, dnf5
+repeating each upgrade as a `replacing` sub-row, `dnf-automatic`'s timers overriding its own
+config, Ubuntu Pro hiding security updates from apt. None of those are reachable with mocks
+alone.
+
+- **Containers** for most things — reproducible in a way a borrowed host is not, since "no
+  findings" on a real box might mean clean, unentitled, or simply empty.
+- **`tests/lab/`** for what containers cannot reach: systemd timers firing, snapd, fwupd,
+  real reboots, the privilege model, and `fettle remote` over ssh.
+
+Both are stdlib/shell only, because `dependencies = []` is load-bearing for the remote
+zipapp.
+
 ## [0.47.4] — lab: Rocky 9 lands, and the RHEL backend meets EL9 at last
 
 Test tooling. Phase 2 of the lab is complete: `arch`, `ubuntu`, `debian` and `rocky9` all

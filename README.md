@@ -1084,6 +1084,23 @@ fake `/sys`·`/proc` trees with a `tmp_path` root, so they need neither root nor
 special hardware. Runtime code never imports pytest — the shipped tool is
 pure standard library.
 
+### Testing against real distros
+
+Unit tests mock the package managers, which proves the parsing but not the assumptions
+behind it — several bugs here were formats and exit codes that documentation described
+incorrectly. Two harnesses cover that:
+
+- **Containers** for most things: fast, disposable, and reproducible in a way a borrowed
+  host is not ("no findings" on a real box might mean clean, unentitled, or empty).
+- **`tests/lab/`** for what containers cannot reach — systemd timers actually firing, snapd,
+  fwupd, real reboots, the privilege model, and **`fettle remote` over ssh**. It builds
+  small cloud-image VMs on a KVM/libvirt host, snapshots each one, and reverts before every
+  run so the pending-update set is identical every time. See `tests/lab/README.md`; host
+  specifics go in a gitignored `lab.conf`.
+
+Both are stdlib/shell only. `dependencies = []` is load-bearing — the remote zipapp has to
+run under any bare `python3`.
+
 ## fettle vs. topgrade
 
 [topgrade](https://github.com/topgrade-rs/topgrade) is the closest widely-used
