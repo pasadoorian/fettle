@@ -129,7 +129,7 @@ users:
     lock_passwd: false
     ssh_authorized_keys:
       - {pubkey}
-ssh_pwauth: true
+{admin_user}ssh_pwauth: true
 package_update: true
 package_upgrade: false
 packages:
@@ -364,8 +364,18 @@ def cmd_build(conf, args) -> int:
     # Extra packages are baked in at build time so they survive `reset` — installing a
     # prerequisite by hand after the snapshot means the next revert silently loses it.
     extra = "".join(f"  - {pkg}\n" for pkg in spec.get("packages", ()))
+    # An optional second login, so the guests are reachable under one name across every
+    # distro rather than the image's own default user (arch/debian/ubuntu/rocky/...).
+    # Configured, not hardcoded — this repo is public.
+    admin = ""
+    if conf.get("ADMIN_USER"):
+        admin = (f"  - name: {conf['ADMIN_USER']}\n"
+                 f"    sudo: ALL=(ALL) NOPASSWD:ALL\n"
+                 f"    shell: /bin/bash\n"
+                 f"    lock_passwd: false\n"
+                 f"    ssh_authorized_keys:\n      - {pubkey}\n")
     user_data = USER_DATA.format(host=name, user=spec["user"], pubkey=pubkey,
-                                 extra_packages=extra)
+                                 extra_packages=extra, admin_user=admin)
     meta_data = f"instance-id: {name}-01\nlocal-hostname: {name}\n"
     print("==> building cloud-init seed")
     host_run(conf, "set -e; d=$(mktemp -d); "

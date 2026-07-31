@@ -4,6 +4,25 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.49.1] — lab: one login name across every guest
+
+Test tooling. Setting **`ADMIN_USER`** in `lab.conf` creates an extra account on every
+guest, with the configured key and passwordless sudo. Each cloud image otherwise has its
+own default user — `arch`, `debian`, `ubuntu`, `rocky`, `almalinux`, `fedora` — so anything
+driving the lab had to know six names. Configured rather than hardcoded, since this repo is
+public.
+
+Two things worth recording from applying it to the existing guests:
+
+- **Revert before re-snapshotting.** The matrix sweep ends on `update --yes`, so every VM
+  was sitting fully patched. Re-baselining in that state would have quietly destroyed the
+  out-of-date baseline the whole lab depends on. Reverted first, then verified the
+  restored state still had pending updates (Debian 3, Rocky 63) *before* taking the new
+  snapshot.
+- **A NetworkManager guest registers the wrong DHCP hostname on first boot**, because it
+  takes its lease before cloud-init sets the hostname — so `fettle-fedora` did not resolve
+  while the other five did. One `systemctl restart NetworkManager` fixes it for good.
+
 ## [0.49.0] — lab: the matrix sweep
 
 Test tooling. `lab.py matrix` runs every action against every built target through

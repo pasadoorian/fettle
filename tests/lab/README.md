@@ -120,6 +120,19 @@ a different guest, where the cause was machine type.)
    auto-selection ("Unable to find 'efi' firmware compatible with the current
    configuration"), so the loader is named explicitly instead.
 
+## Logging in
+
+Each cloud image has its own default user (`arch`, `debian`, `ubuntu`, `rocky`,
+`almalinux`, `fedora`). Setting **`ADMIN_USER`** in `lab.conf` adds one extra login with
+the same key and passwordless sudo on every guest, so one name works everywhere.
+
+Guests register their hostname with the LAN's DNS, so `ssh <user>@fettle-<target>` works
+without hardcoding DHCP addresses — which change whenever a VM is rebuilt.
+
+**One quirk:** a NetworkManager-based guest (Fedora) takes its DHCP lease *before*
+cloud-init sets the hostname, so it registers under the wrong name on first boot.
+`systemctl restart NetworkManager` once fixes it permanently.
+
 ## Known limits
 
 Even with VMs, some things stay out of reach, and the runner should report them as

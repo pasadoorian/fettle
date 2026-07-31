@@ -22,6 +22,11 @@ IMAGE_DIR=/var/lib/libvirt/images/fettle-lab
 # there is no guarantee an id_rsa exists.
 SSH_PUBKEY=~/.ssh/id_ed25519.pub
 
+# Optional: a second login created on every guest, with the key above and passwordless
+# sudo. Handy because each cloud image has its own default user (arch/debian/ubuntu/
+# rocky/almalinux/fedora) — this gives you one name that works everywhere.
+#ADMIN_USER=youruser
+
 # Optional.
 #LIBVIRT_URI=qemu:///system
 #VM_PREFIX=fettle-
