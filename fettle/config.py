@@ -39,6 +39,14 @@ class Config:
     # Per-distro tool selection, e.g. {"arch": {"aur_updater": "yay"}}. Kept as a
     # passthrough for now; the exact per-distro schema is finalized with each backend.
     updaters: dict[str, dict] = field(default_factory=dict)
+
+    # [clean] — cache-cleaning policy.
+    #   keep_versions (int, default 2): how many versions of each *installed*
+    #     package to keep in the download cache. Cached packages that are no longer
+    #     installed at all are always removed — they have no rollback value.
+    #     0 keeps none, which frees the most and leaves no offline rollback.
+    #   Arch/Manjaro only for now; apt and dnf keep no version history to trim.
+    clean: dict = field(default_factory=dict)
     # AUR supply-chain settings.
     aur_max_age_days: int = 365  # stale threshold (pkg-audit)
     aur_recent_days: int = 21    # RECENTLY-CHANGED threshold in the -A audit table

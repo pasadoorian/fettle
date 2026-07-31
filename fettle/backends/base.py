@@ -26,6 +26,41 @@ ALL_ACTIONS = (
 )
 
 
+def dir_bytes(path: Path) -> int:
+    """Total size of a directory tree; unreadable entries are skipped, not fatal.
+
+    Used to report what a clean actually reclaimed. Measuring the directory rather
+    than trusting the package manager's own summary is deliberate: QA found
+    ``pacman -Scc --noconfirm`` reporting success while removing nothing, and no
+    amount of parsing its output would have caught that.
+    """
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            try:
+                if p.is_file() and not p.is_symlink():
+                    total += p.stat().st_size
+            except OSError:
+                continue  # vanished mid-walk, or a sandbox dir we cannot enter
+    except OSError:
+        return 0
+    return total
+
+
+def human_bytes(n: int) -> str:
+    """1234567 -> '1.2 MiB'. Whole units below MiB — '512 KiB' beats '0.5 MiB'."""
+    step = 1024.0
+    for unit in ("B", "KiB"):
+        if abs(n) < step:
+            return f"{int(n)} {unit}"
+        n /= step
+    for unit in ("MiB", "GiB"):
+        if abs(n) < step:
+            return f"{n:.1f} {unit}"
+        n /= step
+    return f"{n:.1f} TiB"
+
+
 @dataclass
 class Context:
     """Everything a backend action needs, passed in explicitly (never global)."""

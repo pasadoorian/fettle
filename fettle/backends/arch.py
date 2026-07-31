@@ -13,7 +13,13 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem
+from .base import (Context, PackageBackend, Result, Transaction, TxItem, dir_bytes,
+                   human_bytes)
+
+_PACMAN_CACHE = Path("/var/cache/pacman/pkg")
+# Versions of each *installed* package kept in the cache by `clean`. Two means one
+# working rollback target plus a spare; 0 keeps none. Overridable via [clean].
+_DEFAULT_KEEP_VERSIONS = 2
 
 _SYSTEM_UPDATERS = {"pacman", "pamac"}
 _AUR_UPDATERS = {"yay", "pamac", "none"}
@@ -149,12 +155,61 @@ class ArchBackend(PackageBackend):
             ctx.output.err("cannot rebuild: aur_updater is 'none'. Set it to yay or pamac.")
 
     # -- update path (M2) ----------------------------------------------------
+    def _keep_versions(self, ctx: Context) -> int:
+        """``[clean] keep_versions`` — cached versions to keep per installed package."""
+        raw = (getattr(ctx.config, "clean", None) or {}).get(
+            "keep_versions", _DEFAULT_KEEP_VERSIONS)
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            ctx.output.warn(f"[clean] keep_versions: {raw!r} is not a whole number; "
+                            f"using {_DEFAULT_KEEP_VERSIONS}.")
+            return _DEFAULT_KEEP_VERSIONS
+        if n < 0:
+            ctx.output.warn(f"[clean] keep_versions: {n} is negative; "
+                            f"using {_DEFAULT_KEEP_VERSIONS}.")
+            return _DEFAULT_KEEP_VERSIONS
+        return n
+
+    def _clean_pacman_cache(self, ctx: Context) -> None:
+        """Reclaim the package cache without destroying offline rollback.
+
+        **Why not ``pacman -Scc --noconfirm``** (what this used to run): ``--noconfirm``
+        makes pacman take the *default* answer to its own prompts, and ``-Scc`` defaults
+        to **No** precisely because it is destructive. Measured on a lab guest: 194
+        cached packages before, 194 after, exit 0. It had never removed anything on any
+        Arch or Manjaro system, while reporting that it had.
+
+        Simply answering "yes" would have been the wrong repair. ``-Scc`` also deletes
+        the cached copy of every *currently installed* package, and that cache is the
+        primary way to roll back a bad upgrade on Arch without a network. So the
+        replacement splits the job by rollback value:
+
+        1. packages no longer installed at all — no rollback value, always removed;
+        2. superseded versions of installed packages — keep ``[clean] keep_versions``.
+
+        ``paccache`` ships in ``pacman-contrib``. Without it, fall back to ``pacman -Sc
+        --noconfirm``, whose prompt defaults to **Yes** and which keeps installed
+        versions — less thorough, but correct and dependency-free.
+        """
+        keep = self._keep_versions(ctx)
+        if command.which("paccache"):
+            ctx.execute(["paccache", "-r", "-u", "-k0"], quiet=True,
+                        msg="dropped cached packages that are no longer installed")
+            ctx.execute(["paccache", "-r", f"-k{keep}"], quiet=True,
+                        msg=f"trimmed old versions (keeping {keep} per package)")
+        else:
+            ctx.output.note("paccache not found (install pacman-contrib for version "
+                            "retention); falling back to pacman -Sc.")
+            ctx.execute(["pacman", "-Sc", "--noconfirm"], quiet=True,
+                        msg="removed cached packages that are no longer installed")
+
     def clean_caches(self, ctx: Context) -> Result:
         out = ctx.output
+        before = dir_bytes(_PACMAN_CACHE)
         ctx.execute(["rm", "-f", "/var/lib/pacman/db.lck"],
                     quiet=True, msg="removed stale pacman db lock")
-        ctx.execute(["pacman", "-Scc", "--noconfirm"],
-                    quiet=True, msg="pacman cache cleared")
+        self._clean_pacman_cache(ctx)
         if ctx.sudo_user and command.which("pamac"):
             ctx.execute(["pamac", "clean", "--no-confirm"], as_user=ctx.sudo_user,
                         quiet=True, msg="pamac cache cleared")
@@ -172,8 +227,17 @@ class ArchBackend(PackageBackend):
         # `[updaters.arch] snap_updater` key to consult — every revision is confirmed
         # individually regardless, so nothing is removed unasked.
         self._prune_disabled_snaps(ctx)
-        out.summary_add("caches cleaned")
-        return Result(summary="caches cleaned")
+        # Report what was actually reclaimed. Measuring the directory rather than
+        # trusting the tools' own summaries is the whole lesson of this fix.
+        freed = max(0, before - dir_bytes(_PACMAN_CACHE))
+        if ctx.dry_run:
+            summary = "would clean caches"
+        elif freed:
+            summary = f"caches cleaned — {human_bytes(freed)} reclaimed"
+        else:
+            summary = "caches already clean — nothing to reclaim"
+        out.summary_add(summary)
+        return Result(summary=summary)
 
     def update_system(self, ctx: Context) -> Result:
         out = ctx.output

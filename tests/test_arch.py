@@ -29,10 +29,71 @@ def test_clean_clears_pacman_cache_and_removes_dirs():
          patch("fettle.command.which", return_value=True):
         ArchBackend().clean_caches(_ctx())
     argvs = [c for c, _ in calls]
-    assert ["pacman", "-Scc", "--noconfirm"] in argvs
     assert any(c[:2] == ["rm", "-rf"] and c[2].endswith(".cache/yay") for c in argvs)
     # pamac clean runs as the invoking user, not root
     assert any(c[:2] == ["pamac", "clean"] and u == "paul" for c, u in calls)
+
+
+def test_clean_never_uses_scc_noconfirm():
+    """`pacman -Scc --noconfirm` removes NOTHING.
+
+    --noconfirm takes pacman's own default answer, and -Scc defaults to No because it
+    is destructive. Measured on a lab guest: 194 cached packages before, 194 after,
+    exit 0 — so the caller cannot tell. This guards the regression, not the fix.
+    """
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().clean_caches(_ctx())
+    assert ["pacman", "-Scc", "--noconfirm"] not in [c for c, _ in calls]
+
+
+def test_clean_drops_uninstalled_then_keeps_two_versions():
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().clean_caches(_ctx())
+    argvs = [c for c, _ in calls]
+    # cached packages no longer installed have no rollback value -> all of them go
+    assert ["paccache", "-r", "-u", "-k0"] in argvs
+    # installed packages keep their last two versions, so a rollback stays possible
+    assert ["paccache", "-r", "-k2"] in argvs
+
+
+def test_clean_keep_versions_is_configurable():
+    calls, fake = _recorder()
+    ctx = _ctx()
+    ctx.config.clean = {"keep_versions": 5}
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().clean_caches(ctx)
+    assert ["paccache", "-r", "-k5"] in [c for c, _ in calls]
+
+
+def test_clean_bad_keep_versions_falls_back_to_default():
+    calls, fake = _recorder()
+    ctx = _ctx()
+    ctx.config.clean = {"keep_versions": "lots"}
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().clean_caches(ctx)
+    assert ["paccache", "-r", "-k2"] in [c for c, _ in calls]
+
+
+def test_clean_falls_back_to_sc_without_paccache():
+    """No pacman-contrib -> `pacman -Sc`, whose prompt defaults to YES and which
+    keeps installed versions. Less thorough than paccache, but it actually works."""
+    calls, fake = _recorder()
+
+    def which(name):
+        return None if name == "paccache" else f"/usr/bin/{name}"
+
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", side_effect=which):
+        ArchBackend().clean_caches(_ctx())
+    argvs = [c for c, _ in calls]
+    assert ["pacman", "-Sc", "--noconfirm"] in argvs
+    assert not any(c and c[0] == "paccache" for c in argvs)
 
 
 def test_update_default_pacman_then_yay():

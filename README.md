@@ -818,6 +818,15 @@ ai_effort           = "medium"   # low | medium | high — thinking depth vs cos
 ai_max_web_searches = 5          # cap forum searches per run (bounds tokens/cost)
 # ai_api_key = "sk-ant-..."      # optional; keep the file chmod 600; never printed in full
 
+# Cache cleaning (fettle -c)
+[clean]
+keep_versions = 2        # Arch/Manjaro: cached versions to keep per INSTALLED package.
+                         # Cached packages you no longer have installed are always
+                         # removed — they have no rollback value. 0 keeps none, which
+                         # frees the most and leaves no offline downgrade path.
+                         # Needs pacman-contrib (paccache); without it fettle falls
+                         # back to `pacman -Sc`, which keeps only the installed version.
+
 # Reports & run logs (stored under ~/.fettle/, per host, 0600)
 [reports]
 keep = 5                 # how many of each report/log to keep per host

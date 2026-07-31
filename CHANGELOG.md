@@ -4,6 +4,58 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.50.0] — `clean` has never cleaned anything on Arch. It does now.
+
+Found by the new manual QA plan (`docs/qa/`), first feature swept: `clean` across seven
+targets — six lab VMs and a live Manjaro workstation.
+
+**`pacman -Scc --noconfirm` removes nothing.** `--noconfirm` makes pacman take the
+*default* answer to its own prompts, and `-Scc` defaults to **No** because the operation is
+destructive:
+
+```
+:: Do you want to remove ALL files from cache? [y/N]     <- --noconfirm answers N
+```
+
+It exits 0 and prints nothing to say otherwise, so fettle reported `✓ pacman cache cleared`
+and the caller could not tell. Measured on a lab guest: **194 cached packages before, 194
+after**. On the workstation that surfaced it, the cache had reached **59 GB / 15,673 files**
+— it had only ever grown, across every `fettle -c` ever run on it.
+
+Debian, Ubuntu, Rocky, Alma and Fedora were all measured clean-correct in the same sweep
+(41 MB of `.deb` files to zero; rpms removed with repo metadata preserved). **The defect was
+Arch-family only.**
+
+**Answering "yes" would have been the wrong repair.** `-Scc` also deletes the cached copy of
+every *currently installed* package, and on Arch that cache is the primary way to roll back
+a bad upgrade without a network. Fixing the no-op naively would have converted a harmless
+lie into a destructive default. The replacement splits the work by rollback value:
+
+1. `paccache -r -u -k0` — cached packages **no longer installed at all**. No rollback
+   value; always removed. On the 59 GB cache that is 1,389 packages holding **31.1 GiB**.
+2. `paccache -r -k<n>` — superseded versions of installed packages, keeping `n`
+   (**new `[clean] keep_versions`, default 2**). Keeping two is 18.3 GiB on that same cache
+   and still leaves a working rollback target plus a spare.
+
+Without `pacman-contrib` it falls back to `pacman -Sc --noconfirm`, whose prompt defaults to
+**Yes** and which keeps installed versions — less thorough, correct, no new dependency.
+
+**The summary now tells the truth in three distinguishable ways**, where all three used to
+read `✓ caches cleaned`:
+
+```
+✓ caches cleaned — 353 KiB reclaimed      (a real run that freed something)
+✓ caches already clean — nothing to reclaim
+✓ would clean caches                      (--dry-run, which deleted nothing)
+```
+
+Space freed is measured from the cache directory itself, not parsed from the tools' own
+summaries — parsing would not have caught this bug, and measuring does.
+
+Live-verified on the Arch guest: 10 cached files for uninstalled packages removed, `bash`'s
+two cached versions preserved, `353 KiB reclaimed` reported. Five regression tests, each
+confirmed to fail against the old command.
+
 ## [0.49.1] — lab: one login name across every guest
 
 Test tooling. Setting **`ADMIN_USER`** in `lab.conf` creates an extra account on every
