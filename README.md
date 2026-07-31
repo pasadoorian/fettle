@@ -128,7 +128,9 @@ Debian and RHEL are *complete*, not partial.
 ¹ Reported, never removed: dnf enforces `installonly_limit` and prunes old kernels itself.
 Arch and Debian do offer removal, because pacman and apt do not.
 ² Needs `checksec`, which is **not packaged for RHEL 10 — EPEL included** — so in practice
-this cannot run there yet. The code and tests are in place for when it is.
+this cannot run there yet. The code and tests are in place for when it is. Both checksec
+generations are handled: 3.x (Arch) and 2.x (Fedora, Debian, Ubuntu), which share no
+command line.
 
 **Distro-independent features** work the same everywhere: the `sys-audit` firmware/boot
 scan (`-S`, only its package-integrity check is per-distro), `fettle remote` over ssh, the

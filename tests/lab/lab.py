@@ -72,12 +72,14 @@ TARGETS = {
         "url": "https://cloud-images.ubuntu.com/minimal/releases/resolute/release/"
                "ubuntu-26.04-minimal-cloudimg-amd64.img",
         "user": "ubuntu", "disk": "6G", "osinfo": "ubuntu24.04", "seed": "disk",
+        "packages": ["checksec"],
         "note": "407 MiB; 'minimal' strips man pages/editors/Recommends — tools may be absent",
     },
     "debian": {
         "url": "https://cloud.debian.org/images/cloud/trixie/latest/"
                "debian-13-genericcloud-amd64.qcow2",
         "user": "debian", "disk": "5G", "osinfo": "debian13", "firmware": "uefi",
+        "packages": ["checksec"],
         "note": "328 MiB, smallest of the lot; genericcloud has a reduced driver set (virtio only)",
     },
     "rocky9": {
@@ -96,10 +98,17 @@ TARGETS = {
         "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/"
                "images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
         "user": "fedora", "disk": "6G", "osinfo": "fedora41", "firmware": "uefi",
+        "packages": ["checksec"],
         "note": "the ONLY dnf5 target, and the only dnf host where checksec is packaged",
     },
 }
 
+# `packages` per target installs prerequisites the action under test needs — `checksec`
+# for hardening-audit, which is packaged as **2.x** on Fedora/Debian/Ubuntu and 3.x on
+# Arch. Those two generations share no command line, and running the 3.x form against a
+# 2.x binary made the audit report a clean system after analysing nothing (fixed in
+# fettle 0.48.0). Both generations therefore need to be represented in the lab.
+#
 # cloud-init user-data. Two things here are load-bearing:
 #   * `#cloud-config` on line 1 is mandatory — it is a header, not a comment.
 #   * ssh_pwauth must be set explicitly: Fedora/Alma/Rocky images ship it false, so without
@@ -121,7 +130,7 @@ package_upgrade: false
 packages:
   - qemu-guest-agent
   - python3
-runcmd:
+{extra_packages}runcmd:
   - [systemctl, enable, --now, qemu-guest-agent]
 final_message: "fettle-lab ready after $UPTIME seconds"
 """
@@ -347,7 +356,11 @@ def cmd_build(conf, args) -> int:
 
     # Seed ISO. cloud-localds if present, else genisoimage — both produce a `cidata`
     # volume with user-data and meta-data at the root, which is all NoCloud requires.
-    user_data = USER_DATA.format(host=name, user=spec["user"], pubkey=pubkey)
+    # Extra packages are baked in at build time so they survive `reset` — installing a
+    # prerequisite by hand after the snapshot means the next revert silently loses it.
+    extra = "".join(f"  - {pkg}\n" for pkg in spec.get("packages", ()))
+    user_data = USER_DATA.format(host=name, user=spec["user"], pubkey=pubkey,
+                                 extra_packages=extra)
     meta_data = f"instance-id: {name}-01\nlocal-hostname: {name}\n"
     print("==> building cloud-init seed")
     host_run(conf, "set -e; d=$(mktemp -d); "

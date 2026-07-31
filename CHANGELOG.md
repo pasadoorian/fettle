@@ -4,6 +4,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.48.1] — the checksec blast radius was wider than 0.48.0 said
+
+0.48.0 described the false-clean `hardening-audit` bug as affecting "every host with
+checksec 2.x" without knowing which distros those were. Now measured — **it was every
+supported distro except Arch**:
+
+| | checksec | binaries | before 0.48.0 | after |
+|---|---|---|---|---|
+| Arch / Manjaro | **3.x** | — | worked | worked |
+| Fedora | 2.7.1 | 725 | "no deviations" | 158 deviations, 43 packages |
+| **Debian 13** | 2.6.0 | 531 | "no deviations" | **204 deviations, 40 packages** |
+| **Ubuntu 26.04** | 2.6.0 | 507 | "no deviations" | **81 deviations, 25 packages, incl. 1 Critical** |
+
+The audit was developed on a Manjaro host, which is where 3.x ships — so it worked
+throughout development and was silently useless everywhere else. That is the whole argument
+for testing against real distros rather than the one under the developer's hands.
+
+### Lab: per-target packages
+
+Targets can now declare prerequisites, installed by cloud-init at build time so they are
+**baked into the `pristine` snapshot**. Installing a prerequisite by hand after the snapshot
+means the next `reset` silently loses it — which is exactly what happened when `checksec`
+was first installed on the Fedora guest to reproduce the bug above.
+
+`checksec` is now declared on `fedora`, `debian` and `ubuntu`, deliberately covering both
+generations: 2.x on those three, 3.x on Arch. Verified surviving a revert.
+
 ## [0.48.0] — hardening-audit reported a clean system after examining nothing
 
 **`hardening-audit` has been silently useless on every host with checksec 2.x.** It printed
