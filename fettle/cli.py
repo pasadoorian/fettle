@@ -70,7 +70,8 @@ ACTION_HELP = {
               "on Arch (asks first; --yes to skip the prompt)"),
     "orphans": "list foreign packages; remove true orphans",
     "update": "update everything (asks before upgrading; --yes to skip)",
-    "only_update": "refresh repo metadata + report upgradable (no upgrade; safe)",
+    "only_update": ("check for updates: refresh repo metadata and report what's "
+                    "waiting, without installing anything"),
     "rebuild_check": "find packages/services needing a rebuild or restart",
     "python_rebuild_check": "rebuild packages stranded on an old Python",
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist / .rpmnew)",

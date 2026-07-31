@@ -4,6 +4,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.53.0] — `-O` no longer answers with stale data as though it were current
+
+QA pass on `only-update`, swept across all seven targets.
+
+**A failed metadata refresh produced a confident answer.** With the network broken, every
+non-Arch family printed a full list of pending packages, no caveat, exit 0. The two package
+managers fail differently and both were mishandled:
+
+* **apt exits 0 when it could not reach a single repository** — measured on Ubuntu 26.04
+  with DNS broken. fettle therefore printed `✓ apt package lists refreshed` for a refresh
+  that never happened. `apt-get update --error-on=any` exits **100** instead (measured), so
+  that is now used — probed via `apt-get --version` for apt ≥ 2.1, since an older apt
+  rejects the option with the same exit code the flag exists to detect.
+* **dnf exits 1 correctly**, and fettle recorded it in `ctx.failed_commands` — but
+  `_only_update` never looked. It does now.
+
+A refresh failure is reported, the preview is labelled `(from stale metadata)`, and the run
+exits non-zero. The list is still printed: last-known data is useful, presenting it as
+current is not. Arch was already the one family that got this right.
+
+**The summary omitted the one number the action exists to produce.** A run with 179 packages
+waiting signed off `nothing to report`. Now `✓ 179 package(s) pending`, or `no updates
+pending`, and `(from stale metadata)` when that applies.
+
+**The Arch staleness note named a cause it had never checked.** `_temp_synced_db` can fail
+three unrelated ways and the caller reported the first one regardless — telling users to
+install `fakeroot` and `pacman-contrib` when both were present and the mirror was simply
+unreachable. It now returns the real reason and quotes pacman.
+
+**`--dry-run` claimed a refresh was happening.** The "refreshing package metadata" line sat
+outside the dry-run gate, the same shape fixed for `clean` in 0.51.0.
+
+Live-verified on Ubuntu 26.04 and Rocky 9, healthy and with DNS broken. Seven tests, three
+confirmed to fail without their fix.
+
+
 ## [0.52.0] — a blocked action can no longer sign off green
 
 QA finding **F-12**, found by a `clean` case that had never been run: make one cached

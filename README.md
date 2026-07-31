@@ -313,7 +313,7 @@ just Debian — each revision confirmed individually.
 | `-c` | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
 | `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
 | `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
-| `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
+| `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
@@ -327,6 +327,27 @@ just Debian — each revision confirmed individually.
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
+
+### Checking for updates (`-O`)
+
+`fettle -O` answers *"what is waiting for me?"* and changes nothing else. It refreshes repo
+metadata, then prints the transaction an upgrade **would** perform — including new
+dependencies, not just version bumps — and stops.
+
+**It is not a prerequisite for `update`.** Every backend already refreshes as part of
+upgrading (`pacman -Syuu`, `apt-get update` before the upgrade, `dnf upgrade --refresh`), so
+`-O` is the standalone look, not a step you must run first.
+
+**If the refresh fails, it says so and exits non-zero.** A mirror can be down, a key can
+expire, a laptop can be on a train. In that case the last-known list is still printed — it
+is useful — but marked `(from stale metadata)`, because newly published updates, including
+security fixes, would not appear in it. Note that `apt-get update` exits **0** even when it
+reached no repository at all, which is why fettle passes `--error-on=any` on apt 2.1+.
+
+**On Arch and Manjaro the system database is never synced.** `pacman -Sy` without a full
+upgrade is the classic partial-upgrade footgun, so the preview is resolved against a private
+temporary database (the `checkupdates` technique) and `/var/lib/pacman/sync` is left
+untouched. It also honours `IgnorePkg`, so packages you have pinned are not reported.
 
 ### Cache cleaning (`-c`)
 

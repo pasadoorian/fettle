@@ -337,12 +337,12 @@ class ArchBackend(PackageBackend):
         notes: list[str] = []
         dbargs: list[str] = []
         if sync:
-            tmp = self._temp_synced_db()
+            tmp, why = self._temp_synced_db()
             if tmp is not None:
                 dbargs = ["--dbpath", str(tmp)]
             else:
-                notes.append("could not refresh repos (needs fakeroot + pacman-contrib);"
-                             " preview reflects the last sync and may be stale")
+                notes.append(f"could not refresh repos — {why}. The preview below "
+                             "reflects the last sync and MAY BE STALE.")
 
         upgrades = {n: (old, new)
                     for n, old, new in _parse_arrow_upgrades(
@@ -428,20 +428,26 @@ class ArchBackend(PackageBackend):
                 return Path(out)
         return Path("/var/lib/pacman")
 
-    def _temp_synced_db(self) -> Path | None:
+    def _temp_synced_db(self) -> tuple[Path | None, str]:
         """checkupdates' technique: a private DB in TMPDIR with the real `local`
         symlinked in, sync'd fresh via `fakeroot pacman -Sy` (no root, no change
-        to the system DB). Returns the path, or None if it can't be prepared."""
+        to the system DB).
+
+        Returns ``(path, "")`` on success, or ``(None, reason)``. The reason matters:
+        this can fail three unrelated ways, and the caller used to report the first one
+        unconditionally — telling users to install `fakeroot` and `pacman-contrib` when
+        both were present and the mirror was simply unreachable.
+        """
         if not command.which("fakeroot"):
-            return None
+            return None, "fakeroot not found (install pacman-contrib)"
         db = Path(os.environ.get("TMPDIR", "/tmp")) / f"fettle-checkdb-{os.getuid()}"
         try:
             (db / "sync").mkdir(parents=True, exist_ok=True)
             local = db / "local"
             if not local.is_symlink():
                 local.symlink_to(self._real_dbpath() / "local")
-        except OSError:
-            return None
+        except OSError as exc:
+            return None, f"could not prepare the temporary database ({exc.strerror})"
         # `--disable-sandbox-filesystem`: pacman 7's download step drops to the
         # `alpm` user and applies a Landlock ruleset, which fakeroot (fake uid,
         # no real privilege) can't do — the sync fails without this. checkupdates
@@ -450,7 +456,13 @@ class ArchBackend(PackageBackend):
         proc = command.run(
             ["fakeroot", "--", "pacman", "-Sy", "--disable-sandbox-filesystem",
              "--dbpath", str(db), "--logfile", "/dev/null"], capture=True)
-        return db if proc.ok else None
+        if proc.ok:
+            return db, ""
+        # Most often an unreachable mirror; on pre-7 pacman, the sandbox flag being
+        # rejected. Quote pacman rather than guessing, so the user sees the real cause.
+        why = (proc.stderr or proc.stdout or "").strip().splitlines()
+        detail = why[-1][:120] if why else f"pacman -Sy exited {proc.returncode}"
+        return None, f"repo sync failed: {detail}"
 
     # -- maintenance checks (M3) ---------------------------------------------
     def check_foreign_orphans(self, ctx: Context) -> Result:

@@ -98,7 +98,7 @@ Status of each feature's QA pass. `—` = not started.
 | clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 8 findings fixed, 3 deferred by decision** |
 | orphans | `-o` | — | — |
 | update | `-u` | — | — |
-| only-update | `-O` | — | — |
+| only-update | `-O` | [only-update.md](only-update.md) | **swept — 4 findings fixed, 2 open for decision** |
 | rebuild-check | `-r` | — | — |
 | python-rebuild-check | `-y` | — | — |
 | config-drift | `-d` | — | — |

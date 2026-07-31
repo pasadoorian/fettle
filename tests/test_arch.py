@@ -187,7 +187,7 @@ def test_pending_transaction_classifies_upgrades_and_new_deps():
                            sup="core/linux 6.2-1\nextra/newdep 1.0-1\n")
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True), \
-         patch.object(ArchBackend, "_temp_synced_db", return_value=Path("/tmp/db")):
+         patch.object(ArchBackend, "_temp_synced_db", return_value=(Path("/tmp/db"), "")):
         tx = ArchBackend().pending_transaction(_ctx())
     kinds = {i.name: (i.kind, i.old, i.new, i.source) for i in tx.items}
     assert kinds["linux"] == ("upgrade", "6.1-1", "6.2-1", "repo")
@@ -202,7 +202,7 @@ def test_pending_transaction_merges_aur():
     _, fake = _tx_fake(sup="", aur="claude-desktop-bin 1-1 -> 1-2\n")
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True), \
-         patch.object(ArchBackend, "_temp_synced_db", return_value=Path("/tmp/db")):
+         patch.object(ArchBackend, "_temp_synced_db", return_value=(Path("/tmp/db"), "")):
         tx = ArchBackend().pending_transaction(_ctx())
     aur = [i for i in tx.items if i.source == "aur"]
     assert aur and aur[0].name == "claude-desktop-bin" and aur[0].new == "1-2"
@@ -213,10 +213,16 @@ def test_pending_transaction_stale_note_when_sync_fails():
     calls, fake = _tx_fake(qu="bash 5.2-1 -> 5.3-1\n", sup="core/bash 5.3-1\n")
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True), \
-         patch.object(ArchBackend, "_temp_synced_db", return_value=None):  # refresh failed
+         patch.object(ArchBackend, "_temp_synced_db",
+                      return_value=(None, "repo sync failed: could not resolve host")):
         tx = ArchBackend().pending_transaction(_ctx())
     assert [i.name for i in tx.items if i.source == "repo"] == ["bash"]
-    assert any("stale" in n for n in tx.notes)
+    assert any("STALE" in n for n in tx.notes)
+    # The note must carry the REAL reason. It used to say "needs fakeroot +
+    # pacman-contrib" whatever had happened — measured telling a user to install two
+    # packages that were already there, when the mirror was simply unreachable.
+    assert any("could not resolve host" in n for n in tx.notes)
+    assert not any("pacman-contrib" in n for n in tx.notes)
     # fell back to the system DB — no --dbpath on the query
     assert ["pacman", "-Sup", "--print-format", "%r/%n %v"] in [c for c, _ in calls]
 

@@ -96,10 +96,29 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
 
 
 def _only_update(backend: "PackageBackend", ctx: "Context") -> None:
-    """Refresh package metadata (no upgrade) and report what's now upgradable."""
-    ctx.output.note("refreshing package metadata (no packages will be upgraded)...")
+    """Refresh package metadata (no upgrade) and report what's now upgradable.
+
+    The refresh is allowed to fail — mirrors go away, keys expire, laptops are on a
+    train. What is *not* allowed is answering the user's question anyway as though the
+    data were current. QA measured every non-Arch family doing exactly that: with the
+    network broken, `-O` printed a confident list of pending packages, no caveat, exit 0.
+    """
+    out = ctx.output
+    if ctx.dry_run:
+        out.note("would refresh package metadata (nothing is refreshed in a dry run).")
+    else:
+        out.note("refreshing package metadata (no packages will be upgraded)...")
+    failed_before = len(ctx.failed_commands)
     backend.refresh_metadata(ctx)
-    _preview_transaction(backend, ctx)
+    stale = sorted(set(ctx.failed_commands[failed_before:]))
+    if stale:
+        out.warn(f"metadata refresh FAILED ({', '.join(stale)}) — the list below "
+                 "reflects the LAST SUCCESSFUL refresh and may be out of date. "
+                 "Newly published updates, including security fixes, will not appear.")
+    _preview_transaction(backend, ctx, stale=bool(stale))
+    if stale:
+        out.summary_fail("could not refresh package metadata — the pending list above "
+                         "is from stale data and may be incomplete.")
 
 
 # Order within a group: upgrades, then new dependencies, then removals.
@@ -115,20 +134,32 @@ def _fmt_txitem(it) -> str:
     return f"  {it.name}  {it.old} -> {it.new}"
 
 
-def _preview_transaction(backend: "PackageBackend", ctx: "Context") -> None:
+def _preview_transaction(backend: "PackageBackend", ctx: "Context", *,
+                         stale: bool = False) -> None:
     """Print the full set the upgrade would install (upgrades + new deps + any
-    removals), grouped by source, before the `would run:` command lines."""
+    removals), grouped by source, before the `would run:` command lines.
+
+    ``stale`` marks a preview built on metadata that could not be refreshed, so the
+    summary says so rather than presenting a possibly-incomplete list as the answer.
+    """
     out = ctx.output
     tx = backend.pending_transaction(ctx, sync=ctx.sync)
     if not tx.ok:
         detail = f" ({'; '.join(tx.notes)})" if tx.notes else " (query tool unavailable)"
         out.warn(f"could not determine the package transaction{detail}")
+        out.summary_fail("could not determine what is pending — see the warning above.")
         return
     for note in tx.notes:
         out.note(note)
+    # The whole point of this action is the count, and the summary used to omit it
+    # entirely — a run with 179 packages waiting signed off "nothing to report".
+    qualifier = " (from stale metadata)" if stale else ""
     if not tx.items:
         out.ok("nothing to install — system is up to date.")
+        if not stale:
+            out.summary_add("no updates pending")
         return
+    out.summary_add(f"{len(tx.items)} package(s) pending{qualifier}")
 
     out.note(f"{len(tx.items)} package(s) would be installed/changed:")
     groups: dict[str, list] = {}

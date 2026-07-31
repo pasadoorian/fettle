@@ -115,6 +115,20 @@ class DebianBackend(PackageBackend):
         """Run a read-only query and return stdout (runs even under dry-run)."""
         return command.run(cmd, capture=True).stdout
 
+    @staticmethod
+    def _apt_has_error_on() -> bool:
+        """Whether this apt understands ``--error-on=any`` (apt 2.1+, 2020).
+
+        Probed rather than assumed: an older apt rejects the option with exit 100 and
+        "not understood", which would look exactly like the failed refresh the flag
+        exists to detect. When the version cannot be read, assume not — a missed
+        failure signal degrades to today's behaviour, while a refresh that always
+        errors would break the action outright.
+        """
+        out = command.run(["apt-get", "--version"], capture=True).stdout
+        m = re.search(r"\bapt\s+(\d+)\.(\d+)", out)
+        return bool(m) and (int(m.group(1)), int(m.group(2))) >= (2, 1)
+
     def map_files_to_packages(self, paths) -> dict[str, str]:
         paths = list(paths)
         if not paths or not command.which("dpkg-query"):
@@ -189,7 +203,15 @@ class DebianBackend(PackageBackend):
         system, flatpak, _snap = self._updaters(ctx)
         if system != "none":
             tool = "nala" if system == "nala" and command.which("nala") else "apt-get"
-            ctx.execute([tool, "update"], quiet=True, msg="apt package lists refreshed")
+            argv = [tool, "update"]
+            if tool == "apt-get" and self._apt_has_error_on():
+                # `apt-get update` exits **0 even when it could not reach a single
+                # repository** — measured on Ubuntu 26.04 with DNS broken. Without this
+                # flag fettle cannot tell a refresh from a failure, and reports the
+                # green "lists refreshed" line for a refresh that never happened.
+                # `--error-on=any` makes it exit 100 instead (measured).
+                argv.append("--error-on=any")
+            ctx.execute(argv, quiet=True, msg="apt package lists refreshed")
         if flatpak != "none" and command.which("flatpak"):
             ctx.execute(["flatpak", "update", "--appstream"], quiet=True,
                         msg="flatpak metadata refreshed")

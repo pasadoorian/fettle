@@ -290,3 +290,56 @@ def test_host_table_overrides_skip_sources(capsys):
     out = capsys.readouterr().out
     assert "[snap] not present" not in out           # host entry wins
     assert "[container] not present" in out          # top-level entry overridden
+
+
+# -- only-update: a refresh that failed must not yield a confident preview ----
+class _RefreshSpy:
+    """Backend whose metadata refresh fails, as an unreachable mirror would."""
+
+    clean_prompt = "x"
+
+    def __init__(self, refresh_ok=True):
+        self.refresh_ok = refresh_ok
+
+    def refresh_metadata(self, ctx):
+        ctx.execute(["pkgtool", "update"], quiet=True, msg="lists refreshed")
+
+    def pending_transaction(self, ctx, *, sync=True):
+        from fettle.backends.base import Transaction, TxItem
+        return Transaction(items=[TxItem(name="openssl", new="3.5.5-3", old="3.5.5-2")])
+
+
+def _proc(rc):
+    def _run(*a, **kw):
+        return Proc(rc, "", "could not resolve host" if rc else "")
+    return _run
+
+
+def test_only_update_flags_a_preview_built_on_stale_metadata(capsys):
+    """QA measured every non-Arch family printing a confident pending list with the
+    network broken — no caveat, exit 0. The list is still worth showing; presenting
+    it as current is not."""
+    ctx = Context(output=Output(color=False), config=Config())
+    with patch("fettle.command.run", side_effect=_proc(1)):
+        actions.run(["only_update"], _RefreshSpy(), ctx)
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert "stale" in out.lower() or "STALE" in out
+    assert ctx.output.had_failures is True          # and it must not exit 0
+
+
+def test_only_update_is_clean_when_the_refresh_works(capsys):
+    ctx = Context(output=Output(color=False), config=Config())
+    with patch("fettle.command.run", side_effect=_proc(0)):
+        actions.run(["only_update"], _RefreshSpy(), ctx)
+    assert ctx.output.had_failures is False
+
+
+def test_only_update_summary_states_the_pending_count(capsys):
+    """The action exists to report a count, and the summary omitted it entirely —
+    a run with 179 packages waiting signed off "nothing to report"."""
+    ctx = Context(output=Output(color=False), config=Config())
+    with patch("fettle.command.run", side_effect=_proc(0)):
+        actions.run(["only_update"], _RefreshSpy(), ctx)
+    out = capsys.readouterr().out
+    assert "1 package(s) pending" in out
+    assert "nothing to report" not in out
