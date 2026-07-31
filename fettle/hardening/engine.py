@@ -100,9 +100,61 @@ def default_targets(root: Path = Path("/")) -> list[str]:
     return sorted(targets)
 
 
+# checksec 2.x reports each property as a bare string; 3.x wraps it in
+# `{"value": ...}`. These map 2.x's vocabulary onto the 3.x wording the baselines are
+# written in, so exactly one comparison vocabulary exists downstream.
+_V2_VALUES = {
+    "relro": {"full": "Full RELRO", "partial": "Partial RELRO", "no": "No RELRO"},
+    "canary": {"yes": "Canary Found", "no": "No Canary Found"},
+    "nx": {"yes": "NX enabled", "no": "NX disabled"},
+    "pie": {"yes": "PIE Enabled", "no": "No PIE", "dso": "DSO"},
+    "rpath": {"no": "No RPATH", "yes": "RPATH"},
+    "runpath": {"no": "No RUNPATH", "yes": "RUNPATH"},
+    "fortify_source": {"yes": "Yes", "no": "No", "partial": "Yes"},
+}
+
+
+def _from_v2(payload: dict) -> list[dict]:
+    """Reshape checksec 2.x output into the 3.x structure the evaluator expects.
+
+    2.x emits ``{"/path": {"relro":"full","canary":"yes",...}}`` — a mapping keyed by
+    path, with bare string values. 3.x emits a list of ``{"name":..., "checks":
+    {"relro": {"value": "Full RELRO"}, ...}}``. Normalising here keeps every downstream
+    comparison in one vocabulary instead of teaching the baselines two.
+    """
+    out = []
+    for path, props in payload.items():
+        if not isinstance(props, dict):
+            continue
+        checks = {}
+        for key, table in _V2_VALUES.items():
+            raw = str(props.get(key, "")).strip().lower()
+            if raw:
+                checks[key] = {"value": table.get(raw, raw)}
+        # 2.x spells these with a hyphen and keeps them outside the property set.
+        for src, dst in (("fortify-able", "fortifyable"), ("fortified", "fortified")):
+            if src in props:
+                checks[dst] = {"value": str(props[src])}
+        if checks:
+            out.append({"name": path, "checks": checks})
+    return out
+
+
 def run_checksec(paths, *, runner=None) -> list[dict]:
-    """One `checksec listfile <file> -o json` pass. Returns [] if checksec is
-    missing or emits unparseable output (never raises)."""
+    """Run checksec over `paths`, returning entries in the 3.x shape.
+
+    **Two interfaces, because two checksec generations are in the wild and they share
+    no command line.** 3.x takes `listfile <file> -o json`; 2.x (which Fedora still
+    ships — 2.7.1, dated 2015) takes `--format=json --file=<path>`, one file at a time,
+    and emits a different JSON schema entirely.
+
+    Getting this wrong is not a loud failure: the 3.x invocation on a 2.x binary yields
+    nothing parseable, every binary drops out, and the audit reports a clean baseline
+    having examined none of them. Callers must treat "analysed 0" as "did not run" —
+    see `hardening/audit.py`.
+
+    Returns [] if checksec is missing or unusable (never raises).
+    """
     run = runner or command.run
     paths = list(paths)
     if not paths:
@@ -116,13 +168,30 @@ def run_checksec(paths, *, runner=None) -> list[dict]:
         try:
             data = json.loads(proc.stdout or "[]")
         except (json.JSONDecodeError, TypeError):
-            return []
+            data = []
     finally:
         try:
             os.unlink(tmp.name)
         except OSError:
             pass
-    return data if isinstance(data, list) else []
+    if isinstance(data, list) and data:
+        return data
+    # 3.x form produced nothing — fall back to the 2.x interface, one file per call.
+    return _run_checksec_v2(paths, run)
+
+
+def _run_checksec_v2(paths, run) -> list[dict]:
+    """checksec 2.x: `--format=json --file=<path>`, one invocation per binary."""
+    out: list[dict] = []
+    for path in paths:
+        proc = run(["checksec", "--format=json", f"--file={path}"], capture=True)
+        try:
+            payload = json.loads(proc.stdout or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(payload, dict):
+            out.extend(_from_v2(payload))
+    return out
 
 
 def _val(checks: dict, key: str) -> str:

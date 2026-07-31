@@ -53,10 +53,10 @@ for networks it manages.
 | `ubuntu` | BIOS | **virtio disk** | **working** |
 | `debian` | **UEFI** | cdrom | **working** |
 | `rocky9` | **UEFI** | cdrom | **working** |
-| `alma9`, `fedora` | — | — | not yet attempted |
+| `alma9` | **UEFI** | cdrom | **working** |
+| `fedora` | **UEFI** | cdrom | **working** — the only dnf5 target, and the only dnf host where `checksec` is packaged |
 
-Four distros, three different boot/seed combinations, and **half of them will not boot under
-BIOS at all**. That is not incidental complexity — each was forced by a failure that
+Six distros, and **four of them will not boot under BIOS at all**. That is not incidental complexity — each was forced by a failure that
 produced no error message. All four images are BIOS+UEFI hybrids by partition layout, so
 the layout does not predict which will work.
 

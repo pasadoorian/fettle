@@ -89,13 +89,13 @@ TARGETS = {
     "alma9": {
         "url": "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/"
                "AlmaLinux-9-GenericCloud-latest.x86_64.qcow2",
-        "user": "almalinux", "disk": "10G", "osinfo": "almalinux9",
+        "user": "almalinux", "disk": "10G", "osinfo": "almalinux9", "firmware": "uefi",
         "note": "security-only errata feed — the contrast against Rocky's fuller one",
     },
     "fedora": {
         "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/"
                "images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
-        "user": "fedora", "disk": "6G", "osinfo": "fedora40",
+        "user": "fedora", "disk": "6G", "osinfo": "fedora41", "firmware": "uefi",
         "note": "the ONLY dnf5 target, and the only dnf host where checksec is packaged",
     },
 }

@@ -353,3 +353,64 @@ def test_rhel_is_no_longer_the_generic_baseline():
 def test_unknown_distro_still_gets_the_generic_baseline():
     from fettle.hardening.baseline import resolve
     assert resolve("gentoo").name == "generic"
+
+
+# -- checksec 2.x (Fedora ships 2.7.1, dated 2015) ---------------------------
+# Real output, measured on a Fedora 44 guest:
+#   checksec --format=json --file=/usr/bin/bash
+_V2_JSON = ('{ "/usr/bin/bash": { "relro":"full","canary":"yes","nx":"yes","pie":"yes",'
+            '"rpath":"no","runpath":"no","symbols":"no","fortify_source":"partial",'
+            '"fortified":"21","fortify-able":"37" } }')
+_V2_WEAK = ('{ "/usr/bin/weak": { "relro":"partial","canary":"no","nx":"yes","pie":"no",'
+            '"rpath":"no","runpath":"no","fortify_source":"no","fortify-able":"12" } }')
+
+
+def _run_v2(payloads):
+    """Fake a host where only the 2.x interface works: the 3.x call yields nothing."""
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        calls.append(cmd)
+        if "listfile" in cmd:
+            return command.Proc(1, "", "unrecognised option")
+        for path, payload in payloads.items():
+            if any(c == f"--file={path}" for c in cmd):
+                return command.Proc(0, payload, "")
+        return command.Proc(0, "{}", "")
+
+    return run, calls
+
+
+def test_checksec_2x_is_understood_when_the_3x_call_yields_nothing():
+    """Fedora ships checksec 2.7.1, whose command line and JSON schema share nothing
+    with 3.x. The 3.x invocation against it produces no parseable output at all."""
+    run, calls = _run_v2({"/usr/bin/bash": _V2_JSON})
+    got = engine.run_checksec(["/usr/bin/bash"], runner=run)
+    assert any("listfile" in c for c in calls)          # 3.x tried first
+    assert any("--format=json" in c for c in calls)      # then 2.x
+    assert len(got) == 1 and got[0]["name"] == "/usr/bin/bash"
+
+
+def test_2x_values_are_mapped_into_the_3x_vocabulary():
+    """The baselines are written in 3.x wording ("Canary Found", "PIE Enabled"). 2.x
+    says "yes"/"no". Normalising at the edge keeps one comparison vocabulary."""
+    run, _ = _run_v2({"/usr/bin/bash": _V2_JSON})
+    checks = engine.run_checksec(["/usr/bin/bash"], runner=run)[0]["checks"]
+    assert checks["relro"]["value"] == "Full RELRO"
+    assert checks["canary"]["value"] == "Canary Found"
+    assert checks["pie"]["value"] == "PIE Enabled"
+    assert checks["fortifyable"]["value"] == "37"       # 2.x spells it "fortify-able"
+
+
+def test_a_2x_weak_binary_still_produces_deviations():
+    """The point of the mapping: findings must survive it, not just parse."""
+    from fettle.hardening import baseline as bl
+    run, _ = _run_v2({"/usr/bin/weak": _V2_WEAK})
+    results = engine.run_checksec(["/usr/bin/weak"], runner=run)
+    base = bl.Baseline(name="t", criteria={"pie": bl.GOOD_PIE,
+                                           "canary": bl.GOOD_CANARY,
+                                           "relro": bl.GOOD_RELRO_FULL})
+    devs, stats = engine.evaluate(results, base)
+    assert stats["analyzed"] == 1
+    assert {d.check for d in devs} == {"pie", "canary", "relro"}

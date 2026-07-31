@@ -38,8 +38,22 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     scorer = score.Scorer.from_config(ctx.config)
     reports, filt_stats = report.apply(deviations, pkgmap, excl, scorer)
 
-    if not reports:
-        out.ok("no hardening deviations from the distro baseline.")
+    if scan_stats.get("analyzed", 0) == 0:
+        # The load-bearing guard. checksec producing nothing usable is
+        # indistinguishable from a perfectly hardened system unless it is said out
+        # loud — and that is not hypothetical: Fedora ships checksec **2.7.1**, whose
+        # invocation and JSON schema differ from the 3.x this was written against, so
+        # every binary silently fell out and the audit announced a clean bill of health
+        # after examining nothing.
+        out.warn(f"checksec analysed NONE of the {len(targets)} binaries found — the "
+                 "hardening audit did NOT run. Its output could not be parsed "
+                 "(version too old, or an unexpected format).")
+        out.summary_add("hardening audit did not run (checksec output unusable)")
+        out.next_step("check `checksec --version`; fettle expects the 2.x or 3.x "
+                      "interfaces")
+    elif not reports:
+        out.ok(f"no hardening deviations from the distro baseline "
+               f"({scan_stats['analyzed']} binaries analysed).")
     else:
         for line in report.render_screen(reports):
             print(f"  {line}")

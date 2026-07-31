@@ -4,6 +4,40 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.48.0] — hardening-audit reported a clean system after examining nothing
+
+**`hardening-audit` has been silently useless on every host with checksec 2.x.** It printed
+"no hardening deviations from the distro baseline" while analysing **zero** binaries. On the
+first Fedora host it ran against, the fix turns that same clean bill of health into **158
+deviations across 43 packages**.
+
+Two checksec generations are in the wild and they share no command line:
+
+| | checksec 3.x (what this was written against) | checksec 2.7.1 (what **Fedora ships**, dated 2015) |
+|---|---|---|
+| invocation | `checksec listfile <f> -o json --no-banner` | `checksec --format=json --file=<f>`, one file per call |
+| JSON | list of `{name, checks:{relro:{value:…}}}` | map of `{"/path": {"relro":"full",…}}` |
+| wording | `Canary Found`, `PIE Enabled` | `canary:yes`, `pie:yes` |
+
+The 3.x invocation against a 2.x binary produces nothing parseable, so every binary dropped
+out and the audit concluded there was nothing wrong.
+
+- **2.x is now supported**, normalised at the edge into the 3.x shape so exactly one
+  comparison vocabulary exists downstream rather than teaching every baseline two.
+- **And the guard that should have caught it in the first place:** analysing 0 of N binaries
+  is now reported as *"the hardening audit did NOT run"*, never as a clean result. This is
+  the same invariant applied throughout 0.37–0.47 — a check that cannot look must not render
+  identically to one that looked and found nothing — and it was missing from precisely the
+  action whose whole job is to find weaknesses.
+- The success line now states how many binaries were analysed, so "no deviations" is
+  auditable rather than asserted.
+
+Found by the VM lab: `checksec` is not packaged for EL at all, so a Fedora guest was the
+first dnf host ever to run this action. It also gave `rpm -qf` binary attribution (0.46.0)
+its first end-to-end exercise — the 43 package names in that report are it working.
+
+Lab: `alma9` and `fedora` join the working targets; all six now build, snapshot and revert.
+
 ## [0.47.5] — README: how this gets tested against real distros
 
 Documentation only. The Development section explained the unit suite but said nothing about
