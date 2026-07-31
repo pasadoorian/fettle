@@ -4,6 +4,19 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.48.2] — lab: both checksec generations now covered
+
+Test tooling. `checksec` is declared on the `arch` target too (it is in `extra`, so
+cloud-init can install it), which closes the gap left by 0.48.1: **3.x had no lab coverage**
+after the parsing was refactored around 2.x.
+
+Verified live on Arch — checksec **3.2.0**, 830 binaries, 143 deviations across 9 packages —
+so the refactor did not break the generation it was originally written for.
+
+Both paths are now exercised by real hosts rather than unit tests alone: **3.x on Arch, 2.x
+on Fedora, Debian and Ubuntu**. Since the two share no command line and getting it wrong
+produces a *clean-looking* result rather than an error, neither can rot unnoticed.
+
 ## [0.48.1] — the checksec blast radius was wider than 0.48.0 said
 
 0.48.0 described the false-clean `hardening-audit` bug as affecting "every host with

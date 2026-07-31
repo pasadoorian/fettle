@@ -47,14 +47,23 @@ for networks it manages.
 
 ## Target status
 
-| Target | Firmware | Seed | State |
-|---|---|---|---|
-| `arch` | BIOS | cdrom | **working** |
-| `ubuntu` | BIOS | **virtio disk** | **working** |
-| `debian` | **UEFI** | cdrom | **working** |
-| `rocky9` | **UEFI** | cdrom | **working** |
-| `alma9` | **UEFI** | cdrom | **working** |
-| `fedora` | **UEFI** | cdrom | **working** — the only dnf5 target, and the only dnf host where `checksec` is packaged |
+| Target | Firmware | Seed | Extras | State |
+|---|---|---|---|---|
+| `arch` | BIOS | cdrom | `checksec` **3.x** | **working** |
+| `ubuntu` | BIOS | **virtio disk** | `checksec` 2.x | **working** |
+| `debian` | **UEFI** | cdrom | `checksec` 2.x | **working** |
+| `rocky9` | **UEFI** | cdrom | — | **working** |
+| `alma9` | **UEFI** | cdrom | — | **working** |
+| `fedora` | **UEFI** | cdrom | `checksec` 2.x | **working** — only dnf5 target |
+
+Prerequisites in the `Extras` column are installed by cloud-init **at build time**, so they
+are baked into the `pristine` snapshot and survive `reset`. Installing one by hand after
+snapshotting means the next revert silently loses it.
+
+**Both checksec generations are deliberately represented** — 3.x on Arch, 2.x on the other
+three — because they share no command line, and running the wrong one made `hardening-audit`
+report a clean system after analysing nothing (fettle 0.48.0/0.48.1). Neither path can now
+rot unnoticed.
 
 Six distros, and **four of them will not boot under BIOS at all**. That is not incidental complexity — each was forced by a failure that
 produced no error message. All four images are BIOS+UEFI hybrids by partition layout, so

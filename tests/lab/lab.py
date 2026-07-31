@@ -66,6 +66,7 @@ TARGETS = {
     "arch": {
         "url": "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2",
         "user": "arch", "disk": "8G", "osinfo": "archlinux",
+        "packages": ["checksec"],
         "note": "530 MiB download; MUST be grown — stock image has ~504 MiB free",
     },
     "ubuntu": {
@@ -104,10 +105,11 @@ TARGETS = {
 }
 
 # `packages` per target installs prerequisites the action under test needs — `checksec`
-# for hardening-audit, which is packaged as **2.x** on Fedora/Debian/Ubuntu and 3.x on
-# Arch. Those two generations share no command line, and running the 3.x form against a
+# for hardening-audit, which is **2.x** on Fedora/Debian/Ubuntu (`extra` on Arch gives
+# 3.x). Those two generations share no command line, and running the 3.x form against a
 # 2.x binary made the audit report a clean system after analysing nothing (fixed in
-# fettle 0.48.0). Both generations therefore need to be represented in the lab.
+# fettle 0.48.0). Both are therefore declared, so neither path can rot unnoticed:
+# 2.x on three targets, 3.x on Arch.
 #
 # cloud-init user-data. Two things here are load-bearing:
 #   * `#cloud-config` on line 1 is mandatory — it is a header, not a comment.
