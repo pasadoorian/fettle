@@ -170,8 +170,25 @@ scratchpad.
 | QA-CLEAN-13 | FAIL | **PASS** | second run: `caches already clean — nothing to reclaim` |
 | QA-CLEAN-18 | PASS by accident | **PASS on purpose** | installed versions deliberately retained |
 
-Still open on arch after v0.50.0: **F-05** (QA-CLEAN-16, untested) and **F-08**
-(QA-CLEAN-25). F-01, F-02, F-03, F-04, F-09 remain open on the other families.
+**Re-test after the F-01/02/03/04/09 fixes — v0.51.0**
+
+Verified live on **debian** and **rocky9**, one per affected backend:
+
+| ID | finding | evidence |
+|---|---|---|
+| QA-CLEAN-05 | F-02 | prompt is now `remove downloaded package caches?` — no build dirs |
+| QA-CLEAN-07 | F-01 | dry-run ends `✓ would clean caches` |
+| QA-CLEAN-11 | F-03 | `39.2 MiB reclaimed` (debian), `3.0 MiB reclaimed` (rocky9) |
+| QA-CLEAN-13 | F-04 | second run: `caches already clean — nothing to reclaim` |
+| QA-CLEAN-27 | F-09 | one apt line, no `autoclean` tick |
+
+**ubuntu, alma9 and fedora were not re-run.** They share the backend and code path with
+the target that was, so they are *expected* to pass — but expected is not measured, and
+this table does not pretend otherwise. Fold them into the next full sweep.
+
+Still open on `clean`: **F-05** (QA-CLEAN-16 — untested, needs a held pacman lock),
+**F-08** (QA-CLEAN-25 — run-log permissions, not clean-specific), and **F-10/F-11**
+(QA-CLEAN-28 — Fedora unsupported, exits 0).
 
 ---
 

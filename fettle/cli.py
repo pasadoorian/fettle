@@ -66,7 +66,8 @@ REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware_check")
 
 # Human-facing one-liners for each maintenance action (shown in --help).
 ACTION_HELP = {
-    "clean": "clean package-manager caches (asks first; --yes to skip the prompt)",
+    "clean": ("reclaim disk from downloaded package files; keeps rollback versions "
+              "on Arch (asks first; --yes to skip the prompt)"),
     "orphans": "list foreign packages; remove true orphans",
     "update": "update everything (asks before upgrading; --yes to skip)",
     "only_update": "refresh repo metadata + report upgradable (no upgrade; safe)",
@@ -150,8 +151,10 @@ def build_parser() -> argparse.ArgumentParser:
     tags = _distro_tags()
     maint = p.add_argument_group(
         "maintenance actions",
-        "each runs as a flag OR a bare word, and they combine: `fettle -c -u` == "
-        "`fettle clean update`. (`upgrade` is a synonym for `update`.)")
+        "every action takes three interchangeable forms — short flag, long flag, or "
+        "bare word: `fettle -c` == `fettle --clean` == `fettle clean`. They combine: "
+        "`fettle -c -u` == `fettle clean update`. (`upgrade` is a synonym for "
+        "`update`.)")
     for opts, action in FLAG_ACTIONS:
         maint.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"{ACTION_HELP.get(action, action)}{tags[action]}")

@@ -288,8 +288,21 @@ fettle -U                  # AI: is this upgrade safe? [experimental] (needs API
 
 ## Maintenance actions
 
-Run with no action to execute the configured default set. Actions can be given as
-short flags, long flags, or bare words (`fettle -c -u` == `fettle clean update`).
+Run with no action to execute the configured default set. **Every action accepts three
+interchangeable forms** — a short flag, a long flag, or a bare word — and they combine
+freely:
+
+```bash
+fettle -c            # short flag
+fettle --clean       # long flag
+fettle clean         # bare word
+fettle -c -u         # combine, in the order fettle defines
+fettle clean update  # identical to the line above
+```
+
+The table below lists the short flag and the word; the long flag is the word with `--` in
+front of it (`--clean`, `--orphans`, `--config-drift`). `fettle -h` lists all three.
+
 Anything a distro's backend doesn't support is skipped with a note.
 
 Disabled (superseded) **snap revisions** are offered on every distro that has snapd, not
@@ -297,7 +310,7 @@ just Debian — each revision confirmed individually.
 
 | Flag | Action | Arch | Debian | RHEL family |
 |---|---|---|---|---|
-| `-c` | `clean` | pacman + pamac/yay caches (**asks first**; `--yes` skips) | `apt-get clean`/`autoclean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
+| `-c` | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
 | `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
 | `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh metadata **safely** (private cache; no `pacman -Sy`) + report upgradable | `apt update` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
@@ -314,6 +327,68 @@ just Debian — each revision confirmed individually.
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
+
+### Cache cleaning (`-c`)
+
+`fettle -c` reclaims disk from **downloaded package files** — the copies your package
+manager keeps after installing. It never removes installed software, and it always asks
+first (`--yes` skips the prompt, `--dry-run` shows what would run and changes nothing).
+
+The summary states what actually happened, measured from the cache directory rather than
+taken from the package manager's word for it:
+
+```
+✓ caches cleaned — 39.2 MiB reclaimed
+✓ caches already clean — nothing to reclaim
+✓ would clean caches                        # --dry-run
+```
+
+**Arch / Manjaro / EndeavourOS.** The cache is also your offline rollback path: a bad
+upgrade is undone with `pacman -U /var/cache/pacman/pkg/<older>.pkg.tar.zst`, which only
+works while that file is still there. So cleaning is split by rollback value —
+
+1. cached packages **no longer installed at all** are removed outright (no rollback value);
+2. superseded versions of installed packages are trimmed to the last **`keep_versions`**
+   (default 2), so every installed package keeps a working rollback target plus a spare.
+
+Both use `paccache` from **`pacman-contrib`**. Without it, fettle falls back to `pacman
+-Sc`, which removes only packages that are no longer installed — correct, less thorough,
+no extra dependency. AUR helper build directories (`~/.cache/yay`, `~/.cache/paru`,
+`~/.cache/pamac`, and pamac's `/var/tmp` build tree) are removed too; this is the only
+family where the prompt mentions build directories, because it is the only one that has
+any.
+
+> `pacman -Scc` is deliberately **not** used. With `--noconfirm` it removes nothing at all
+> (its prompt defaults to No), and answering yes would delete the cached copy of every
+> installed package — destroying offline rollback to reclaim a little more disk.
+
+**Debian / Ubuntu / Mint / Pop!\_OS.** `apt-get clean` empties `/var/cache/apt/archives`.
+Package *lists* under `/var/lib/apt/lists` are untouched, so no `apt update` is forced
+afterwards. `apt-get autoclean` is not run: `clean` has already emptied the directory, so
+it would have nothing to consider. Unused flatpak runtimes are removed when flatpak is
+present.
+
+**RHEL / CentOS Stream / Rocky / AlmaLinux / Oracle.** `dnf clean packages`, deliberately
+**not** `clean all`. Measured on a RHEL 10.1 host, `/var/cache/dnf` held 796 MB of which
+736 MB was `.rpm` files and 60 MB was repo metadata — `clean packages` frees the 736 MB,
+while `clean all` would also discard the metadata and force a slow re-download on the very
+next dnf command. Note these systems ship `keepcache=0`, so a large RPM cache usually means
+an *interrupted* transaction, which is exactly when reclaiming it helps. Both dnf
+generations are handled: dnf5 caches under `/var/cache/libdnf5`.
+
+There is no version-retention knob on apt or dnf — neither keeps a version history to trim,
+so `keep_versions` applies to the Arch family only.
+
+**Configuration** (see the [full config example](#configuration)):
+
+```toml
+[clean]
+keep_versions = 2   # Arch family: cached versions kept per INSTALLED package.
+                    # 0 keeps none — frees the most, leaves no offline rollback.
+```
+
+Packages you no longer have installed are removed regardless of this setting; retention
+only ever protects things you could actually roll back to.
 
 Three more flags are **shortcuts to subcommands** (not part of the action
 pipeline): `-S` → `sys-audit --all` (security scan), `-U` → `upgrade-check` (AI

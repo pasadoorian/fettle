@@ -124,7 +124,9 @@ def test_help_tags_distro_specific_actions(capsys):
     # Arch-only actions carry the [arch] tag; cross-distro ones don't.
     assert "--aur-audit" in help_text and "[arch]" in help_text
     assert "--python-rebuild" in help_text
-    assert "clean package-manager caches" in help_text  # descriptive per-action help
+    assert "reclaim disk from downloaded package files" in help_text  # per-action help
+    # All three invocation forms are named up front, not just implied by the flags.
+    assert "`fettle -c` == `fettle --clean` == `fettle clean`" in help_text
     assert "[arch]/[debian] are specific to that distro" in help_text
 
 

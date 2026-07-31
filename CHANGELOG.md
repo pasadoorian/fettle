@@ -4,6 +4,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.51.1] — document `clean`: every platform, every invocation form, the config
+
+Documentation only; no behaviour change. Prompted by a plain question — *"do we ever say
+that clean can be run as `-c`, `--clean`, or just `clean`?"*
+
+- **The action table described behaviour that changed an hour earlier.** It still said Arch
+  clean does "pacman + pamac/yay caches", which stopped being true in 0.50.0. Now describes
+  the retention policy and links to its config key. Exactly the drift the QA plan exists to
+  catch, caught late.
+- **All three invocation forms are now stated outright**, in the README and in `fettle -h`.
+  Both already said actions work "as a flag or a bare word", but neither spelled out that
+  the long flag exists too. The help group header now reads `fettle -c` == `fettle --clean`
+  == `fettle clean`.
+- **New README section: Cache cleaning (`-c`)** — what it reclaims on each family and why
+  they differ. The Arch rollback rationale (the cache *is* the downgrade path, which is why
+  retention exists and why `-Scc` is not used), Debian's untouched package lists, and the
+  measured RHEL figures behind `clean packages` over `clean all`. Documents
+  `[clean] keep_versions`, and says plainly that it is Arch-only because apt and dnf keep no
+  version history to trim.
+- **`-c`'s one-line help** was "clean package-manager caches" — jargon that described the
+  mechanism rather than the outcome. Now "reclaim disk from downloaded package files; keeps
+  rollback versions on Arch".
+
+
 ## [0.51.0] — `clean` tells the truth on every family, not just Arch
 
 The rest of the QA sweep's `clean` findings. v0.50.0 fixed the Arch no-op; these are the
