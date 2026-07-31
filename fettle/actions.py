@@ -82,6 +82,15 @@ def _clean(backend: "PackageBackend", ctx: "Context") -> None:
 
 
 def _update(backend: "PackageBackend", ctx: "Context") -> None:
+    """Upgrade, and claim it only if it happened.
+
+    The backends describe *what they did* (``Result.summary`` — "repos: pacman, AUR:
+    yay"); this decides whether that description has been earned. They used to call
+    ``summary_add("packages updated (…)")`` themselves, unconditionally, so a
+    ``--dry-run`` that installed nothing signed off `✓ packages updated` — on an
+    up-to-date system, directly under `✓ no updates pending`.
+    """
+    out = ctx.output
     if ctx.dry_run:
         _preview_transaction(backend, ctx)
     else:
@@ -89,10 +98,41 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
         # unpatched Critical CVEs before a real upgrade. Never blocks on missing data.
         from .advisories.check import security_gate
         if not security_gate(ctx):
-            ctx.output.warn("update skipped — review with `fettle advisory-check`.")
+            out.warn("update skipped — review with `fettle advisory-check`.")
+            out.summary_add("update SKIPPED at the security gate")
             return
-    backend.update_system(ctx)
-    backend.update_extras(ctx)
+
+    failed_before = len(ctx.failed_commands)
+    results = [backend.update_system(ctx), backend.update_extras(ctx)]
+    failed = sorted(set(ctx.failed_commands[failed_before:]))
+    # Tolerant of a backend that returns None or a stub: the summary is a nicety,
+    # and it must not be able to break an upgrade that already happened.
+    what = ", ".join(r.summary for r in results
+                     if isinstance(getattr(r, "summary", None), str) and r.summary)
+
+    if ctx.dry_run:
+        out.summary_add("would update packages" + (f" ({what})" if what else ""))
+        return
+    if failed:
+        # Upgrades end early for two very different reasons, and the package managers
+        # do not distinguish them: pacman, apt and dnf all exit non-zero both when the
+        # user answers "no" at their prompt and when they genuinely fail. `--yes` is
+        # the one reliable discriminator — with it there was no prompt to decline, so
+        # a non-zero exit is a real failure.
+        tools = ", ".join(failed)
+        if ctx.assume_yes:
+            out.summary_fail(f"update did NOT complete — {tools} failed. Some packages "
+                             "may be upgraded and others not; re-run to finish, and "
+                             "see the errors above.")
+        else:
+            out.summary_warn(f"update did not complete — {tools} stopped without "
+                             "finishing. If you declined its prompt, nothing was "
+                             "changed; otherwise see the errors above.")
+        return
+    if any(r is not None and r.ok is False for r in results):
+        out.summary_fail("update did not fully complete — see the errors above.")
+        return
+    out.summary_add(f"packages updated ({what})" if what else "packages updated")
 
 
 def _only_update(backend: "PackageBackend", ctx: "Context") -> None:

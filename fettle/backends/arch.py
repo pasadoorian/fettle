@@ -300,8 +300,7 @@ class ArchBackend(PackageBackend):
             if ctx.assume_yes:
                 pamac_cmd.append("--no-confirm")
             ctx.execute(pamac_cmd, as_user=ctx.sudo_user)
-            out.summary_add("packages updated (pamac: repos + AUR)")
-            return Result()
+            return Result(summary="pamac: repos + AUR")
         if system == "pacman":
             out.note("updating official repos (pacman)...")
             # Ask before upgrading by default — pacman shows the plan and prompts;
@@ -325,15 +324,13 @@ class ArchBackend(PackageBackend):
             return Result()  # already handled in update_system
         if aur == "none":
             out.note("skipping AUR (aur_updater: none).")
-            out.summary_add(f"packages updated (repos only, via {system})")
-            return Result()
+            return Result(summary=f"repos only, via {system}")
         if not command.which("yay"):
             out.err("yay not found (aur_updater=yay). Install it, or set aur_updater to pamac/none.")
             return Result(ok=False)
         if not self._aur_precheck_gate(ctx):
             out.warn("AUR update skipped by the pre-check gate.")
-            out.summary_add("AUR update SKIPPED (pre-check gate)")
-            return Result()
+            return Result(summary="AUR SKIPPED by the pre-check gate")
         yay_cmd = ["yay", "-Sua", "--devel", "--cleanafter",
                    "--answerdiff", "None", "--answeredit", "None"]
         if ctx.assume_yes:
@@ -345,7 +342,6 @@ class ArchBackend(PackageBackend):
             out.note("updating AUR packages (yay, with PKGBUILD review)...")
             yay_cmd += ["--diffmenu=true", "--editmenu=true"]
         ctx.execute(yay_cmd, as_user=ctx.sudo_user)
-        out.summary_add(f"packages updated (repos: {system}, AUR: yay)")
         out.next_step("check AUR packages before the next build: fettle -A -I")
         return Result()
 

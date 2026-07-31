@@ -343,3 +343,73 @@ def test_only_update_summary_states_the_pending_count(capsys):
     out = capsys.readouterr().out
     assert "1 package(s) pending" in out
     assert "nothing to report" not in out
+
+
+# -- update: the claim must be earned -----------------------------------------
+class _UpdateSpy:
+    """Backend whose upgrade commands succeed or fail on demand."""
+
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def update_system(self, ctx):
+        from fettle.backends.base import Result
+        ctx.execute(["pkgtool", "upgrade"], quiet=True, msg="upgraded")
+        return Result(summary="repos: pkgtool")
+
+    def update_extras(self, ctx):
+        from fettle.backends.base import Result
+        return Result(summary="AUR: yay")
+
+    def pending_transaction(self, ctx, *, sync=True):
+        from fettle.backends.base import Transaction
+        return Transaction(items=[])          # up to date: the case that exposed it
+
+
+def test_update_dry_run_does_not_claim_packages_were_updated(capsys):
+    """Measured on a fully up-to-date Manjaro box: a --dry-run printed
+    `✓ no updates pending` and `✓ packages updated (repos: pacman, AUR: yay)` in the
+    same summary — contradicting itself, in the past tense, having installed nothing."""
+    ctx = _ctx()  # dry_run=True
+    actions.run(["update"], _UpdateSpy(), ctx)
+    out = capsys.readouterr().out
+    assert "packages updated" not in out
+    assert "would update packages" in out
+
+
+def test_declined_update_is_not_reported_as_a_failure(capsys):
+    """pacman, apt and dnf all exit non-zero when the user answers "no" AND when they
+    genuinely fail. Without --yes the two are indistinguishable, so an interactive run
+    that stops early must not be shouted about as a failure — nor claimed as success."""
+    ctx = Context(output=Output(color=False), config=Config())   # interactive
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["update"], _UpdateSpy(), ctx)
+    out = capsys.readouterr().out
+    assert "did not complete" in out and "declined" in out
+    assert "packages updated" not in out
+    assert ctx.output.had_failures is False      # a decline is not a failure
+
+
+def test_update_that_failed_is_not_reported_as_updated(capsys):
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["update"], _UpdateSpy(), ctx)
+    out = capsys.readouterr().out
+    assert "did NOT complete" in out
+    assert "✓ packages updated" not in out
+
+
+def test_update_failure_sets_the_exit_status():
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["update"], _UpdateSpy(), ctx)
+    assert ctx.output.had_failures is True
+
+
+def test_successful_update_names_what_was_updated(capsys):
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=lambda *a, **k: Proc(0, "", "")):
+        actions.run(["update"], _UpdateSpy(), ctx)
+    out = capsys.readouterr().out
+    assert "packages updated (repos: pkgtool, AUR: yay)" in out
+    assert ctx.output.had_failures is False

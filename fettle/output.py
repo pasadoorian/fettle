@@ -34,6 +34,7 @@ class Output:
     _step_cur: int = field(default=0, init=False)
     _summary: list[str] = field(default_factory=list, init=False)
     _failures: list[str] = field(default_factory=list, init=False)
+    _warnings: list[str] = field(default_factory=list, init=False)
     _next_steps: list[str] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -131,6 +132,18 @@ class Output:
         """
         self._failures.append(line)
 
+    def summary_warn(self, line: str) -> None:
+        """Record something that did not happen, without calling it a failure.
+
+        The middle state, and it is needed more often than it looks: a package manager
+        exits non-zero both when you answer "no" at its prompt and when it genuinely
+        fails, so an interactive run that ends early is ambiguous. Reporting it as
+        success is a lie; reporting it as a failure cries wolf at a user who simply
+        declined. This says what is known — it did not complete — and leaves the exit
+        status alone.
+        """
+        self._warnings.append(line)
+
     @property
     def had_failures(self) -> bool:
         """Whether anything reported a failure — the process exit status."""
@@ -143,9 +156,11 @@ class Output:
         if self.quiet:
             return
         print(f"\n{self.B}{self.CYN}▸ Summary{self.NC}")
-        if self._summary or self._failures:
+        if self._summary or self._failures or self._warnings:
             for line in self._summary:
                 print(f"  {self.GRN}✓{self.NC} {line}")
+            for line in self._warnings:
+                print(f"  {self.YLW}!{self.NC} {line}")
             for line in self._failures:
                 print(f"  {self.RED}✗{self.NC} {line}")
         else:

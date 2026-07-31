@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.55.0] — `update` stops claiming upgrades that never happened
+
+QA pass on `update`/`upgrade`, the one action that installs software.
+
+**The summary claimed success unconditionally.** `update_extras` ended with
+`summary_add("packages updated (…)")` outside any check, so three runs that installed
+nothing all signed off green — measured on live guests:
+
+| Run | Installed | Reported |
+|---|---|---|
+| `-u --dry-run` | nothing | `✓ packages updated (repos: pacman, AUR: yay)` |
+| `-u` **declined at the prompt** | nothing | `✓ packages updated` |
+| `-u --yes` with nothing to do | nothing | `✓ packages updated` |
+
+On an up-to-date Manjaro box the dry-run printed `✓ no updates pending` and
+`✓ packages updated` in the same summary, contradicting itself.
+
+The backends now describe *what they did* via `Result.summary` ("repos: pacman, AUR: yay")
+and `actions._update` decides whether that description has been earned — the same split
+already used by `clean`. It also consults `ctx.failed_commands`, so a failed upgrade is
+reported as one and **exits non-zero**.
+
+**New `Output.summary_warn()`, and the reason it had to exist.** The first cut of this fix
+reported a *declined* upgrade as a failure, because pacman, apt and dnf all exit non-zero
+both when the user answers "no" and when they genuinely break — an ambiguity this codebase
+already documented for dnf and then walked into anyway. Trading a false "success" for a
+false "failure" is not progress. `--yes` is the one reliable discriminator: with it there
+was no prompt to decline, so non-zero is a real failure (`✗`, exit 1). Without it the run is
+ambiguous and says so (`!`, exit 0) rather than picking a side it cannot know.
+
+Live-verified on Arch with 27 updates pending: dry-run leaves them pending and says
+`would update packages`; a declined run reports `!` and exits 0; an unreachable mirror under
+`--yes` reports `✗` and exits 1. Four tests, three confirmed to fail without the fix.
+
+
 ## [0.54.1] — say plainly that 0.5.x is under test, and document the mirror change
 
 Documentation only.

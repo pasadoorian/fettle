@@ -1135,8 +1135,9 @@ class RhelBackend(PackageBackend):
             out.note("refreshing snaps...")
             ctx.execute(["snap", "refresh"])
             did.append("snap")
-        out.summary_add(f"packages updated ({', '.join(did)})")
-        return Result()
+        # No summary_add here: `actions._update` owns the summary, because only it
+        # knows whether this was a dry run or whether a command failed.
+        return Result(summary=", ".join(did))
 
     def verify_integrity(self, scan) -> None:
         """sys-audit's ``packages`` check — the RPM analogue of debsums/paccheck.
