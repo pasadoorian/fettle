@@ -158,6 +158,21 @@ scratchpad.
 | QA-CLEAN-27 | n/a (no autoclean step) | n/a | **FAIL** (F-09) | **FAIL** (F-09) | n/a | n/a | n/a |
 | QA-CLEAN-28 | n/a (registered) | n/a (registered) | n/a | n/a | n/a | n/a | **FAIL** (F-10, F-11) |
 
+**Re-test after the F-07 fix — v0.50.0, arch target only**
+
+| ID | before | after | evidence |
+|---|---|---|---|
+| QA-CLEAN-02 | FAIL | **PASS** | 10 cached files for uninstalled packages removed |
+| QA-CLEAN-07 | FAIL | **PASS** | dry-run now ends `✓ would clean caches` |
+| QA-CLEAN-10 | FAIL | **PASS** | 204 → 194 files |
+| QA-CLEAN-11 | FAIL | **PASS** | `✓ caches cleaned — 353 KiB reclaimed` |
+| QA-CLEAN-12 | FAIL | **PASS** | `bash` kept both cached versions |
+| QA-CLEAN-13 | FAIL | **PASS** | second run: `caches already clean — nothing to reclaim` |
+| QA-CLEAN-18 | PASS by accident | **PASS on purpose** | installed versions deliberately retained |
+
+Still open on arch after v0.50.0: **F-05** (QA-CLEAN-16, untested) and **F-08**
+(QA-CLEAN-25). F-01, F-02, F-03, F-04, F-09 remain open on the other families.
+
 ---
 
 ## Findings
