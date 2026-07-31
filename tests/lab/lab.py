@@ -66,21 +66,41 @@ TARGETS = {
     "arch": {
         "url": "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2",
         "user": "arch", "disk": "8G", "osinfo": "archlinux",
-        "packages": ["checksec"],
+        # pacman-contrib -> pacdiff (config-drift); rebuild-detector -> checkrebuild
+        # (rebuild-check); fwupd -> firmware. Without these the actions report a missing
+        # tool: honest, but it tests nothing.
+        "packages": ["checksec", "pacman-contrib", "rebuild-detector", "fwupd", "git",
+                     "base-devel"],
+        # `yay` lives in the AUR, so pacman cannot install it — and without an AUR helper
+        # three Arch-only capabilities (aur-audit, aur-ioc-scan, and the AUR half of
+        # update) cannot be exercised at all. yay-bin is prebuilt, so this downloads
+        # rather than compiles. Best-effort: failure leaves those as SKIPs, which is the
+        # status quo rather than a regression.
+        "runcmd": ["sh -c \'cd /tmp && sudo -u arch git clone -q "
+                   "https://aur.archlinux.org/yay-bin.git && cd yay-bin && "
+                   "sudo -u arch makepkg -si --noconfirm >/dev/null 2>&1 || true\'"],
         "note": "530 MiB download; MUST be grown — stock image has ~504 MiB free",
     },
     "ubuntu": {
         "url": "https://cloud-images.ubuntu.com/minimal/releases/resolute/release/"
                "ubuntu-26.04-minimal-cloudimg-amd64.img",
         "user": "ubuntu", "disk": "6G", "osinfo": "ubuntu24.04", "seed": "disk",
-        "packages": ["checksec"],
+        "packages": ["checksec", "needrestart", "apt-show-versions", "fwupd"],
         "note": "407 MiB; 'minimal' strips man pages/editors/Recommends — tools may be absent",
     },
     "debian": {
         "url": "https://cloud.debian.org/images/cloud/trixie/latest/"
                "debian-13-genericcloud-amd64.qcow2",
         "user": "debian", "disk": "5G", "osinfo": "debian13", "firmware": "uefi",
-        "packages": ["checksec"],
+        # needrestart -> rebuild-check; apt-show-versions -> the obsolete-package scan
+        # inside orphans; fwupd -> firmware.
+        #
+        # `deborphan` is deliberately NOT here: it no longer exists in Debian 13 or
+        # Ubuntu 26.04 (apt candidate "(none)"), and asking cloud-init for a package that
+        # cannot be resolved fails the whole `packages` step — the others still landed,
+        # but the run is reported as a failure. fettle's orphaned-library scan therefore
+        # stays a SKIP on these releases, correctly, because the tool is genuinely gone.
+        "packages": ["checksec", "needrestart", "apt-show-versions", "fwupd"],
         "note": "328 MiB, smallest of the lot; genericcloud has a reduced driver set (virtio only)",
     },
     "rocky9": {
@@ -99,7 +119,7 @@ TARGETS = {
         "url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/"
                "images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
         "user": "fedora", "disk": "6G", "osinfo": "fedora41", "firmware": "uefi",
-        "packages": ["checksec"],
+        "packages": ["checksec", "fwupd"],
         # Fedora is deliberately not a claimed distro (its advisories are Bodhi
         # FEDORA-*, not RHSA), so the backend must be named explicitly.
         "fettle_args": ["--distro", "rhel"],
@@ -137,6 +157,7 @@ packages:
   - python3
 {extra_packages}runcmd:
   - [systemctl, enable, --now, qemu-guest-agent]
+{extra_runcmd}
 final_message: "fettle-lab ready after $UPTIME seconds"
 """
 
@@ -367,6 +388,9 @@ def cmd_build(conf, args) -> int:
     # An optional second login, so the guests are reachable under one name across every
     # distro rather than the image's own default user (arch/debian/ubuntu/rocky/...).
     # Configured, not hardcoded — this repo is public.
+    # Some prerequisites cannot come from the package manager — Arch's AUR helpers live
+    # in the AUR itself — so a target may also ask for shell steps.
+    runcmd = "".join(f"  - {line}\n" for line in spec.get("runcmd", ()))
     admin = ""
     if conf.get("ADMIN_USER"):
         admin = (f"  - name: {conf['ADMIN_USER']}\n"
@@ -375,7 +399,8 @@ def cmd_build(conf, args) -> int:
                  f"    lock_passwd: false\n"
                  f"    ssh_authorized_keys:\n      - {pubkey}\n")
     user_data = USER_DATA.format(host=name, user=spec["user"], pubkey=pubkey,
-                                 extra_packages=extra, admin_user=admin)
+                                 extra_packages=extra, admin_user=admin,
+                                 extra_runcmd=runcmd)
     meta_data = f"instance-id: {name}-01\nlocal-hostname: {name}\n"
     print("==> building cloud-init seed")
     host_run(conf, "set -e; d=$(mktemp -d); "
@@ -507,7 +532,7 @@ def cmd_ssh(conf, args) -> int:
 # absolutely do — `-u` consumes the very pending upgrades `-O` exists to report, and an
 # `-o` that removed a package changes what `-P` sees. Without that isolation the sweep
 # would silently measure whatever the previous action left behind.
-READ_ONLY_ACTIONS = ["-P", "-H", "-d", "-x", "-r", "-k", "-f", "-O"]
+READ_ONLY_ACTIONS = ["-P", "-H", "-d", "-x", "-r", "-k", "-f", "-O", "-A", "-I"]
 MUTATING_ACTIONS = ["-c", "-o", "-u"]
 
 # `--yes` on the mutating ones is deliberate. Without a tty `ctx.confirm` returns its safe
@@ -515,7 +540,8 @@ MUTATING_ACTIONS = ["-c", "-o", "-u"]
 # be green and meaningless. The guests are disposable and reverted afterwards.
 _ACTION_NAMES = {"-P": "pkg-audit", "-H": "hardening", "-d": "config-drift",
                  "-x": "auto-updates", "-r": "rebuild-chk", "-k": "kernel",
-                 "-f": "firmware", "-O": "only-update", "-c": "clean",
+                 "-f": "firmware", "-O": "only-update", "-A": "aur-audit",
+                 "-I": "aur-ioc", "-c": "clean",
                  "-o": "orphans", "-u": "update"}
 
 # Substrings that mean "this did not run", not "this ran and found nothing". Keeping them
