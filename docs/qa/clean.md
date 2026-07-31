@@ -1,12 +1,15 @@
 # QA — `clean` (`-c`)
 
-**Purpose as advertised:** *"clean package-manager caches (asks first; `--yes` to skip)"*.
+**Purpose as advertised:** *"reclaim disk from downloaded package files; keeps rollback
+versions on Arch (asks first; `--yes` to skip the prompt)"*.
 
 **Purpose as a user understands it:** reclaim disk space taken by downloaded packages,
 without breaking anything.
 
-Status: **spec written, not yet run.** Cases derived from source
-(`fettle/actions.py:_clean`, `backends/{arch,debian,rhel}.py:clean_caches`) at v0.49.1.
+Status: **two sweeps run.** Sweep 1 (v0.49.1) produced 11 findings, 7 since fixed
+(v0.50.0 / v0.51.0 / v0.51.1). Sweep 2 (v0.51.1) confirmed those fixes on all six lab guests
+and found one more. Four findings are open, three of them deferred by Paul pending research
+(see `qa-runs-outstanding-issues-questions.md`).
 
 ---
 
@@ -18,14 +21,18 @@ finding.
 | Step | arch / manjaro | debian / ubuntu | rocky9 / alma9 / fedora |
 |---|---|---|---|
 | 1 | `rm -f /var/lib/pacman/db.lck` | — | — |
-| 2 | `pacman -Scc --noconfirm` | `apt-get clean` | `dnf clean packages` |
-| 3 | — | `apt-get autoclean -y` | — |
+| 2 | `paccache -r -u -k0` — drop packages no longer installed | `apt-get clean` | `dnf clean packages` |
+| 3 | `paccache -r -k<n>` — keep `n` versions of installed ones (`[clean] keep_versions`, default 2) | — | — |
+| 3b | *fallback with no `pacman-contrib`:* `pacman -Sc --noconfirm` | — | — |
 | 4 | `pamac clean --no-confirm` *(if pamac, as invoking user)* | — | — |
 | 5 | `rm -rf ~/.cache/{pamac,yay,paru}` | — | — |
 | 6 | `rm -rf /var/tmp/pamac-build-<user>` | — | — |
 | 7 | prune disabled snap revisions | prune disabled snaps *(if `snap` updater ≠ none)* | prune disabled snaps *(same)* |
 | 8 | — | `flatpak uninstall --unused -y` *(if flatpak present and ≠ none)* | same as debian |
-| 9 | `summary_add("caches cleaned")` | same | same |
+| 9 | summary from `actions._clean`, sized from `cache_paths()` | same | same (both `/var/cache/dnf` **and** `/var/cache/libdnf5`) |
+
+*(This table described the pre-fix commands until sweep 2. Keeping it current is part of the
+QA pass — a stale description of behaviour is the same defect class as a stale summary.)*
 
 ### Three observations that become test cases
 
@@ -113,6 +120,7 @@ target, not 26.
 | QA-CLEAN-26 | R10 | Underlying tool fails (simulate: unreadable cache dir) | Non-zero exit **or** an explicit warning — never a green summary over a failed clean | exit code + summary | A, D, E |
 | QA-CLEAN-27 | R2 | Count the success lines against the operations that could have had an effect | Every `✓` line corresponds to something that actually could happen. `apt-get autoclean` after `apt-get clean` cannot, so its tick is noise. | transcript | D, U |
 | QA-CLEAN-28 | R0 | Run on a distro fettle does not claim | Refuses clearly **and exits non-zero** — a run that did nothing must not report success to a script | `echo $?` | F (Fedora is unregistered) |
+| QA-CLEAN-29 | R12 | `[clean] keep_versions = 1` | The configured count reaches the command — `paccache -r -k1`, not `-k2` | `--dry-run` command list | A, M |
 
 ---
 
@@ -121,74 +129,67 @@ target, not 26.
 `—` = not yet run. Fill with PASS / FAIL / BLOCKED / n/a + reason. Record the fettle version
 and date of the sweep.
 
-**Sweep 1 — v0.49.1, 2026-07-31.**
-28 cases × 7 targets = 196 cells — **77 PASS · 35 FAIL · 6 BLOCKED · 65 n/a · 13 not run**.
-11 distinct findings (F-01 … F-11), of which one (**F-07**) means the action has never
-worked at all on the Arch family. Raw transcripts: `qa-clean-logs/` in the session
-scratchpad.
+**Sweep 1 — v0.49.1, 2026-07-31.** 28 cases × 7 targets — **77 PASS · 35 FAIL · 6 BLOCKED
+· 65 n/a · 13 not run**, 11 findings. Superseded by sweep 2; kept as the record of what the
+first pass found. Raw transcripts in the session scratchpad.
+
+**Sweep 2 — v0.51.1, 2026-07-31.** Full re-run on all six lab guests after the F-01…F-09
+fixes, plus the local Manjaro box (dry-run only). Two case groups that had never been run —
+config gating and the failure path — were added.
 
 | ID | arch | manjaro-local | debian | ubuntu | rocky9 | alma9 | fedora |
 |---|---|---|---|---|---|---|---|
-| QA-CLEAN-01 | **PASS** | — | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-02 | **FAIL** (F-07) | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-03 | **PASS** | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-04 | **PASS** | — | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-05 | **PASS** (build dirs are real here) | **PASS** | **FAIL** (F-02) | **FAIL** (F-02) | **FAIL** (F-02) | **FAIL** (F-02) | **FAIL** (F-02) |
-| QA-CLEAN-06 | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-07 | **FAIL** (F-01) | **FAIL** (F-01) | **FAIL** (F-01) | **FAIL** (F-01) | **FAIL** (F-01) | **FAIL** (F-01) | **FAIL** (F-01) |
-| QA-CLEAN-08 | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-09 | **PASS** | n/a (no real run to compare) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-10 | **FAIL** (F-07) | n/a (read-only target) | **PASS** (41 MB→0) | **PASS** (42 MB→0) | **PASS** (3 rpms→0) | **PASS** (3 rpms→0) | **PASS** (3 rpms→0) |
-| QA-CLEAN-11 | **FAIL** (F-03) | n/a (read-only target) | **FAIL** (F-03) | **FAIL** (F-03) | **FAIL** (F-03) | **FAIL** (F-03) | **FAIL** (F-03) |
-| QA-CLEAN-12 | **FAIL** (F-07) | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-13 | **FAIL** (F-04) | n/a (read-only target) | **FAIL** (F-04) | **FAIL** (F-04) | **FAIL** (F-04) | **FAIL** (F-04) | **FAIL** (F-04) |
-| QA-CLEAN-14 | **PASS** | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-15 | **PASS** | n/a (read-only target) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) |
-| QA-CLEAN-16 | — (needs a held lock) | n/a (read-only target) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) |
-| QA-CLEAN-17 | **PASS** | — (dry-run only) | n/a (no AUR helper) | n/a | n/a | n/a | n/a |
-| QA-CLEAN-18 | **PASS by accident** (F-07) | n/a (read-only target) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) | n/a (no pacman) |
-| QA-CLEAN-19 | **PASS** | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-20 | n/a (no flatpak key for arch) | n/a (read-only target) | — | — | — | — | — |
-| QA-CLEAN-21 | n/a (no snapd in image) | n/a (read-only target) | n/a (no snapd) | n/a (minimal image has no snapd) | n/a (no snapd) | n/a (no snapd) | n/a (no snapd) |
-| QA-CLEAN-22 | n/a | n/a (read-only target) | n/a (no snapd) | n/a (no snapd) | n/a (no snapd) | n/a (no snapd) | n/a (no snapd) |
-| QA-CLEAN-23 | BLOCKED — guests have passwordless sudo, so a double elevation leaves no symptom | n/a (read-only target) | BLOCKED (same) | BLOCKED (same) | BLOCKED (same) | BLOCKED (same) | BLOCKED (same) |
-| QA-CLEAN-24 | **PASS** | n/a (read-only target) | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** |
-| QA-CLEAN-25 | **FAIL** (F-08) | — | **FAIL** (F-08) | **FAIL** (F-08) | **FAIL** (F-08) | **PASS** (no stray file this run) | **FAIL** (F-08) |
-| QA-CLEAN-26 | — | n/a (read-only target) | — | n/a (same apt path as debian) | — | n/a (same dnf path as rocky9) | n/a (same dnf path) |
-| QA-CLEAN-27 | n/a (no autoclean step) | n/a | **FAIL** (F-09) | **FAIL** (F-09) | n/a | n/a | n/a |
-| QA-CLEAN-28 | n/a (registered) | n/a (registered) | n/a | n/a | n/a | n/a | **FAIL** (F-10, F-11) |
+| QA-CLEAN-01 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-02 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-03 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-04 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-05 | PASS | not run (needs a real prompt; wopr is dry-run only) | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-06 | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-07 | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-08 | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-09 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-10 | PASS (204→194) | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-11 | PASS (353 KiB) | n/a | PASS (39.2 MiB) | PASS (40.1 MiB) | PASS (3.0 MiB) | PASS (3.0 MiB) | PASS (3.3 MiB) |
+| QA-CLEAN-12 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-13 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-14 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-15 | PASS | n/a | n/a (no pacman) | n/a | n/a | n/a | n/a |
+| QA-CLEAN-16 | **DEFERRED** (F-05) | n/a | n/a | n/a | n/a | n/a | n/a |
+| QA-CLEAN-17 | PASS | not run | n/a | n/a | n/a | n/a | n/a |
+| QA-CLEAN-18 | PASS (on purpose now) | n/a | n/a | n/a | n/a | n/a | n/a |
+| QA-CLEAN-19 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-20 | n/a | n/a | BLOCKED¹ | BLOCKED¹ | BLOCKED¹ | BLOCKED¹ | BLOCKED¹ |
+| QA-CLEAN-21 | n/a (no snapd) | n/a | n/a | n/a (minimal image) | n/a | n/a | n/a |
+| QA-CLEAN-22 | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
+| QA-CLEAN-23 | BLOCKED² | n/a | BLOCKED² | BLOCKED² | BLOCKED² | BLOCKED² | BLOCKED² |
+| QA-CLEAN-24 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
+| QA-CLEAN-25 | **DEFERRED** (F-08) | not run | **DEFERRED** | **DEFERRED** | **DEFERRED** | **DEFERRED** | **DEFERRED** |
+| QA-CLEAN-26 | BLOCKED³ | n/a | BLOCKED³ | BLOCKED³ | **FAIL (F-12)** | **FAIL (F-12)** | BLOCKED³ |
+| QA-CLEAN-27 | n/a | n/a | PASS | PASS | n/a | n/a | n/a |
+| QA-CLEAN-28 | n/a | n/a | n/a | n/a | n/a | n/a | **DEFERRED** (F-10/F-11) |
+| QA-CLEAN-29 | PASS (`-k1`) | n/a | n/a | n/a | n/a | n/a | n/a |
 
-**Re-test after the F-07 fix — v0.50.0, arch target only**
+**29 cases × 7 = 203 cells — 96 PASS · 2 FAIL · 12 BLOCKED · 9 DEFERRED · 80 n/a · 4 not run.**
 
-| ID | before | after | evidence |
-|---|---|---|---|
-| QA-CLEAN-02 | FAIL | **PASS** | 10 cached files for uninstalled packages removed |
-| QA-CLEAN-07 | FAIL | **PASS** | dry-run now ends `✓ would clean caches` |
-| QA-CLEAN-10 | FAIL | **PASS** | 204 → 194 files |
-| QA-CLEAN-11 | FAIL | **PASS** | `✓ caches cleaned — 353 KiB reclaimed` |
-| QA-CLEAN-12 | FAIL | **PASS** | `bash` kept both cached versions |
-| QA-CLEAN-13 | FAIL | **PASS** | second run: `caches already clean — nothing to reclaim` |
-| QA-CLEAN-18 | PASS by accident | **PASS on purpose** | installed versions deliberately retained |
+¹ **Inconclusive, not passing.** `flatpak_updater = "none"` was set and no flatpak step ran
+— but flatpak is not installed on any guest, so "config honoured" and "tool absent" produce
+identical output. The case needs a guest with flatpak present to mean anything.
 
-**Re-test after the F-01/02/03/04/09 fixes — v0.51.0**
+² Guests have passwordless sudo, so a double elevation leaves no visible symptom.
 
-Verified live on **debian** and **rocky9**, one per affected backend:
+³ The failure injection (an immutable cached file) did not actually block anything on these
+targets: on arch the file was an *installed* package, which retention keeps by design, and
+on debian/ubuntu/fedora apt/dnf removed everything else and exited 0 regardless. Only the
+EL9 pair genuinely blocked. Needs a better injection to be a real test elsewhere.
 
-| ID | finding | evidence |
-|---|---|---|
-| QA-CLEAN-05 | F-02 | prompt is now `remove downloaded package caches?` — no build dirs |
-| QA-CLEAN-07 | F-01 | dry-run ends `✓ would clean caches` |
-| QA-CLEAN-11 | F-03 | `39.2 MiB reclaimed` (debian), `3.0 MiB reclaimed` (rocky9) |
-| QA-CLEAN-13 | F-04 | second run: `caches already clean — nothing to reclaim` |
-| QA-CLEAN-27 | F-09 | one apt line, no `autoclean` tick |
-
-**ubuntu, alma9 and fedora were not re-run.** They share the backend and code path with
-the target that was, so they are *expected* to pass — but expected is not measured, and
-this table does not pretend otherwise. Fold them into the next full sweep.
-
-Still open on `clean`: **F-05** (QA-CLEAN-16 — untested, needs a held pacman lock),
-**F-08** (QA-CLEAN-25 — run-log permissions, not clean-specific), and **F-10/F-11**
-(QA-CLEAN-28 — Fedora unsupported, exits 0).
+**Harness errors found and corrected during this sweep** — recorded because a bad test that
+reports PASS is worse than no test:
+- The arch prime downloaded only *installed* packages, one version each, so there was
+  nothing for retention to remove. "Nothing to reclaim" was the truthful answer and the case
+  proved nothing. Fixed by priming with packages that are not installed.
+- Piping the failure-path output through `tail -6` cut off the `✗ … failed` line, which
+  briefly looked like fettle swallowing an error entirely. It does not — see F-12 for what
+  it actually does.
 
 ---
 
@@ -258,6 +259,45 @@ Two defects in one: **(a)** the mode should be set at creation
 (`os.open(..., O_CREAT|O_EXCL, 0o600)`), making the later `chmod` belt-and-braces; **(b)**
 empty logs should not be left behind at all — they also consume rotation slots, so under
 `[reports] keep = 5` a handful of empty files can push real logs out.
+
+### F-12 — a *blocked* clean reports "already clean". NEW in sweep 2, rocky9 + alma9
+
+Found by QA-CLEAN-26, a case that had never been run before. With one cached RPM made
+undeletable (`chattr +i`), the full output is:
+
+```
+✗ dnf package cache cleared failed (exit 1):
+[Errno 1] Operation not permitted: '/var/cache/dnf/.../bash-5.1.8-9.el9.x86_64.rpm'
+
+▸ [1/1] Cleaning caches
+
+▸ Summary
+  ✓ caches already clean — nothing to reclaim
+EXIT=0
+```
+
+**The step-level report is correct** — `run_quiet` prints `✗ … failed (exit 1)` with dnf's
+error. Three problems follow it:
+
+1. **The summary contradicts the failure with a green tick.** Nothing was reclaimed because
+   the clean was *blocked*, not because there was nothing to do. Three RPMs remain. A user
+   reading only the summary — which is what a summary is for — is told the machine is fine.
+2. **Exit status is 0**, so automation sees a successful clean.
+3. **The error is printed before the section header**, because `err()` writes to stderr
+   unbuffered while stdout is block-buffered when piped. On a terminal it interleaves
+   correctly; over ssh or into a log the failure is detached from the step it belongs to.
+
+Same invariant as the finding that started all this: *could not do it* must not render as
+*nothing to do*. The distinction the summary now draws between "cleaned N" and "already
+clean" needs a third state for "tried and failed".
+
+**Fix direction:** `clean_caches` must report whether its commands succeeded — `ctx.execute`
+already returns the `Proc`, so the backends can track it — and `actions._clean` should
+choose the summary and the exit status from that rather than from the byte delta alone.
+
+Not reproduced on arch, debian, ubuntu or fedora: the injected immutable file was not a
+removal target there, so nothing was actually blocked. The defect is in shared code and
+almost certainly applies to all of them; it simply was not measured. See QA-CLEAN-26 note ³.
 
 ### F-09 — a success tick for an operation that cannot do anything. CONFIRMED, debian + ubuntu
 
