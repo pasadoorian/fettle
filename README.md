@@ -3,6 +3,18 @@
 </p>
 
 > # **⚠️ NOTE: THIS IS BETA CODE — USE AT YOUR OWN RISK.**
+>
+> **The 0.5.x line is undergoing a full feature-by-feature QA pass. Use with caution.**
+> Every action is being tested against seven live systems — Arch, Manjaro, Debian,
+> Ubuntu, Rocky, AlmaLinux and Fedora — and fixed where it misbehaves or explains itself
+> badly. That work is landing continuously in 0.5.x, so **behaviour can change between
+> releases**: read [CHANGELOG.md](CHANGELOG.md) before upgrading, and check
+> [`docs/qa/`](docs/qa/) for what has been verified and what has not.
+>
+> **The next stable release will be 0.6.0**, once the QA matrix is complete.
+>
+> The sweep has already found actions that reported success while doing nothing at all.
+> If you are running 0.5.x on something you care about, `--dry-run` first.
 
 > *in fine fettle* — in good working order.
 
@@ -33,6 +45,9 @@ real unit-test coverage the bash originals never had.
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
 - [Quick start](#quick-start)
 - [Maintenance actions](#maintenance-actions)
+  - [Cache cleaning (-c)](#cache-cleaning--c)
+  - [Checking for updates (-O)](#checking-for-updates--o)
+  - [Mirror refresh before upgrading — Arch family (-u)](#mirror-refresh-before-upgrading--arch-family--u)
 - [Package supply-chain](#package-supply-chain)
   - [Pre-upgrade gate](#pre-upgrade-gate)
   - [Binary hardening audit — `-H` / `hardening-audit`](#binary-hardening-audit---h--hardening-audit)
@@ -327,6 +342,37 @@ just Debian — each revision confirmed individually.
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.
+
+### Mirror refresh before upgrading — Arch family (`-u`)
+
+**On Manjaro, `fettle -u` regenerates `/etc/pacman.d/mirrorlist` before it upgrades
+anything.** That is a change to system configuration, so it is worth knowing about — and as
+of 0.54.0 it is configurable.
+
+It runs `pacman-mirrors -f`, which probes mirrors and rewrites the list in speed order.
+This is **on by default**, because a mirror that has fallen behind serves an old package
+database and the upgrade then resolves against versions that mirror no longer holds — a
+real and recurring cause of failed upgrades, not a theoretical one.
+
+```toml
+[updaters.arch]
+refresh_mirrors = true    # default — regenerate the mirrorlist before upgrading
+# refresh_mirrors = false # never touch the mirrorlist
+# refresh_mirrors = 5     # rank the fastest 5 mirrors only
+```
+
+**Consider setting a number.** Bare `pacman-mirrors -f` is not a moderate default: its
+argument is optional and defaults to "no limit", so every upgrade speed-tests *every* mirror
+it knows about. `refresh_mirrors = 5` keeps the protection and bounds the cost.
+
+**Vanilla Arch and EndeavourOS have no equivalent wired up.** `pacman-mirrors` is
+Manjaro-only; when the setting is on and the tool is absent, fettle says so and points at
+[`reflector`](https://wiki.archlinux.org/title/Reflector) rather than skipping in silence.
+Nothing is done to your mirrorlist there.
+
+**No other distribution needs this.** Fedora resolves mirrors through metalink, the RHEL
+family through a mirrorlist service, and Debian/Ubuntu through a CDN or apt's own failover —
+in each case the server picks, per request, so there is no local file to regenerate.
 
 ### Checking for updates (`-O`)
 

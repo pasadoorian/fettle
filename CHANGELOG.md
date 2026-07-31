@@ -1,8 +1,31 @@
 # Changelog
 
+> **The 0.5.x line is undergoing a full feature-by-feature QA pass — use with caution.**
+> Each action is being specified, run against seven live systems, and fixed where it
+> misbehaves or explains itself badly (see `docs/qa/`). Behaviour can therefore change
+> between 0.5.x releases; read the entry before upgrading. **The next stable release will
+> be 0.6.0**, once the QA matrix is complete.
+
 All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
+
+## [0.54.1] — say plainly that 0.5.x is under test, and document the mirror change
+
+Documentation only.
+
+- **Release-status notice**, at the top of both the README and this file: the 0.5.x line is
+  undergoing a feature-by-feature QA pass, behaviour can change between releases, and the
+  next stable release is **0.6.0**. The sweep has already found actions reporting success
+  while doing nothing at all, so the notice says `--dry-run` first if the machine matters.
+- **New README section on the Arch-family mirror refresh**, because `fettle -u` rewriting
+  `/etc/pacman.d/mirrorlist` is a change to system configuration and users should not have
+  to read the changelog to discover it. Covers why it defaults on, why setting a number is
+  worth it (bare `-f` has no limit and probes every known mirror), that vanilla Arch and
+  EndeavourOS have nothing wired up, and why no other distribution needs the concept —
+  Fedora uses metalink, the RHEL family a mirrorlist service, Debian/Ubuntu a CDN.
+- Table of contents now lists the per-action sections added during the QA pass.
+
 
 ## [0.54.0] — the Manjaro mirror refresh is now yours to configure
 
