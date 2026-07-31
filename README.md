@@ -312,7 +312,7 @@ just Debian — each revision confirmed individually.
 |---|---|---|---|---|
 | `-c` | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
 | `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
-| `-u` / `--upgrade` | `update` | pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
+| `-u` / `--upgrade` | `update` | mirrorlist refresh (Manjaro; `[updaters.arch] refresh_mirrors`), then pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
@@ -931,6 +931,12 @@ keep = 5                 # how many of each report/log to keep per host
 
 # Per-distro tool selection
 [updaters.arch]
+refresh_mirrors = true   # regenerate /etc/pacman.d/mirrorlist before upgrading (Manjaro).
+                         # ON by default: a mirror that has fallen behind serves an old
+                         # database, and the upgrade then resolves against packages it no
+                         # longer has. false = never touch the mirrorlist. An integer N
+                         # = the fastest N mirrors (`pacman-mirrors -f N`) — worth setting,
+                         # since bare -f speed-tests EVERY known mirror on every upgrade.
 system_updater = "pacman"   # pacman | pamac
 aur_updater    = "yay"      # yay | pamac | none
 

@@ -460,3 +460,55 @@ def test_auto_updates_no_systemctl(capsys):
         ArchBackend().check_auto_updates(_ctx())
     assert "cannot determine auto-update state" in capsys.readouterr().out
     assert calls == []  # short-circuits before any query
+
+
+# -- [updaters.arch] refresh_mirrors ------------------------------------------
+def _mirror_argvs(cfg=None):
+    calls, fake = _recorder()
+    ctx = _ctx()
+    if cfg is not None:
+        ctx.config.updaters = {"arch": {"refresh_mirrors": cfg}}
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().update_system(ctx)
+    return [c for c, _ in calls], ctx
+
+
+def test_mirrors_refresh_on_by_default():
+    """Default ON: a mirrorlist that has fallen behind serves an old database and
+    the upgrade then resolves against packages the mirror no longer has."""
+    argvs, _ = _mirror_argvs()
+    assert ["pacman-mirrors", "-f"] in argvs
+
+
+def test_mirrors_refresh_can_be_turned_off():
+    argvs, ctx = _mirror_argvs(False)
+    assert not any(c and c[0] == "pacman-mirrors" for c in argvs)
+    assert ["pacman", "-Syuu"] in argvs          # the upgrade still runs
+
+
+def test_mirrors_refresh_accepts_a_count():
+    """Bare -f tests the ENTIRE mirror pool (nargs='?', const=-1); a count bounds it."""
+    argvs, _ = _mirror_argvs(5)
+    assert ["pacman-mirrors", "-f", "5"] in argvs
+
+
+def test_mirrors_refresh_zero_means_no_limit():
+    argvs, _ = _mirror_argvs(0)
+    assert ["pacman-mirrors", "-f"] in argvs
+
+
+def test_mirrors_refresh_junk_value_warns_and_refreshes():
+    argvs, _ = _mirror_argvs("sometimes")
+    assert ["pacman-mirrors", "-f"] in argvs
+
+
+def test_mirrors_requested_but_tool_absent_says_so(capsys):
+    """Vanilla Arch has no pacman-mirrors. The setting is on and the user expects an
+    effect, so skipping in silence would leave them believing it happened."""
+    _, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", side_effect=lambda n: n != "pacman-mirrors"):
+        ArchBackend().update_system(_ctx())
+    out = capsys.readouterr().out
+    assert "pacman-mirrors" in out and "reflector" in out

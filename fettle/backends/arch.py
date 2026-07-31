@@ -170,6 +170,41 @@ class ArchBackend(PackageBackend):
             return _DEFAULT_KEEP_VERSIONS
         return n
 
+    def _mirror_refresh(self, ctx: Context) -> list[str] | None:
+        """argv to regenerate the mirrorlist before upgrading, or ``None`` to skip.
+
+        ``[updaters.arch] refresh_mirrors`` takes three shapes on purpose:
+
+        * ``true`` (default) — ``pacman-mirrors -f``. **On by default because a stale
+          mirrorlist breaks upgrades in practice**, not merely in theory: a mirror that
+          has fallen behind serves an old database, and pacman then resolves against
+          package versions that no longer exist on it.
+        * ``false`` — skip it. The mirrorlist is system configuration, and rewriting it
+          on every upgrade is a side effect some users would rather opt out of.
+        * an integer ``N`` — ``pacman-mirrors -f N``, the fastest N mirrors.
+
+        The integer form exists because bare ``-f`` is the *heaviest* variant, not a
+        middling default: its argument is ``nargs="?", const=-1``, and the builder reads
+        anything ``<= 0`` as "test the entire pool". Every upgrade therefore speed-tests
+        every known mirror. ``refresh_mirrors = 5`` is the usual Manjaro advice.
+        """
+        conf = {}
+        if isinstance(ctx.config.updaters, dict):
+            conf = ctx.config.updaters.get("arch", {}) or {}
+        raw = conf.get("refresh_mirrors", True)
+        if raw is False:
+            return None
+        if raw is True:
+            return ["pacman-mirrors", "-f"]
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            ctx.output.warn(f"[updaters.arch] refresh_mirrors: {raw!r} is not true, "
+                            "false or a whole number; refreshing all mirrors.")
+            return ["pacman-mirrors", "-f"]
+        # 0 or negative means "no limit" to pacman-mirrors itself, so pass bare -f.
+        return ["pacman-mirrors", "-f"] if n <= 0 else ["pacman-mirrors", "-f", str(n)]
+
     def _clean_pacman_cache(self, ctx: Context) -> None:
         """Reclaim the package cache without destroying offline rollback.
 
@@ -243,8 +278,20 @@ class ArchBackend(PackageBackend):
         system, aur = self._updaters(ctx)
         # `pacman-mirrors` is Manjaro-only; vanilla Arch / EndeavourOS map to this
         # backend and don't have it, so guard rather than fail the whole update.
+        argv = self._mirror_refresh(ctx)
         if command.which("pacman-mirrors"):
-            ctx.execute(["pacman-mirrors", "-f"], quiet=True, msg="mirrors refreshed")
+            if argv is None:
+                out.note("skipping mirror refresh "
+                         "([updaters.arch] refresh_mirrors = false).")
+            else:
+                ctx.execute(argv, quiet=True,
+                            msg="mirror list regenerated (/etc/pacman.d/mirrorlist)")
+        elif argv is not None:
+            # Asked for, but there is nothing here to do it with. Say so rather than
+            # skipping in silence — the setting is on and the user expects an effect.
+            out.note("mirror refresh requested, but `pacman-mirrors` is Manjaro-only "
+                     "and is not installed; leaving /etc/pacman.d/mirrorlist alone "
+                     "(on Arch, `reflector` is the usual tool).")
         if aur == "pamac":
             if system != "pamac":
                 out.note("AUR updater is pamac, which manages repos too — using pamac for both.")

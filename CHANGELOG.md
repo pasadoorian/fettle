@@ -4,6 +4,43 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.54.0] — the Manjaro mirror refresh is now yours to configure
+
+`update` on Manjaro has always run `pacman-mirrors -f` first, unconditionally and
+unannounced beyond a terse "mirrors refreshed". It rewrites `/etc/pacman.d/mirrorlist`,
+which is system configuration, so it should be the user's call.
+
+New **`[updaters.arch] refresh_mirrors`**, which takes three shapes:
+
+| Value | Behaviour |
+|---|---|
+| `true` *(default)* | `pacman-mirrors -f` — regenerate the mirrorlist before upgrading |
+| `false` | leave the mirrorlist alone |
+| integer `N` | `pacman-mirrors -f N` — rank the fastest N mirrors |
+
+**Default is ON, from experience rather than theory:** a mirror that has fallen behind
+serves an old database, and pacman then resolves the upgrade against package versions that
+mirror no longer holds. Reasoning alone suggested defaulting it off, since the historical
+case for local mirror ranking has weakened — modern Arch ships CDN endpoints
+(`geo.mirror.pkgbuild.com`, `fastly.mirror.pkgbuild.com`) and every other family fettle
+supports has moved mirror selection server-side (Fedora metalink, Rocky's mirrorlist
+service, Debian/Ubuntu CDNs). Measured breakage beats that argument.
+
+**Why the integer form exists.** Bare `-f` is not a moderate default but the heaviest
+variant: its argument is `nargs="?", const=-1`, and pacman-mirrors reads anything `<= 0` as
+"test the entire pool". So every upgrade speed-tests every known mirror. `refresh_mirrors =
+5` bounds that.
+
+Two smaller things while here: the status line now says **`mirror list regenerated
+(/etc/pacman.d/mirrorlist)`** rather than "mirrors refreshed", because the old wording did
+not reveal that a system file was being rewritten; and when the setting is on but
+`pacman-mirrors` is absent — vanilla Arch, EndeavourOS — fettle now says so and points at
+`reflector`, instead of skipping in silence while the user believes it ran.
+
+Verified on Manjaro under `--dry-run` for all three shapes; the mirrorlist was not touched.
+Seven tests.
+
+
 ## [0.53.0] — `-O` no longer answers with stale data as though it were current
 
 QA pass on `only-update`, swept across all seven targets.
