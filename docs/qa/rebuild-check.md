@@ -9,7 +9,7 @@ That second framing is the one that matters. A security update you have installe
 activated is not a security update. `-r` is in the **default action set**, so it is the step
 a routine `fettle -a` relies on to answer it.
 
-Status: **swept and fixed.** One sweep across all seven targets; five findings, four fixed by v0.58.0, one withdrawn as never real.
+Status: **swept.** One sweep across all seven targets; six findings — four fixed by v0.58.0, one withdrawn as never real, one (R-06) open and tracked with Q7.
 
 ---
 
@@ -127,7 +127,7 @@ reboot-pending state, then asked. `manjaro-local` read-only.
 | QA-REB-04 | **FAIL → fixed** | `-r` is in the default set; the reboot now surfaces in a routine run |
 | QA-REB-05 | **FAIL → fixed** | R-04: absent tool was a silent note with an empty summary |
 | QA-REB-06 | PASS *(after fix)* | arch: `checkrebuild failed (exit 3) — NOT determined`; rocky the same |
-| QA-REB-07 | PASS | RHEL states it when an unprivileged run cannot read other users' processes |
+| QA-REB-07 | PASS *(RHEL)* / **FAIL (arch)** | RHEL states it when a rootless run cannot look; Arch demands root it does not need — R-06 |
 | QA-REB-08 | **withdrawn** | R-05 — see below; the defect was never real |
 | QA-REB-09 | PASS *(by construction)* | failed rebuild now `summary_fail`; not exercised live |
 | QA-REB-10 | PASS | `--dry-run` left 2381 packages untouched on manjaro-local |
@@ -179,6 +179,17 @@ The code change (fall back to field 1 when only one exists) is harmless and stay
 guard, but it fixed a defect that was never there. Recorded rather than deleted, and
 corrected in the 0.57.0 changelog entry too — a claim written from reading rather than from
 measurement, which is the mistake this whole plan exists to catch.
+
+### R-06 — `-r` demands root on Arch for a check that does not need it. OPEN
+Noticed on `manjaro-local` and not recorded at the time — caught by a later audit rather
+than by the sweep, which is itself the finding about the process. `fettle -r` prompts for a
+sudo password; `checkrebuild` run directly as an unprivileged user exits 0 and returns the
+same answer.
+
+Elevation is decided from one global set (`cli.NO_ROOT_ACTIONS`) rather than per backend,
+and the right answer differs by family: RHEL genuinely needs root for its `-s` service list
+(documented — a rootless run silently returns nothing), Debian's `needrestart` likewise,
+Arch's `checkrebuild` does not. Same root cause as **Q7** (`-O` on Arch); tracked together.
 
 ### Harness notes
 - The sweep's "make the tool fail" step overwrote `/usr/bin/needs-restarting`, which on

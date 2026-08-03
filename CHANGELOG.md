@@ -10,6 +10,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.58.1] — audit of the QA findings so far
+
+Documentation only. An end-to-end check that every finding from the five completed sweeps
+is either fixed in the code or deliberately parked, rather than assumed to be.
+
+**All 29 findings accounted for.** 21 fixed and each verified present in the source, 1
+withdrawn as never real, 7 open by decision (three deferred pending Paul's research, three
+awaiting a direction, one cosmetic).
+
+**One finding was never written down.** `fettle -r` demands a sudo password on Arch, while
+`checkrebuild` run directly as an unprivileged user exits 0 and gives the same answer. It was
+observed during the `rebuild-check` pass, mentioned in passing, and never reached a case ID
+or a findings section — so the audit found it, not the sweep. Now recorded as **R-06** and
+folded into the existing question about elevation, which turns out to have two instances:
+
+* `-O` on Arch — `refresh_metadata` runs no command and the preview is rootless by design
+* `-r` on Arch — `checkrebuild` needs no privileges
+
+Both stem from `cli.NO_ROOT_ACTIONS` being one global set where the right answer is
+per-backend: RHEL genuinely needs root for its service list, Debian's `needrestart` likewise,
+Arch's tools do not. On Arch this makes two read-mostly actions unusable anywhere a password
+cannot be typed.
+
+**Stale statuses corrected in `docs/qa/clean.md`** — five findings still read as merely
+"CONFIRMED" although the retest table directly above them recorded the fixes. A findings list
+that does not carry its own status invites exactly the misreading this audit was checking for.
+
+
 ## [0.58.0] — two more ways a pending reboot went unmentioned
 
 The `rebuild-check` sweep across all six guests, after 0.57.0 fixed the Debian half.

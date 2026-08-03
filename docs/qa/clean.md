@@ -342,7 +342,7 @@ machine fettle never touched. Should be non-zero; see **QA-CLEAN-28**.
 
 **Predicted from source review, confirmed or refuted by the run:**
 
-- **F-01 (QA-CLEAN-07): CONFIRMED LIVE**, manjaro-local, v0.49.1, 2026-07-31.
+- **F-01 (QA-CLEAN-07): CONFIRMED LIVE, FIXED v0.51.0.**, manjaro-local, v0.49.1, 2026-07-31.
   `fettle -c --dry-run` printed seven accurate `would run:` lines and then
   `▸ Summary  ✓ caches cleaned`. Independently verified that nothing was touched: the
   package cache still held **59 GB across 15,859 files** afterwards. `clean_caches` calls
@@ -353,23 +353,23 @@ machine fettle never touched. Should be non-zero; see **QA-CLEAN-28**.
   commands — either skipped entirely under dry-run, or worded "would clean". Worth checking
   every other backend action for the same unconditional `summary_add` pattern, since this is
   a shape bug, not a one-off.
-- **F-02 (QA-CLEAN-05): CONFIRMED, 5 of 7 targets.** Every non-Arch target printed
+- **F-02 (QA-CLEAN-05): CONFIRMED on 5 of 7 targets, FIXED v0.51.0.** Every non-Arch target printed
   *"remove package-manager caches and build dirs? [y/N]"* and then touched no build
   directory, because none exists. Users are asked to consent to something that cannot
   happen — and on Debian/RHEL the phrase makes the prompt sound more destructive than it is,
   which is the wrong direction for a prompt whose safe default is No.
-- **F-03 (QA-CLEAN-11): CONFIRMED, all 7.** No family reports space reclaimed. Debian freed
+- **F-03 (QA-CLEAN-11): CONFIRMED on all 7, FIXED v0.50.0/0.51.0.** No family reports space reclaimed. Debian freed
   41 MB and said `✓ apt cache cleared`; Rocky freed 3 MB of rpms and said `✓ dnf package
   cache cleared`; both messages are identical to the ones printed when nothing is freed. The
   single number a user wants from this command is the one number it never prints.
-- **F-04 (QA-CLEAN-13): CONFIRMED, all 7.** A second consecutive `-c --yes` against an
+- **F-04 (QA-CLEAN-13): CONFIRMED on all 7, FIXED v0.51.0.** A second consecutive `-c --yes` against an
   already-empty cache produces byte-identical output to the run that emptied it. There is no
   way to tell "freed 41 MB" from "there was nothing to free".
 - **F-05 (QA-CLEAN-16): UNTESTED.** `rm -f /var/lib/pacman/db.lck` is unconditional and the
   message calls the lock "stale" without establishing that it is. QA-CLEAN-15 passed (a
   genuinely stale lock is removed), but the case that matters — a lock held by a *running*
   pacman — was not exercised. Needs a follow-up run holding the lock.
-- **F-06 (QA-CLEAN-18): masked by F-07, and becomes live the moment F-07 is fixed.**
+- **F-06 (QA-CLEAN-18): FIXED v0.50.0, together with F-07 as required.**
   QA-CLEAN-18 "passed" on Arch only because the clean removes nothing. `pacman -Scc` removes
   cached copies of currently-installed packages — the standard offline rollback path on Arch
   — with no warning, while the RHEL backend goes out of its way to be conservative about a
