@@ -113,9 +113,12 @@ shortcut flags & their fuller subcommand forms (use the subcommand for options):
   fettle advisory-update                           refresh the advisory cache
 
 which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
-  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap/containers/extensions)
-  -A  aur-audit     AUR health census: age, votes, out-of-date, orphan
-  -I  aur-ioc-scan  match installed AUR pkgs to known-compromise (IoC) feeds
+  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap/containers/extensions).
+                    INCLUDES everything -I checks; the only one in the default set.
+  -A  aur-audit     AUR census: age, votes, maintainer + what nothing depends on
+                    any more (only -A tells you what is safe to remove)
+  -I  aur-ioc-scan  AUR threat scan only — the same IoC checks -P runs, on their
+                    own and faster. Not in the default set (-P covers it).
   -p  aur-precheck  per-package pre-install check (RPC + IoC); bare = all installed
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged

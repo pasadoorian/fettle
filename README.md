@@ -47,6 +47,7 @@ real unit-test coverage the bash originals never had.
 - [Reading the output](#reading-the-output)
 - [Maintenance actions](#maintenance-actions)
   - [Cache cleaning (-c)](#cache-cleaning--c)
+  - [Three AUR checks, and which to reach for](#three-aur-checks-and-which-to-reach-for)
   - [Did an upgrade change your config? (-d)](#did-an-upgrade-change-your-config--d)
   - [Removing orphans (-o)](#removing-orphans--o)
   - [Is the patch actually in effect? (-r)](#is-the-patch-actually-in-effect--r)
@@ -448,6 +449,42 @@ offer to rebuild packages built against since-upgraded libraries.
 determined"* rather than as a clean result — the distinction matters most here, because
 "nothing to do" is exactly what a broken check looks like.
 
+### Three AUR checks, and which to reach for
+
+Three actions look at AUR packages and they deliberately overlap. `fettle -P` includes the
+AUR checks because a supply-chain audit that skipped your most-privileged install channel
+would be misleading; the other two are focused views of the same data.
+
+| | `-P` pkg-audit | `-A` aur-audit | `-I` aur-ioc-scan |
+|---|---|---|---|
+| **scope** | every ecosystem: AUR, apt, flatpak, snap, containers, editor + shell extensions | AUR only | AUR only |
+| not in the AUR any more | ● | ● | |
+| orphaned / flagged out-of-date / stale | ● | ● | |
+| on a known-malicious package list | ● | | ● |
+| maintained by a known-malicious account | ● | | ● |
+| malicious JS dependency trace | ● | | ● |
+| maintainer changed since last run | ● | ● | |
+| votes, reverse dependents, removal candidates | | ● | |
+| **in the default `-a` set** | ● | | |
+
+**Which one do I want?**
+
+- **`-P`** — the routine one, and the only one in the default set. Everything below, plus
+  every other install channel on the box.
+- **`-A`** — *"what should I clean up or stop trusting?"* The full census: age, votes,
+  maintainer, and the reverse-dependency analysis that finds AUR packages nothing on the
+  system needs any more. Only `-A` tells you what is safe to remove.
+- **`-I`** — *"is anything I installed known to be malicious?"* Nothing else; fastest of
+  the three. Useful on its own after news of a campaign breaks.
+
+**`-I` is not in the default set**, because `-P` performs all three of its checks. Running
+both meant every routine run fetched the AUR RPC and the IoC feeds twice and reported each
+finding twice.
+
+They keep **separate** maintainer-change baselines. Sharing one meant whichever action ran
+first consumed the difference and rewrote the file, so a maintainer takeover was reported
+once and was invisible to the other — the exact signal all three exist to catch.
+
 ### Did an upgrade change your config? (`-d`)
 
 Package managers leave a file behind whenever an upgrade meets a config file you had
@@ -565,9 +602,10 @@ the subcommand form for their own options.
 
 **Default set** (run when you pass no action, or `-a`/`--all`): clean, orphans,
 update, rebuild-check, python-rebuild-check, config-drift, auto-updates,
-firmware-check, and — last, read-only — the security audits **pkg-audit** (`-P`)
-and **aur-ioc-scan** (`-I`), so a full run also reports where your packages came
-from and whether any installed AUR package matches a known-compromise feed.
+firmware-check, and — last, read-only — **pkg-audit** (`-P`), so a full run also
+reports where your packages came from and whether any of them matches a
+known-compromise feed. `-I` is **not** in the default set: `-P` already runs all
+three of its checks (see [Three AUR checks](#three-aur-checks-and-which-to-reach-for)).
 Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-H`.
 
 `auto-updates` (`-x`) is a **read-only, informational** report of whether the

@@ -87,7 +87,15 @@ class AURSource(SourceProvider):
     def _maintainer_changes(self, by_name, ctx) -> list[Finding]:
         from ..util import chown_to_user
 
-        snap_path = ctx.user_home / ".cache/fettle/aur-maintainers.json"
+        # Its own baseline. Shared with aur-audit until v0.66.0, where whichever ran
+        # first consumed the diff and rewrote the file, so the other always reported
+        # "no changes" — losing exactly the maintainer-takeover signal both exist to
+        # catch. The legacy path is still read as a one-time fallback.
+        snap_path = ctx.user_home / ".cache/fettle/aur-maintainers-pkgaudit.json"
+        if not snap_path.is_file():
+            legacy = ctx.user_home / ".cache/fettle/aur-maintainers.json"
+            if legacy.is_file():
+                snap_path = legacy
         current = {n: (r.get("Maintainer") or "ORPHAN") for n, r in by_name.items()}
         previous: dict[str, str] = {}
         if snap_path.is_file():
@@ -105,6 +113,7 @@ class AURSource(SourceProvider):
                                        f"maintainer changed {old} -> {maint} (review before upgrade)"))
         if not ctx.dry_run:
             try:
+                snap_path = ctx.user_home / ".cache/fettle/aur-maintainers-pkgaudit.json"
                 snap_path.parent.mkdir(parents=True, exist_ok=True)
                 snap_path.write_text(json.dumps(current))
                 # Chown back so a root run doesn't leave a file the user can't read.

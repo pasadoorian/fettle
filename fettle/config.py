@@ -27,7 +27,12 @@ except ModuleNotFoundError:  # < 3.11
 DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuild_check",
                    "python_rebuild_check", "config_drift", "auto_updates",
                    "firmware_check",
-                   "pkg_audit", "aur_ioc_scan"]  # security audits last (read-only)
+                   "pkg_audit"]  # security audits last (read-only)
+# `aur_ioc_scan` is deliberately NOT in the default set: `pkg_audit` runs every check it
+# does — the malicious-package list, the malicious-account list and the JS-cache trace —
+# and does so across every ecosystem. Having both meant each routine run fetched the AUR
+# RPC and the IOC feeds twice and reported every finding twice. `-I` remains available on
+# its own as the fast AUR-only threat scan.
 
 
 @dataclass

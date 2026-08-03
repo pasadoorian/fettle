@@ -221,9 +221,16 @@ def test_unsupported_action_is_skipped(capsys):
     assert "not supported by the debian backend" in cap.out
 
 
-def test_default_set_includes_security_audits():
+def test_default_set_includes_the_supply_chain_audit():
+    """`pkg_audit` covers every ecosystem, including all three AUR IoC checks.
+
+    `aur_ioc_scan` is deliberately absent: it is a strict subset of pkg-audit's AUR
+    provider, so having both meant every routine run fetched the AUR RPC and the IOC
+    feeds twice and reported each finding twice. It stays available on its own.
+    """
     from fettle.config import DEFAULT_ACTIONS
-    assert "pkg_audit" in DEFAULT_ACTIONS and "aur_ioc_scan" in DEFAULT_ACTIONS
+    assert "pkg_audit" in DEFAULT_ACTIONS
+    assert "aur_ioc_scan" not in DEFAULT_ACTIONS
 
 
 def test_hardening_audit_flag_word_and_opt_in():

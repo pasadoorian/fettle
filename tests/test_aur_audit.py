@@ -183,3 +183,25 @@ def test_rpc_failure_is_not_silent_in_the_summary(tmp_path, capsys):
         audit.run(ctx)
     ctx.output.print_summary()
     assert "did NOT run" in capsys.readouterr().out
+
+
+def test_maintainer_baseline_is_not_shared_with_pkg_audit(tmp_path):
+    """One file was shared with pkg-audit's AUR provider, and both read *and rewrote*
+    it — so a maintainer takeover was reported once, by whichever action ran first, and
+    was invisible to the other. `fettle -P` then `fettle -A` and -A said "none"."""
+    from fettle.supplychain.aur_source import AURSource
+    by_name = {"pkg": {"Name": "pkg", "Maintainer": "alice"}}
+    ctx = _ctx(tmp_path)
+    # pkg-audit establishes its baseline first...
+    with patch("fettle.aur.common.foreign_packages", return_value=["pkg"]), \
+         patch("fettle.aur.meta.query_info", return_value=[by_name["pkg"]]), \
+         patch("fettle.aur.common.ioc_feed") as feed:
+        feed.return_value.bad_packages.return_value = set()
+        feed.return_value.bad_accounts.return_value = set()
+        feed.return_value.bad_npm.return_value = set()
+        AURSource().findings(ctx)
+    # ...and aur-audit must still see its own first run, not an already-consumed diff.
+    changes, first_run = audit._maintainer_changes(by_name, ctx)
+    assert first_run is True and changes == []
+    assert (tmp_path / ".cache/fettle/aur-maintainers-pkgaudit.json").is_file()
+    assert (tmp_path / ".cache/fettle/aur-maintainers-audit.json").is_file()

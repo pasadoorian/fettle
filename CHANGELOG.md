@@ -10,6 +10,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.66.0] — three AUR checks, told apart
+
+Prompted by running `pkg-audit` on a real box and finding two AUR sections whose
+relationship to `-A` and `-I` was undocumented. Measured, the overlap is near-total:
+**`-P` performs every check `-I` does**, and everything `-A` does except votes and the
+reverse-dependency analysis.
+
+Two concrete consequences, both fixed; the overlap itself is deliberate and now documented
+rather than restructured.
+
+**`fettle -a` did the AUR work twice.** `-P` and `-I` were both in the default set, so every
+routine run fetched the AUR RPC and the IoC feeds twice and reported each finding twice.
+`-I` is **no longer in the default set** — `-P` covers it — and remains available on its own
+as the fast AUR-only threat scan.
+
+**A maintainer takeover was reported once and then invisible.** `-P` and `-A` shared
+`~/.cache/fettle/aur-maintainers.json` and both *read and rewrote* it, so whichever ran first
+consumed the difference and reset the baseline: run `fettle -P` then `fettle -A` and the
+second said "none". That is precisely the signal all three actions exist to catch. They now
+keep separate baselines, with the old shared file still read once as a fallback so nothing
+already pending is lost on upgrade.
+
+**New README section, "Three AUR checks, and which to reach for"**, with a per-check table
+and plain guidance: `-P` is the routine one and the only default; `-A` is the census and the
+only one that tells you what is safe to *remove*; `-I` is the threat scan alone, for when
+news of a campaign breaks. `fettle -h` carries the short version.
+
+
 ## [0.65.0] — the malware scan could report "clean" without having checked
 
 QA pass on `aur-ioc-scan`. It is **in the default action set**, so it runs on every

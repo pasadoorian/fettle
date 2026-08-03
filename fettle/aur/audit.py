@@ -18,7 +18,13 @@ from ..util import chown_to_user
 from . import common as aur_common
 from . import meta as aur_meta
 
-_SNAPSHOT = ".cache/fettle/aur-maintainers.json"
+# Per-action maintainer baseline. It used to be ONE file shared with pkg-audit's AUR
+# provider, and both read *and rewrote* it — so a maintainer takeover, the signal that
+# matters most here, was reported exactly once by whichever action ran first and was
+# invisible to the other. `fettle -P` then `fettle -A` and the second said "none".
+_SNAPSHOT = ".cache/fettle/aur-maintainers-audit.json"
+# Read-only fallback, so upgrading does not discard a change that is already pending.
+_LEGACY_SNAPSHOT = ".cache/fettle/aur-maintainers.json"
 _HEADER = f'{"PACKAGE":<34} {"MAINTAINER":<16} {"AGE(d)":>7} {"OOD":<8} {"VOTES":>6}  FLAGS'
 _RULE = "-" * 90
 
@@ -247,6 +253,10 @@ def _maintainer_changes(by_name, ctx) -> tuple[list[str], bool]:
     Shares the snapshot file with pkg-audit's AUR provider.
     """
     snap_path = ctx.user_home / _SNAPSHOT
+    if not snap_path.is_file():
+        legacy = ctx.user_home / _LEGACY_SNAPSHOT      # read-only migration path
+        if legacy.is_file():
+            snap_path = legacy
     current = {n: (r.get("Maintainer") or "ORPHAN") for n, r in by_name.items()}
     previous: dict[str, str] = {}
     had_snapshot = snap_path.is_file()
@@ -262,10 +272,11 @@ def _maintainer_changes(by_name, ctx) -> tuple[list[str], bool]:
                if n in previous and previous[n] != m]
     if not ctx.dry_run:
         try:
-            snap_path.parent.mkdir(parents=True, exist_ok=True)
-            snap_path.write_text(json.dumps(current))
-            chown_to_user(snap_path.parent, ctx.sudo_user)  # don't leave root-owned
-            chown_to_user(snap_path, ctx.sudo_user)
+            write_to = ctx.user_home / _SNAPSHOT       # always our own file
+            write_to.parent.mkdir(parents=True, exist_ok=True)
+            write_to.write_text(json.dumps(current))
+            chown_to_user(write_to.parent, ctx.sudo_user)  # don't leave root-owned
+            chown_to_user(write_to, ctx.sudo_user)
         except OSError:
             pass
     return changes, not had_snapshot
