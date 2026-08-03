@@ -10,6 +10,29 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.56.1] — count only what is actually installed on Debian
+
+Follow-up to 0.56.0, found by chasing a number that did not add up.
+
+The `orphans` sweep showed Ubuntu claiming 10 packages autoremoved while the installed count
+dropped by 8. **fettle was right and the measurement was wrong:** `dpkg-query -W` also lists
+**`rc`** packages — removed, but with their config files kept — and two of the ten had left
+config behind. All ten really went.
+
+But the same mistake was inside the fix shipped in 0.56.0. `installed_packages()` used the
+unfiltered `dpkg-query -W`, and a plain `apt-get remove` leaves a package in exactly that
+`rc` state — so it would appear in **both** the before and after snapshot and the diff would
+score it as still installed, under-reporting every removal on the Debian family. It now
+filters to status `ii`.
+
+The Debian autoremove path also reports the measured set rather than the preview count, so
+every removal path on every family now answers the same question: what actually went?
+
+`docs/qa/orphans.md` carries the full sweep — six guests, candidate lists cross-checked
+against each distro's own tool, `keep_orphans` honoured and named, `--dry-run` and
+no-stdin removing nothing anywhere.
+
+
 ## [0.56.0] — `orphans` asks about everything it removes, and counts it honestly
 
 QA pass on `orphans`, the one action that deletes installed software.

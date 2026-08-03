@@ -611,3 +611,17 @@ def test_auto_updates_reports_an_attached_host_plainly(capsys):
     _with_pro(_pro_json(attached=True, services=("esm-infra", "esm-apps")))
     said = capsys.readouterr().out
     assert "attached" in said and "esm-infra" in said
+
+
+def test_installed_packages_excludes_config_only_leftovers():
+    """`dpkg-query -W` also lists `rc` packages — removed, config kept. A plain
+    `apt-get remove` leaves exactly that state, so counting them as installed makes a
+    removed package appear in both the before and after snapshot and the diff misses
+    it. Measured on Ubuntu: two of ten autoremoved packages left config behind."""
+    listing = ("ii  bash\n"
+               "ii  coreutils\n"
+               "rc  libnl-3-200:amd64\n"
+               "rc  ibverbs-providers:amd64\n")
+    with patch("fettle.command.run", return_value=command.Proc(0, listing, "")):
+        pkgs = DebianBackend().installed_packages(_ctx())
+    assert pkgs == {"bash", "coreutils"}

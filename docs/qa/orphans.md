@@ -9,7 +9,7 @@ decide what goes."*
 after a mistake; this one can leave a machine missing something it needed. The cases below
 are weighted accordingly: consent, and the accuracy of what consent was asked for.
 
-Status: **spec written from source at v0.55.2, not yet run.**
+Status: **swept and fixed.** One sweep across all seven targets at v0.56.0; three findings, all fixed by v0.56.1.
 
 ---
 
@@ -98,8 +98,79 @@ it prints the full set first and then asks once, so the preview *is* the transac
 
 ## Results
 
-*(to be filled by the sweep)*
+**Sweep 1 — v0.56.0, 2026-08-03.** Six lab guests, each primed with a package marked as a
+dependency so there was something real to remove; `manjaro-local` `--dry-run` only.
+
+| Target | Candidates | Installed before | After `--yes` | Actually removed | Reported |
+|---|---|---|---|---|---|
+| arch | 1 (`nmap`) | 273 | 271 | **2** | `2 package(s) removed (including 1 unused dependency(ies): lua54)` |
+| debian | 5 | 442 | 437 | 5 | `5 unused dependency(ies) autoremoved` |
+| ubuntu | 10 | 440 | 432* | 10 | `10 unused dependency(ies) autoremoved` |
+| rocky9 | 4 | 427 | 423 | 4 | `4 package(s) removed` |
+| alma9 | 2 | 389 | 387 | 2 | `2 package(s) removed` |
+| fedora | 0 | 501 | 501 | 0 | *(nothing to report)* |
+
+\* **The Ubuntu row is where my measurement was wrong, not fettle.** The count appeared to
+drop by 8 against a claim of 10 — but `dpkg-query -W` also lists **`rc`** packages (removed,
+config files kept), and two of the ten left config behind. All ten were removed; fettle was
+right. That mistake did expose a real bug in the fix shipped hours earlier — see **O-03**.
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| QA-ORPH-01 | PASS | review report written on every family; path stated |
+| QA-ORPH-02 | PASS | candidates match `pacman -Qtdq` / `autoremove --dry-run` / `repoquery --unneeded` on all six |
+| QA-ORPH-03 | not run | needs `exclude_foreign` seeded |
+| QA-ORPH-04 | PASS | `keep_orphans = ["nmap"]` → *"protected orphans (keep_orphans): nmap"*, then nothing offered |
+| QA-ORPH-05 | PASS | fedora had no candidates and said so; second runs likewise |
+| QA-ORPH-06 | PASS | declining pacman's transaction left all 273 packages |
+| QA-ORPH-07 | not run | needs an interactive `q` mid-list |
+| QA-ORPH-08 | PASS | `--dry-run` removed nothing and wrote **no** report on any family |
+| QA-ORPH-09 | PASS | `< /dev/null` removed nothing on all six |
+| QA-ORPH-10 | **FAIL → fixed** | O-01: consented to 1, removed 2, with no chance to refuse |
+| QA-ORPH-11 | PASS | `--yes` removed all offered candidates unattended |
+| QA-ORPH-12 | PASS | EL: kernels absent from the offered set; hold-backs named |
+| QA-ORPH-13 | not run | needs `repoquery --installonly` broken deliberately |
+| QA-ORPH-14 | **FAIL → fixed** | O-02: claimed the *selected* count, not the removed count |
+| QA-ORPH-15 | not run | needs a removal that fails mid-transaction |
+| QA-ORPH-16 | PASS | "no orphaned packages found" vs "no orphans removed" are distinct |
+| QA-ORPH-17 | PASS | reports 0600 |
+| QA-ORPH-18 | **FAIL** (open) | O-04: Arch is silent about the report under `--dry-run`; Debian says "would be saved" |
 
 ## Findings
 
-*(to be filled by the sweep)*
+### O-01 — consent was asked for less than was removed. FIXED v0.56.0
+`pacman -Rs` also drops dependencies the chosen package was the last thing needing.
+Measured: `pacman -Qtdq` offers `nmap`; removing it also takes `lua54`. fettle ran
+`pacman -Rsn --noconfirm`, so pacman printed the two-package transaction and then **answered
+its own confirmation** — the extra package went by on screen with no way to refuse it.
+Debian's `apt-get purge -y` had the same shape.
+
+The RHEL backend already documents avoiding exactly this. Both other paths now drop the
+suppressing flag unless `--yes`, making the package manager's transaction a real decision
+point. Verified: declining leaves all 273 packages and reports nothing removed.
+
+*Correction to the prediction:* the source review claimed the cascade "cannot be seen".
+Wrong — pacman prints it, because the output is streamed rather than captured. The defect
+was the missing opportunity to refuse, and the count. Worth recording as an instance of a
+source-reading claim that measurement narrowed.
+
+### O-02 — the count was of what was chosen, not what went. FIXED v0.56.0
+`✓ 1 orphan(s) removed` while two packages were removed. New
+`PackageBackend.installed_packages()`; the removal paths now diff the installed set around
+the command and name anything beyond the selection:
+`✓ 2 package(s) removed (including 1 unused dependency(ies): lua54)`.
+
+### O-03 — the fix for O-02 mis-counted on Debian. FIXED v0.56.1
+Found by chasing the Ubuntu discrepancy above. `dpkg-query -W` lists `rc` packages —
+removed, config retained — and a plain `apt-get remove` leaves a package in exactly that
+state. It would therefore appear in **both** the before and after snapshot, and the diff
+would report it as still installed. `installed_packages()` now filters to status `ii`.
+
+Introduced and caught within the same day, by a measurement that disagreed with the tool and
+turned out to be the thing that was wrong.
+
+### O-04 — `--dry-run` report behaviour differs by family. OPEN
+Arch writes no review report under `--dry-run` and says nothing about it; Debian writes none
+but prints *"N obsolete/foreign package(s) would be saved for review"*. Both are defensible;
+being different is not, and the Arch user has no idea a report is part of this action.
+Cosmetic, and left open rather than fixed blind.

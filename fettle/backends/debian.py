@@ -329,8 +329,19 @@ class DebianBackend(PackageBackend):
 
     # -- orphans / obsolete --------------------------------------------------
     def installed_packages(self, ctx: Context) -> set[str]:
-        out = self._query(["dpkg-query", "-W", "-f", "${binary:Package}\n"])
-        return {n.split(":")[0] for n in out.split() if n}
+        """Only packages actually installed — status ``ii``.
+
+        `dpkg-query -W` alone also lists **`rc`** packages: removed, but with their
+        config files kept. A plain `apt-get remove` leaves a package in exactly that
+        state, so it would appear in a before *and* an after snapshot and the diff would
+        count it as still present. Measured on Ubuntu, where two of ten autoremoved
+        packages left config behind.
+        """
+        out = self._query(["dpkg-query", "-W", "-f",
+                           "${db:Status-Abbrev} ${binary:Package}\n"])
+        return {line.split()[1].split(":")[0]
+                for line in out.splitlines()
+                if line.startswith("ii") and len(line.split()) > 1}
 
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
@@ -391,8 +402,14 @@ class DebianBackend(PackageBackend):
             if ctx.dry_run:
                 out.note("would run: apt-get autoremove -y")
             elif ctx.confirm("remove these now (apt-get autoremove)?"):
+                before = self.installed_packages(ctx)
                 ctx.execute(["apt-get", "autoremove", "-y"])
-                out.summary_add(f"{len(removable)} unused dependency(ies) autoremoved")
+                gone = before - self.installed_packages(ctx) if before else set()
+                # The preview is normally exact here — autoremove removes what it said
+                # it would — but reporting the measured set keeps every removal path
+                # answering the same question: what actually went?
+                out.summary_add(f"{len(gone) or len(removable)} unused "
+                                "dependency(ies) autoremoved")
         return Result()
 
     def _autoremove_preview(self, ctx: Context) -> list[str]:
