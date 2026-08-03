@@ -107,7 +107,7 @@ Status of each feature's QA pass. `—` = not started.
 | kernel | `-k` | [kernel.md](kernel.md) | **swept — 2 fixed, 1 open (Arch-only)** |
 | aur-audit | `-A` | [aur-audit.md](aur-audit.md) | **swept — 2 findings, both fixed** |
 | aur-ioc-scan | `-I` | [aur-ioc-scan.md](aur-ioc-scan.md) | **swept — 5 findings, all fixed** |
-| pkg-audit | `-P` | — | — |
+| pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 1 fixed, 1 open** |
 | hardening-audit | `-H` | — | — |
 | container-update | `-C` | — | — |
 | sys-audit | `-S` | — | — |

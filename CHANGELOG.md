@@ -10,6 +10,48 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.67.0] — findings are a to-do list, not an accomplishment
+
+QA pass on `pkg-audit`, the only audit in the default set and the broadest thing fettle
+does — seven providers across AUR, apt/dnf, flatpak, snap, containers, GNOME, VS Code and
+`gh` extensions.
+
+**46 open items under a green tick.** On a real workstation the summary read
+`✓ 46 supply-chain finding(s)`. A green mark over a to-do list reads as "all good" at a
+glance. The three-state vocabulary now applies:
+
+```
+✓ no supply-chain findings
+! N supply-chain finding(s)                              open items, exit 0
+✗ N supply-chain finding(s), M CRITICAL — INVESTIGATE    exit 1
+```
+
+**A CRITICAL finding now fails the run.** This is the one read-only audit where that is
+right: a package on a known-malicious list is not a to-do item, and a scripted run should
+stop rather than continue with a warning in the log.
+
+**What was already right and is worth recording**: absent providers are named rather than
+skipped silently (`[gh] not present on this system — nothing to audit`), and every provider
+states its own coverage limits before its findings, including what it explicitly does not do.
+That is the invariant this whole QA plan chases, already handled here.
+
+### The VSCodium case, and a gap it exposed
+
+Two extensions flagged as sideloaded `.vsix` stopped being reported after
+`codium --update-extensions`. Verified **correct**: their index entries genuinely changed
+from `source: vsix` to `source: gallery`, so the provenance concern no longer applied. The
+finding describes the copy currently installed, not the extension's history.
+
+But nothing said so — a finding vanishing could equally mean the check broke or the
+extension was uninstalled. **The audits have no notion of *resolved***, which is the mirror
+of the invariant they are built on. Recorded as an open question rather than fixed in a
+sweep, since a findings-diff has real design questions and the same gap exists in
+`advisory-check` and `hardening-audit`.
+
+In the meantime the finding now says how to clear it: *"re-install it from the registry to
+clear this (codium --update-extensions, …)"*.
+
+
 ## [0.66.0] — three AUR checks, told apart
 
 Prompted by running `pkg-audit` on a real box and finding two AUR sections whose

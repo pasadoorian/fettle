@@ -285,8 +285,13 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
         crit = sum(1 for f in findings if f.severity >= Severity.CRIT)
         msg = f"{len(findings)} supply-chain finding(s)"
         if crit:
-            msg += f", {crit} CRITICAL — INVESTIGATE"
-        out.summary_add(msg)
+            # A known-malicious package is not a to-do item. This is the one read-only
+            # audit whose result should stop an automated run.
+            out.summary_fail(f"{msg}, {crit} CRITICAL — INVESTIGATE")
+        else:
+            # Findings are open items, not an accomplishment — a green tick over 46 of
+            # them reads as "all good" at a glance, which is the opposite of the point.
+            out.summary_warn(msg)
 
     # Persist a plain-text report under ~/.fettle/reports/<host>/.
     if not ctx.dry_run:

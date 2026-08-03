@@ -14,6 +14,12 @@ each extension came from — ``metadata.source`` distinguishes a registry instal
 Answers: ``UNOFFICIAL_SOURCE`` (sideloaded, bypassing the registry entirely),
 ``UNVERIFIABLE`` (the index is unreadable — never silently reported as clean).
 
+The sideload finding describes **the copy currently installed**, not the extension's
+history, so updating it from the registry clears it — measured: two extensions flagged
+as ``vsix`` were re-fetched by ``codium --update-extensions`` and their index entries
+became ``source: gallery``. That is the remediation, and the finding disappearing is how
+you can tell it worked.
+
 Does **not** answer whether a publisher is who they claim, or whether extension code is
 malicious. Deciding that reliably needs a curated known-good publisher list per
 registry, which is a maintenance burden fettle does not take on; ``coverage`` says so.
@@ -124,7 +130,10 @@ class VSCodeSource(SourceProvider):
                         Severity.WARN, self.source, name, UNOFFICIAL_SOURCE,
                         f"installed from a local .vsix file{claimed} — it bypassed the "
                         "registry entirely, so no namespace or publisher check applied; "
-                        "extensions run unsandboxed with your full user privileges"))
+                        "extensions run unsandboxed with your full user privileges. "
+                        "Re-install it from the registry to clear this "
+                        f"({'codium' if label.startswith('vscodium') else 'code'} "
+                        "--update-extensions, or install it from the Extensions view)"))
                 elif not ext["source"]:
                     out.append(Finding(
                         Severity.LOW, self.source, name, UNOFFICIAL_SOURCE,
