@@ -564,3 +564,47 @@ def test_orphan_summary_counts_what_was_actually_removed(capsys):
     out = capsys.readouterr().out
     assert "2 package(s) removed" in out
     assert "lua54" in out            # and names the one nobody asked about
+
+
+# -- rebuild-check: the running kernel being replaced underneath you -----------
+def _mods(tmp_path, dirs):
+    base = tmp_path / "usr/lib/modules"
+    base.mkdir(parents=True)
+    for d in dirs:
+        (base / d).mkdir()
+    return tmp_path
+
+
+def test_rebuild_check_reports_a_replaced_running_kernel(tmp_path, capsys):
+    """Measured on a guest running 7.1.3-arch1-3 with 7.1.5-arch1-2 installed: the
+    running kernel's module tree was gone — so it could no longer load any module —
+    and fettle said only "no packages need rebuilding"."""
+    import os as _os
+    root = _mods(tmp_path, [f"not-{_os.uname().release}"])
+    ctx = _ctx(root=root)
+    with patch("fettle.command.run", return_value=command.Proc(0, "", "")), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_rebuilds(ctx)
+    ctx.output.print_summary()
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert "reboot required" in out.lower()
+
+
+def test_rebuild_check_quiet_when_running_kernel_is_installed(tmp_path, capsys):
+    import os as _os
+    ctx = _ctx(root=_mods(tmp_path, [_os.uname().release]))
+    with patch("fettle.command.run", return_value=command.Proc(0, "", "")), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_rebuilds(ctx)
+    ctx.output.print_summary()
+    assert "reboot" not in capsys.readouterr().out.lower()
+
+
+def test_rebuild_check_silent_without_a_module_tree(tmp_path, capsys):
+    """A container has no /usr/lib/modules — that is not a stale kernel."""
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", return_value=command.Proc(0, "", "")), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_rebuilds(ctx)
+    ctx.output.print_summary()
+    assert "reboot" not in capsys.readouterr().out.lower()

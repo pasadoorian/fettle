@@ -10,6 +10,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.58.0] — two more ways a pending reboot went unmentioned
+
+The `rebuild-check` sweep across all six guests, after 0.57.0 fixed the Debian half.
+
+**Arch had the same gap, with a sharper edge.** A guest running kernel `7.1.3-arch1-3` with
+`7.1.5-arch1-2` installed reported `✓ no packages need rebuilding` and nothing else —
+`checkrebuild` only looks at libraries. But the `linux` package *owns*
+`/usr/lib/modules/<release>`, and an upgrade replaces that directory: the running kernel
+could no longer load any module it had not already loaded. Plugging in a USB device or
+mounting an unusual filesystem would simply fail.
+
+Detected now by comparing `uname -r` against the module directories on disk, rather than
+parsing version strings — the package version (`7.1.5.arch1-2`) and the kernel release
+(`7.1.5-arch1-2`) are punctuated differently and matching them textually is a trap.
+Verified in both directions: the guest warns, and a workstation with **13** module
+directories whose running kernel is among them stays quiet.
+
+**A dnf4 host without `yum-utils` was given a false all-clear.** The RHEL backend chose its
+reboot-hint command by asking whether the standalone `needs-restarting` binary existed,
+treating absence as "this must be dnf5". It is not: a dnf4 host simply without `yum-utils`
+also lacks it, and there `dnf needs-restarting` is a **process list that exits 0** whether or
+not a reboot is owed.
+
+Measured, and the contrast is the proof — same dnf 4.14.0, same lab, opposite outcomes:
+
+| | standalone tool | fettle said | truth |
+|---|---|---|---|
+| **AlmaLinux 9** | absent | *(nothing about a reboot)* | running 687.5.3, **687.31.1 installed** |
+| **Rocky 9** | present | `reboot required` | running 687.10.1, 687.33.1 installed |
+
+The generation now comes from `dnf --version`, and a dnf4 host with no standalone tool is
+told the check could not run — and pointed at `yum-utils` — rather than given silence that
+reads as a pass. This is the failure the backend's own docstring set out to prevent ("only
+exit 0 is allowed to mean 'no reboot'"); the guard was right, the command being guarded was
+wrong.
+
+`docs/qa/rebuild-check.md` carries the full sweep.
+
+
 ## [0.57.0] — Debian never told you to reboot
 
 QA pass on `rebuild-check`. The question this action exists to answer is *"I just patched
@@ -53,10 +92,17 @@ restarting"*. On Arch, a missing `checkrebuild` was a quiet note with an empty s
 *failing* `checkrebuild` produced *"no packages need rebuilding"*. Both now say the check
 did not run.
 
-**And `-r -R` could rebuild nothing while offering to.** The package list took field 2 of
-each `checkrebuild` line and dropped anything shorter, so on a build that prints one field
-per line the count shown and the count acted on differed silently. A failed rebuild is also
-now a failure rather than `✓ rebuilt packages with outdated deps`.
+**A failed rebuild is now a failure** rather than `✓ rebuilt packages with outdated deps`.
+
+> **Correction (added after this entry first shipped).** It also claimed `-r -R` "could
+> rebuild nothing while offering to", because the package list took field 2 of each
+> `checkrebuild` line and dropped shorter ones. **That does not happen.** `checkrebuild`
+> emits `repo<TAB>pkgname` — always two fields; its source ends with
+> `awk '{ print $2 "\t" $1 }'`, and a live run prints `foreign⇥zoom`. The original parse
+> was correct. The code change (fall back to field 1 when a line has only one) is harmless
+> and stays as a guard, but it fixed a defect that was never there, and the claim was
+> written from reading rather than from measurement. Left visible rather than deleted,
+> for the same reason 0.43.2 is.
 
 
 ## [0.56.1] — count only what is actually installed on Debian

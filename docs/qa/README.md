@@ -99,7 +99,7 @@ Status of each feature's QA pass. `—` = not started.
 | orphans | `-o` | [orphans.md](orphans.md) | **swept — 3 findings fixed, 1 open** |
 | update | `-u` | [update.md](update.md) | **swept — 6 findings, all fixed** |
 | only-update | `-O` | [only-update.md](only-update.md) | **swept — 4 findings fixed, 2 open for decision** |
-| rebuild-check | `-r` | — | — |
+| rebuild-check | `-r` | [rebuild-check.md](rebuild-check.md) | **swept — 4 findings fixed, 1 withdrawn** |
 | python-rebuild-check | `-y` | — | — |
 | config-drift | `-d` | — | — |
 | auto-updates | `-x` | — | — |

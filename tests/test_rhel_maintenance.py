@@ -576,12 +576,16 @@ _NR_REBOOT = ("Core libraries or services have been updated since boot-up:\n"
 
 
 def _rebuilds(*, standalone=True, hint=(0, _NR_CLEAN, ""), services=(0, "", ""),
-              root=True):
+              root=True, dnf5=True):
     calls = []
 
     def run(cmd, *, as_user=None, capture=False):
         cmd = list(cmd)
         calls.append(cmd)
+        if cmd == ["dnf", "--version"]:
+            # The generation must come from here, not from whether the standalone
+            # binary happens to be installed — see test_dnf4_without_yum_utils_*.
+            return command.Proc(0, "dnf5 version 5.4.2.1\n" if dnf5 else "4.14.0\n", "")
         if cmd[-1] == "-s":
             return command.Proc(*services)
         return command.Proc(*hint)
@@ -609,6 +613,21 @@ def test_dnf5_uses_the_subcommand_without_r():
     assert ["dnf", "needs-restarting"] in calls
     assert not any(c[:1] == ["needs-restarting"] for c in calls)
     assert not any("-r" in c for c in calls)
+
+
+def test_dnf4_without_yum_utils_admits_it_cannot_tell(capsys):
+    """A dnf4 host simply *without* yum-utils also lacks the standalone binary, and
+    there `dnf needs-restarting` is a PROCESS LIST that exits 0 whether or not a reboot
+    is owed. Measured on AlmaLinux 9 (dnf 4.14.0, no yum-utils) running kernel
+    5.14.0-687.5.3 with 687.31.1 installed: fettle reported no reboot at all. Rocky 9 —
+    same dnf, yum-utils present — got it right. Absence of the tool is not evidence of
+    dnf5."""
+    ctx, calls = _rebuilds(standalone=False, dnf5=False)
+    said = capsys.readouterr()
+    assert "NOT determined" in said.err and "yum-utils" in said.err
+    assert "no reboot required" not in said.out
+    # and it must not run the process-listing command as though it were the hint
+    assert ["dnf", "needs-restarting"] not in calls
 
 
 def test_exit_1_means_reboot_required(capsys):

@@ -580,8 +580,44 @@ class ArchBackend(PackageBackend):
             out.ok("nothing was removed.")
         return Result()
 
+    @staticmethod
+    def _running_kernel_modules_gone(ctx: Context) -> tuple[bool, str]:
+        """Whether the running kernel's module tree has been removed by an upgrade.
+
+        The canonical Arch symptom, and it is worse than "a reboot is pending": the
+        `linux` package owns ``/usr/lib/modules/<release>`` and an upgrade *replaces* that
+        directory, so the running kernel can no longer load any module it has not already
+        loaded. Plugging in a USB device or mounting an unusual filesystem fails until
+        the machine reboots.
+
+        Compares ``uname -r`` against the directories on disk rather than parsing version
+        strings — the package version (``7.1.5.arch1-2``) and the kernel release
+        (``7.1.5-arch1-2``) are punctuated differently, and matching them textually is a
+        trap. Measured on a guest running 7.1.3 with 7.1.5 installed: the 7.1.3 tree was
+        gone and nothing in fettle said so.
+        """
+        running = os.uname().release
+        base = ctx.root / "usr/lib/modules"
+        try:
+            present = sorted(p.name for p in base.iterdir() if p.is_dir())
+        except OSError:
+            return False, ""          # no module tree to reason about (container?)
+        if not present or running in present:
+            return False, ""
+        return True, f"running {running}, installed {', '.join(present)}"
+
     def check_rebuilds(self, ctx: Context) -> Result:
         out = ctx.output
+        # Kernel first — `checkrebuild` only looks at libraries, so a machine whose
+        # running kernel was replaced underneath it reported "no packages need
+        # rebuilding" and nothing else. RHEL has always reported this; Arch did not.
+        stale_kernel, detail = self._running_kernel_modules_gone(ctx)
+        if stale_kernel:
+            out.warn(f"REBOOT REQUIRED — the running kernel's modules are gone "
+                     f"({detail}); it can no longer load any module it has not "
+                     "already loaded.")
+            out.summary_add("reboot required (running kernel replaced)")
+            out.next_step("reboot to start running the kernel you have installed")
         if not command.which("checkrebuild"):
             # Not a silent skip: the summary would otherwise be empty, which reads
             # exactly like "nothing needs rebuilding" to anyone not watching closely.

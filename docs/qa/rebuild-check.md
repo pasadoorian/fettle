@@ -9,7 +9,7 @@ That second framing is the one that matters. A security update you have installe
 activated is not a security update. `-r` is in the **default action set**, so it is the step
 a routine `fettle -a` relies on to answer it.
 
-Status: **spec written from source at v0.56.1; the headline case already measured.**
+Status: **swept and fixed.** One sweep across all seven targets; five findings, four fixed by v0.58.0, one withdrawn as never real.
 
 ---
 
@@ -106,8 +106,85 @@ the identical run on Rocky says "reboot required". → **QA-REB-01**
 
 ## Results
 
-*(to be filled by the sweep)*
+**Sweep 1 — v0.57.0, 2026-08-03.** Each guest was upgraded mid-sweep to create a genuine
+reboot-pending state, then asked. `manjaro-local` read-only.
+
+| Target | Running kernel | Installed | Reboot owed? | fettle said (before fixes) |
+|---|---|---|---|---|
+| arch | 7.1.3-arch1-3 | 7.1.5-arch1-2 | **yes** | *"no packages need rebuilding"* — **missed** |
+| debian | 6.12.96 | 6.12.100 | **yes** | `reboot required (kernel)` ✓ *(0.57.0 fix)* |
+| ubuntu | 7.0.0-28 | 7.0.0-28 | no | services only ✓ **correct** |
+| rocky9 | 687.10.1 | 687.33.1 | **yes** | `reboot required` ✓ |
+| alma9 | 687.5.3 | 687.31.1 | **yes** | services only — **missed** |
+| fedora | 6.19.10 | — | **yes** | `reboot required` ✓ |
+| manjaro-local | 7.1.4-1-MANJARO | present on disk | no | quiet ✓ (13 module dirs, no false positive) |
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| QA-REB-01 | **FAIL → fixed** | R-01 (debian), R-02 (arch), R-03 (alma9) |
+| QA-REB-02 | PASS | service lists match `needrestart` / `needs-restarting -s` |
+| QA-REB-03 | PASS | arch before upgrade: `checkrebuild` 0 lines, fettle agreed |
+| QA-REB-04 | **FAIL → fixed** | `-r` is in the default set; the reboot now surfaces in a routine run |
+| QA-REB-05 | **FAIL → fixed** | R-04: absent tool was a silent note with an empty summary |
+| QA-REB-06 | PASS *(after fix)* | arch: `checkrebuild failed (exit 3) — NOT determined`; rocky the same |
+| QA-REB-07 | PASS | RHEL states it when an unprivileged run cannot read other users' processes |
+| QA-REB-08 | **withdrawn** | R-05 — see below; the defect was never real |
+| QA-REB-09 | PASS *(by construction)* | failed rebuild now `summary_fail`; not exercised live |
+| QA-REB-10 | PASS | `--dry-run` left 2381 packages untouched on manjaro-local |
+| QA-REB-11 | PASS | `-r` without `-R` never rebuilt anything on any guest |
+| QA-REB-12 | **FAIL → fixed** | three families gave three different answers to one situation |
+| QA-REB-13 | PASS *(after fix)* | the summary now carries "reboot required" |
 
 ## Findings
 
-*(to be filled by the sweep)*
+### R-01 — Debian never reported a required reboot. FIXED v0.57.0
+`needrestart` supplies `NEEDRESTART-KSTA` and fettle read only the service lines. On a box
+running 6.12.96 with 6.12.100 installed it advised restarting three services — advice that
+cannot help while the running kernel is the unpatched one. `-k` is not in the default set,
+so a routine `fettle -a` said nothing about it.
+
+### R-02 — Arch never reported it either, and the consequence is worse. FIXED v0.58.0
+`checkrebuild` looks only at libraries. Meanwhile the `linux` package owns
+`/usr/lib/modules/<release>` and an upgrade **replaces** that directory, so the running
+kernel cannot load any module it has not already loaded — a USB device plugged in after the
+upgrade simply does not work. Measured: `/usr/lib/modules/7.1.3-arch1-3` was gone while the
+machine was still running it.
+
+Detected by comparing `uname -r` against the directories present, not by parsing versions:
+the package version and the kernel release are punctuated differently
+(`7.1.5.arch1-2` vs `7.1.5-arch1-2`).
+
+### R-03 — a dnf4 host without `yum-utils` got a false all-clear. FIXED v0.58.0
+The backend picked its command by asking whether the standalone `needs-restarting` existed,
+treating absence as dnf5. A dnf4 host merely lacking `yum-utils` also has no such binary, and
+there `dnf needs-restarting` is a **process list that exits 0** regardless. Rocky and Alma —
+identical dnf 4.14.0, differing only in whether that package happened to be installed —
+therefore gave opposite answers to the same question.
+
+The generation now comes from `dnf --version`. This is exactly the failure the backend's own
+docstring set out to prevent; the guard was right, the guarded command was wrong.
+
+### R-04 — "could not look" read as clean, twice. FIXED v0.57.0
+Absent `checkrebuild` → a quiet note and an empty summary. Failing `checkrebuild` → empty
+stdout → *"no packages need rebuilding."* Empty `needrestart` output → *"no services need
+restarting"*, though it always prints a header, so nothing at all means it did not run.
+
+### R-05 — WITHDRAWN: `-r -R` rebuilding nothing while offering to
+Predicted from source: the package list took field 2 of each `checkrebuild` line and dropped
+shorter ones, so a one-field format would silently empty it. **It does not happen.**
+`checkrebuild` emits `repo<TAB>pkgname` — its source ends `awk '{ print $2 "\t" $1 }'`, and
+a live run prints `foreign⇥zoom`. The original parse was correct.
+
+The code change (fall back to field 1 when only one exists) is harmless and stays as a
+guard, but it fixed a defect that was never there. Recorded rather than deleted, and
+corrected in the 0.57.0 changelog entry too — a claim written from reading rather than from
+measurement, which is the mistake this whole plan exists to catch.
+
+### Harness notes
+- The sweep's "make the tool fail" step overwrote `/usr/bin/needs-restarting`, which on
+  Rocky is a **symlink to `/usr/libexec/dnf-utils`** — that clobbered the real tool and the
+  restore did not take. Repaired with `dnf reinstall yum-utils`. Simulating failure by
+  overwriting a binary is a bad idea when the binary may be a symlink.
+- The sweep's "native says" cross-check ran `sudo needs-restarting -r` and read exit 1 as
+  *"reboot required"*. On Alma, where the binary does not exist, exit 1 was
+  **command-not-found**. The finding was real, but that particular evidence was not.

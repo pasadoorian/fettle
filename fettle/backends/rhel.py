@@ -630,8 +630,16 @@ class RhelBackend(PackageBackend):
         **Two invocations, one meaning.** dnf4 ships a standalone ``needs-restarting``
         (from ``yum-utils``) where ``-r`` is the reboot hint. dnf5 ships **no such
         binary** — the hint is bare ``dnf needs-restarting``, and its own ``-r`` is
-        documented as *"Has no effect, kept for compatibility with DNF 4"*. Keyed on which
-        of the two exists rather than on a version string.
+        documented as *"Has no effect, kept for compatibility with DNF 4"*.
+
+        **This used to key on which binary existed, and that was wrong.** Absence of the
+        standalone tool is not evidence of dnf5: a dnf4 host simply without ``yum-utils``
+        also lacks it, and there ``dnf needs-restarting`` is a *process list* that exits
+        **0** whether or not a reboot is owed. Measured on AlmaLinux 9 (dnf 4.14.0, no
+        yum-utils) running kernel 5.14.0-687.5.3 with 687.31.1 installed: fettle reported
+        no reboot. Rocky 9 — the same dnf, with yum-utils present — reported it correctly.
+        So the generation is now read from ``dnf --version``, and a dnf4 host with no
+        standalone tool is told the check could not run rather than given a false all-clear.
 
         **Exit codes, measured on both: 0 = no reboot needed, 1 = reboot required.** 1 is
         also dnf's generic error code, so as everywhere else in this backend the output is
@@ -649,7 +657,19 @@ class RhelBackend(PackageBackend):
                      "dnf5: `dnf install dnf5-plugin-needs-restarting`); skipping.")
             return Result()
 
-        hint = ["needs-restarting", "-r"] if standalone else ["dnf", "needs-restarting"]
+        if standalone:
+            hint = ["needs-restarting", "-r"]
+        elif self._is_dnf5():
+            hint = ["dnf", "needs-restarting"]
+        else:
+            # dnf4 with no yum-utils: there is no reboot hint here at all. Saying so is
+            # the whole point — `dnf needs-restarting` would exit 0 and look like a pass.
+            out.warn("whether a reboot is required was NOT determined: on dnf4 that "
+                     "needs `needs-restarting -r` from yum-utils (`dnf install "
+                     "yum-utils`). dnf4's own `dnf needs-restarting` lists processes, "
+                     "not the reboot state, and exits 0 either way.")
+            self._restartable_services(ctx, standalone=False)
+            return Result(ok=False)
         proc = command.run(hint, capture=True)
         body = _strip_dnf_notices(proc.stdout or "")
         if proc.returncode == 0:
@@ -668,6 +688,13 @@ class RhelBackend(PackageBackend):
 
         self._restartable_services(ctx, standalone=bool(standalone))
         return Result()
+
+    @staticmethod
+    def _is_dnf5() -> bool:
+        """dnf5 prints ``dnf5 version 5.x.y``; dnf4 prints a bare ``4.x.y``."""
+        out = command.run(["dnf", "--version"], capture=True).stdout or ""
+        first = out.splitlines()[0].lower() if out.splitlines() else ""
+        return "dnf5" in first
 
     @staticmethod
     def _restartable_services(ctx: Context, *, standalone: bool) -> None:
