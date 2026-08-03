@@ -10,6 +10,49 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.63.0] — fix the pattern, not the instance
+
+QA pass on `python-rebuild-check`, which found the same *shape* of bug the `kernel` sweep had
+just found: **a fix applied to one action, never carried to its sibling.**
+
+`check_rebuilds` gained a guard in v0.57.0 so a failed rebuild is reported as a failure.
+`check_python_rebuilds` — the adjacent method in the same file — still ran
+`summary_add("rebuilt packages for Python …")` unconditionally. Two sweeps in a row finding
+that shape was enough, so this time the codebase was searched for the whole pattern rather
+than the instance:
+
+```
+summary_add claiming an outcome, with no failure check in the preceding lines
+  fettle/backends/arch.py:722  rebuilt packages for Python {current}
+```
+
+One hit, now fixed, and the pattern is otherwise clear across every backend. That result is
+worth more than the fix.
+
+**Two more from the same pass.** Stranded packages never reached the summary, so a
+`fettle -a` run with packages broken by a Python upgrade produced a digest identical to one
+with none — in the action whose only job is surfacing them. And when the running Python
+version could not be determined, `current` fell back to the string `"unknown"`, so every
+`python3.*` directory was compared against `"pythonunknown"`, matched nothing, and counted as
+old — every package owning one would have been reported as stranded. It now says the check
+did not run.
+
+## Elevation is now per-backend
+
+`-y` demanded a sudo password for `python3 -c`, a glob and `pacman -Qoq` — all rootless.
+That was the **third** instance after `-O` and `-r`, which is what justified fixing the cause.
+
+`cli.NO_ROOT_ACTIONS` was one global set where the right answer is per-family: on Arch those
+three actions genuinely need nothing (its `refresh_metadata` runs no command at all, and
+`checkrebuild` exits 0 as an ordinary user — both measured), while on apt and dnf the same
+three really do write under `/var`. Backends now declare `extra_no_root`; only Arch declares
+anything.
+
+The tracker entry for this had assumed it was awkward because elevation is decided before the
+backend is chosen. It is not — the backend is already detected first. Verified on the
+workstation: `-y`, `-r` and `-O` all run unprivileged now, and Debian/RHEL still elevate.
+
+
 ## [0.62.0] — the safety change `orphans` got, applied to the action that needs it more
 
 QA pass on `kernel`, the highest-stakes action in the tool: every other mistake can be undone

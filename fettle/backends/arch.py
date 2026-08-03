@@ -96,6 +96,10 @@ class ArchBackend(PackageBackend):
         "container_update",
     }
 
+    # Measured, not assumed: `checkrebuild` and `pacman -Qoq` both exit 0 as an
+    # unprivileged user, and `refresh_metadata` here runs no command whatsoever.
+    extra_no_root = {"only_update", "rebuild_check", "python_rebuild_check"}
+
     def supply_chain_sources(self):
         from ..supplychain.aur_source import AURSource
         return [AURSource(), *super().supply_chain_sources()]
@@ -673,7 +677,14 @@ class ArchBackend(PackageBackend):
         out = ctx.output
         current = self._query(
             ["python3", "-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"]
-        ).strip() or "unknown"
+        ).strip()
+        if not current:
+            # Without the current version every python3.* directory looks "old", and
+            # every package owning one would be reported as stranded. Refusing to guess
+            # beats inventing a sentinel version that matches nothing.
+            out.warn("could not determine the running Python version — packages "
+                     "stranded on an old Python were NOT checked.")
+            return Result(ok=False)
         out.note(f"current Python version: {current}")
         libdir = ctx.root / "usr/lib"
         old_dirs = sorted(
@@ -718,9 +729,19 @@ class ArchBackend(PackageBackend):
             print(f"    {pk}")
         if ctx.auto_rebuild:
             if ctx.confirm(f"rebuild {len(ordered)} package(s) for Python {current}?"):
+                failed_before = len(ctx.failed_commands)
                 self._rebuild(ordered, ctx)
-                out.summary_add(f"rebuilt packages for Python {current}")
+                if len(ctx.failed_commands) > failed_before:
+                    out.summary_fail(f"rebuild for Python {current} did NOT complete — "
+                                     "see the errors above.")
+                else:
+                    out.summary_add(f"{len(ordered)} package(s) rebuilt for "
+                                    f"Python {current}")
         else:
+            # Without this the digest said nothing at all, so a `fettle -a` run with
+            # stranded packages looked identical to one with none — in the action whose
+            # whole purpose is surfacing them.
+            out.summary_add(f"{len(ordered)} package(s) stranded on an old Python")
             out.next_step(f"rebuild for Python {current}: fettle -y -R")
         return Result()
 

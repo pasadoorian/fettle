@@ -202,6 +202,14 @@ class PackageBackend(abc.ABC):
     name: str = "base"
     supported: set[str] = set()
 
+    # Actions that need no root **on this distro**. Whether an action needs
+    # privileges is genuinely per-family, and treating it as universal made fettle ask
+    # for a password it had no use for: on Arch, `-O` runs no command at all (the
+    # preview resolves against a rootless private DB), `-r`'s `checkrebuild` exits 0 as
+    # an ordinary user, and `-y` only reads the package database. On apt and dnf the
+    # same three genuinely write under /var. Backends add to the CLI's shared set.
+    extra_no_root: set[str] = set()
+
     def supports(self, action: str) -> bool:
         return action in self.supported
 

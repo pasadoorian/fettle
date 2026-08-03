@@ -75,7 +75,8 @@ ACTION_HELP = {
                     "waiting, without installing anything"),
     "rebuild_check": ("is the patch in effect? reports a pending reboot and "
                       "services still running old libraries"),
-    "python_rebuild_check": "rebuild packages stranded on an old Python",
+    "python_rebuild_check": ("find packages stranded on an old Python after an "
+                             "interpreter upgrade (rebuild them with -R)"),
     "config_drift": ("did an upgrade change your config? flags files where YOUR "
                      "version is no longer in effect, not just new defaults"),
     "auto_updates": ("is this host patching itself? reports whether automatic "
@@ -938,7 +939,8 @@ def _main(argv: list[str]) -> int:
     # passwordless; --full-preview is the explicit opt-in to elevate anyway, because the
     # only way to resolve a full dnf transaction is to run `dnf upgrade --assumeno` as
     # root (it refuses otherwise, and there is no `apt-get -s` equivalent).
-    needs_root = any(a not in NO_ROOT_ACTIONS for a in runnable)
+    no_root = NO_ROOT_ACTIONS | getattr(backend, "extra_no_root", set())
+    needs_root = any(a not in no_root for a in runnable)
     if needs_root and (not args.dry_run or args.full_preview) \
             and not _is_root() and not _in_test():
         _reexec_with_sudo(args)

@@ -661,3 +661,77 @@ def test_config_drift_works_without_pacdiff(tmp_path, capsys):
 def test_config_drift_quiet_when_clean(tmp_path, capsys):
     _drift(tmp_path, [])
     assert "no pending config-file merges" in capsys.readouterr().out
+
+
+# -- python-rebuild-check ------------------------------------------------------
+def _pyreb(tmp_path, dirs, owners=None, current="3.14", rebuild_rc=0, **kw):
+    """Stub /usr/lib/python3.* and pacman -Qoq. `owners` maps a path fragment -> pkgs."""
+    lib = tmp_path / "usr/lib"
+    lib.mkdir(parents=True)
+    for d in dirs:
+        (lib / d).mkdir()
+    owners = owners or {}
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        if cmd[:2] == ["python3", "-c"]:
+            return command.Proc(0, current + "\n", "")
+        if cmd[:2] == ["pacman", "-Qoq"]:
+            return command.Proc(0, "\n".join(owners.get(cmd[2], [])) + "\n", "")
+        if cmd[0] in ("yay", "pamac"):
+            return command.Proc(rebuild_rc, "", "build failed")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(root=tmp_path, **kw)
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=True):
+        res = ArchBackend().check_python_rebuilds(ctx)
+    return res, ctx
+
+
+def test_python_rebuild_reports_stranded_packages_in_the_summary(tmp_path, capsys):
+    """The digest said nothing at all, so a `fettle -a` run with stranded packages
+    looked identical to one with none — in the action whose whole purpose is to
+    surface them."""
+    _, ctx = _pyreb(tmp_path, ["python3.10", "python3.14"],
+                    owners={str(tmp_path / "usr/lib/python3.10"): ["some-module"]})
+    ctx.output.print_summary()
+    assert "stranded on an old Python" in capsys.readouterr().out
+
+
+def test_python_rebuild_refuses_to_guess_without_a_version(tmp_path, capsys):
+    """Without the current version every python3.* dir looks old, and every package
+    owning one would be reported as stranded."""
+    res, _ = _pyreb(tmp_path, ["python3.10", "python3.14"], current="")
+    assert res.ok is False
+    assert "NOT checked" in capsys.readouterr().err
+
+
+def test_python_rebuild_failure_is_not_reported_as_success(tmp_path, capsys):
+    """The guard added to check_rebuilds in v0.57.0 was never applied to its sibling
+    in the same file — the second consecutive instance of a fix not reaching the
+    pattern."""
+    _, ctx = _pyreb(tmp_path, ["python3.10", "python3.14"],
+                    owners={str(tmp_path / "usr/lib/python3.10"): ["some-module"]},
+                    auto_rebuild=True, assume_yes=True, rebuild_rc=1)
+    ctx.output.print_summary()
+    out = capsys.readouterr().out
+    assert "did NOT complete" in out
+    assert "✓" not in out.split("Summary")[1].split("did NOT")[0]
+
+
+def test_arch_read_only_actions_need_no_root():
+    """Measured: checkrebuild and pacman -Qoq exit 0 as an unprivileged user, and
+    refresh_metadata on Arch runs no command at all. fettle asked for a password anyway."""
+    from fettle.cli import NO_ROOT_ACTIONS
+    no_root = NO_ROOT_ACTIONS | ArchBackend.extra_no_root
+    for action in ("only_update", "rebuild_check", "python_rebuild_check"):
+        assert action in no_root
+
+
+def test_other_backends_still_elevate_for_those():
+    """apt and dnf genuinely write under /var for the same actions."""
+    from fettle.backends.debian import DebianBackend
+    from fettle.backends.rhel import RhelBackend
+    for cls in (DebianBackend, RhelBackend):
+        assert "only_update" not in cls.extra_no_root
