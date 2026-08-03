@@ -97,3 +97,30 @@ def test_diagnostics_flush_stdout_first(monkeypatch):
     monkeypatch.setattr(_sys, "stderr", fake_err)
     Output(color=False).warn("something")
     assert fake_out.flush.called
+
+
+def test_run_quiet_treats_declared_ok_codes_as_success(capsys):
+    """"Non-zero" and "failed" are not synonyms. fwupd documents 2 as "no actions but
+    successfully executed" and returns it from `refresh` whenever the metadata is
+    already current — so every healthy machine was shown a red ✗ for a routine state."""
+    from unittest.mock import patch
+    from fettle import command
+    from fettle.output import Output
+
+    with patch("fettle.command.run", return_value=command.Proc(2, "", "")):
+        Output(color=False).run_quiet("metadata refreshed", ["fwupdmgr", "refresh"],
+                                      ok_codes=(0, 2))
+    said = capsys.readouterr()
+    assert "✓" in said.out or "metadata refreshed" in said.out
+    assert "failed" not in said.err
+
+
+def test_run_quiet_still_reports_a_real_failure(capsys):
+    from unittest.mock import patch
+    from fettle import command
+    from fettle.output import Output
+
+    with patch("fettle.command.run", return_value=command.Proc(1, "", "boom")):
+        Output(color=False).run_quiet("metadata refreshed", ["fwupdmgr", "refresh"],
+                                      ok_codes=(0, 2))
+    assert "failed (exit 1)" in capsys.readouterr().err

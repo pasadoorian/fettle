@@ -85,7 +85,8 @@ class Context:
     failed_commands: list[str] = field(default_factory=list)
 
     # -- command execution (the dry-run gate lives here) ---------------------
-    def execute(self, cmd, *, as_user: str | None = None, quiet: bool = False, msg: str = ""):
+    def execute(self, cmd, *, as_user: str | None = None, quiet: bool = False,
+                msg: str = "", ok_codes: tuple[int, ...] = (0,)):
         """Run a command, honoring dry-run in one place.
 
         - dry-run: print what would run and execute nothing.
@@ -100,13 +101,14 @@ class Context:
             self.output.note(f"would run: {'(as ' + as_user + ') ' if as_user else ''}{shown}")
             return command.Proc(0)
         if quiet:
-            proc = self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user)
+            proc = self.output.run_quiet(msg or " ".join(argv), argv, as_user=as_user,
+                                         ok_codes=ok_codes)
         else:
             proc = self.output.run_streamed(argv, as_user=as_user)
         # Remember what failed. Tracked centrally rather than at each call site so a
         # backend cannot forget: QA found a clean blocked by a permission error still
         # signing off green, because nothing above the individual command knew.
-        if not proc.ok:
+        if proc.returncode not in ok_codes:
             self.failed_commands.append(argv[0])
         return proc
 
@@ -374,25 +376,63 @@ class PackageBackend(abc.ABC):
 
     # -- firmware is distro-neutral: fwupd works everywhere ------------------
     def firmware_updates(self, ctx: Context) -> Result:
+        """Report pending firmware updates, or say why the question went unanswered.
+
+        **Keyed on fwupd's exit code, not on its prose.** ``fwupdmgr`` documents
+        ``0`` success, ``1`` generic failure, ``2`` *"no actions but successfully
+        executed"*, ``3`` resource not found — and it uses them correctly. Measured on
+        Debian 13 with fwupd 2.0.20:
+
+        =========================================  ========  ====
+        state                                      stdout    exit
+        =========================================  ========  ====
+        healthy, nothing to update                 empty     2
+        **daemon masked — cannot answer at all**   empty     1
+        =========================================  ========  ====
+
+        This used to decide by matching ``"no updates"`` and ``"No updatable"`` against
+        stdout and ignoring the code entirely, so both of those produced *"no firmware
+        updates available"* — a machine whose firmware service was dead reported as up to
+        date. The string match was also English-only, so on a localised system a clean
+        result would have been announced as updates being available.
+        """
         from .. import command
 
         out = ctx.output
         if not command.which("fwupdmgr"):
-            out.note("fwupdmgr not installed; skipping firmware check.")
-            return Result()
-        ctx.execute(["fwupdmgr", "refresh"], quiet=True, msg="firmware metadata refreshed")
+            out.warn("fwupdmgr not installed (fwupd) — firmware was NOT checked.")
+            return Result(ok=False)
+
+        # 2 = "no actions but successfully executed" — the metadata was already
+        # current, which is the normal case on a machine that ran recently.
+        refresh = ctx.execute(["fwupdmgr", "refresh"], quiet=True, ok_codes=(0, 2),
+                              msg="firmware metadata refreshed")
+        stale = refresh.returncode not in (0, 2)
         if ctx.dry_run:
             out.note("would run: fwupdmgr get-updates")
             return Result()
+
         proc = command.run(["fwupdmgr", "get-updates"], capture=True)
         text = (proc.stdout or "").strip()
-        if text and "no updates" not in text.lower() and "No updatable" not in text:
+        if proc.returncode in (2, 3):        # nothing to do / nothing found
+            out.ok("no firmware updates available.")
+        elif proc.returncode == 0 and text:
             out.note("firmware updates available:")
             print(text)
             out.summary_add("firmware updates available")
             out.next_step("apply firmware updates: fwupdmgr update")
         else:
-            out.ok("no firmware updates available.")
+            detail = (proc.stderr or "").strip().splitlines()
+            out.warn(f"could not determine firmware status (fwupdmgr exited "
+                     f"{proc.returncode}) — firmware was NOT assessed."
+                     + (f" {detail[0]}" if detail else ""))
+            out.summary_warn("firmware status UNKNOWN — the check could not run")
+            return Result(ok=False)
+        if stale:
+            # An answer from metadata that could not be refreshed is an answer about
+            # whatever was last downloaded, which may predate the update being looked for.
+            out.warn("...but the firmware metadata could not be refreshed, so this "
+                     "reflects the last successful download and may be out of date.")
         return Result()
 
     # -- snap is distro-neutral too: snapd works everywhere -------------------

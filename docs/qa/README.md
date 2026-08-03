@@ -103,7 +103,7 @@ Status of each feature's QA pass. `—` = not started.
 | python-rebuild-check | `-y` | — | — |
 | config-drift | `-d` | [config-drift.md](config-drift.md) | **swept — 4 findings, all fixed** |
 | auto-updates | `-x` | [auto-updates.md](auto-updates.md) | **swept — 1 fixed, 2 open** |
-| firmware | `-f` | — | — |
+| firmware | `-f` | [firmware.md](firmware.md) | **swept — 3 fixed (incl. B1), 1 blocked** |
 | kernel | `-k` | — | — |
 | aur-audit | `-A` | — | — |
 | aur-ioc-scan | `-I` | — | — |

@@ -80,7 +80,8 @@ ACTION_HELP = {
                      "version is no longer in effect, not just new defaults"),
     "auto_updates": ("is this host patching itself? reports whether automatic "
                      "updates are enabled AND whether they are working"),
-    "firmware_check": "check for firmware updates (fwupd)",
+    "firmware_check": ("check for firmware updates (fwupd); says UNKNOWN rather "
+                       "than \"up to date\" if the daemon cannot be reached"),
     "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",
     "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/.fettle/reports/",

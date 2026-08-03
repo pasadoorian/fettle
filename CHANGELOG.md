@@ -10,6 +10,51 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.61.0] — a dead fwupd daemon no longer reads as "up to date"
+
+QA pass on `firmware`, which closes **B1** — the highest-priority item in the
+outstanding-issues list, carried since the RHEL work and left open because it needed a live
+daemon to stop. The lab provides one now.
+
+`fwupdmgr` documents its exit codes and uses them correctly. Measured on Debian 13 with
+fwupd 2.0.20:
+
+| State | stdout | exit |
+|---|---|---|
+| healthy, nothing to update | *(empty)* | **2** — "no actions but successfully executed" |
+| **daemon masked, cannot answer at all** | *(empty)* | **1** |
+
+fettle discarded the exit code and decided from stdout, so both produced
+`✓ no firmware updates available.` A machine whose firmware service was dead reported as
+current. The verdict now comes from the code:
+
+```
+! could not determine firmware status (fwupdmgr exited 1) — firmware was NOT assessed.
+▸ Summary
+  ! firmware status UNKNOWN — the check could not run
+```
+
+**And the same action made the opposite mistake.** `fwupdmgr refresh` also returns **2**
+when the metadata is already current — the normal state on any machine that ran recently —
+and `run_quiet` treated every non-zero code as failure, so a routine condition printed
+`✗ firmware metadata refreshed failed (exit 2)` on every healthy host.
+
+"Non-zero" and "failed" are not synonyms. `Context.execute` and `Output.run_quiet` now
+accept **`ok_codes`**, and firmware declares `(0, 2)`. The pair is worth naming: one was
+false calm, the other crying wolf, and both came from not reading what the tool actually
+said.
+
+**The verdict also depended on matching English prose** — `"no updates"` / `"No updatable"`
+against the tool's own output. On a localised system neither matches, so a clean result would
+have been announced as updates being available, with the translated "nothing to update"
+message printed beneath it as if it were the list. Deciding by exit code makes the language
+irrelevant.
+
+**Still blocked, and stated rather than papered over:** no VM has updatable firmware, so the
+updates-available branch continues to rest on unit tests, exactly as recorded for v0.43.3.
+What changed is that the other three branches are now measured.
+
+
 ## [0.60.0] — "automatic updates are on" did not mean they were working
 
 QA pass on `auto-updates`. This is the action whose *entire output* is a single verdict,

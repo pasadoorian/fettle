@@ -178,26 +178,65 @@ def test_config_drift_lists_pacnew(capsys):
 
 
 # -- firmware (base-class impl, distro-neutral) ------------------------------
+# Exit codes are fwupd's own, and it uses them correctly. Measured on Debian 13 with
+# fwupd 2.0.20:  healthy-with-nothing-to-do -> empty stdout, exit 2;  daemon masked ->
+# empty stdout, exit 1. fettle used to ignore the code and match English prose, so both
+# produced "no firmware updates available".
+def _fw(rc, stdout="", stderr=""):
+    def run(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["fwupdmgr", "get-updates"]:
+            return command.Proc(rc, stdout, stderr)
+        return command.Proc(0, "", "")
+    return run
+
+
 def test_firmware_reports_up_to_date(capsys):
-    responses = {("fwupdmgr", "get-updates"): "No updates available"}
-    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+    """Exit 2 is fwupd's "no actions but successfully executed"."""
+    with patch("fettle.command.run", side_effect=_fw(2)), \
          patch("fettle.command.which", return_value=True):
         ArchBackend().firmware_updates(_ctx())
     assert "no firmware updates" in capsys.readouterr().out.lower()
 
 
 def test_firmware_reports_available(capsys):
-    responses = {("fwupdmgr", "get-updates"): "Dell TB16\n  1.2 -> 1.3"}
-    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
+    with patch("fettle.command.run", side_effect=_fw(0, "Dell TB16\n  1.2 -> 1.3")), \
          patch("fettle.command.which", return_value=True):
         ArchBackend().firmware_updates(_ctx())
     assert "firmware updates available" in capsys.readouterr().out
 
 
-def test_firmware_absent_tool_skips(capsys):
-    with patch("fettle.command.which", return_value=False):
+def test_firmware_dead_daemon_is_not_reported_as_up_to_date(capsys):
+    """The B1 case, carried in the tracker since the RHEL work. A masked fwupd exits 1
+    with empty stdout — indistinguishable from "nothing to update" unless you look at
+    the code, which is exactly what fettle was not doing."""
+    ctx = _ctx()
+    err = ("Failed to connect to daemon: Error calling StartServiceByName for "
+           "org.freedesktop.fwupd: Unit fwupd.service is masked.")
+    with patch("fettle.command.run", side_effect=_fw(1, "", err)), \
+         patch("fettle.command.which", return_value=True):
+        res = ArchBackend().firmware_updates(ctx)
+    said = capsys.readouterr()
+    assert res.ok is False
+    assert "no firmware updates" not in said.out.lower()
+    assert "NOT assessed" in said.err and "masked" in said.err
+    ctx.output.print_summary()
+    assert "UNKNOWN" in capsys.readouterr().out
+
+
+def test_firmware_verdict_does_not_depend_on_english(capsys):
+    """The old check matched "no updates"/"No updatable" against the tool's own prose,
+    so a localised system would have had a clean result announced as updates pending."""
+    with patch("fettle.command.run", side_effect=_fw(2, "Keine aktualisierbaren Geräte")), \
+         patch("fettle.command.which", return_value=True):
         ArchBackend().firmware_updates(_ctx())
-    assert "not installed" in capsys.readouterr().out
+    assert "no firmware updates" in capsys.readouterr().out.lower()
+
+
+def test_firmware_absent_tool_is_not_a_clean_result(capsys):
+    with patch("fettle.command.which", return_value=False):
+        res = ArchBackend().firmware_updates(_ctx())
+    assert res.ok is False
+    assert "NOT checked" in capsys.readouterr().err
 
 
 # -- kernels -----------------------------------------------------------------

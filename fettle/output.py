@@ -89,13 +89,20 @@ class Output:
         self._to_stderr(f"{self.B}{self.RED}  !! {msg}{self.NC}")
 
     # -- run a noisy command, show a one-line status -------------------------
-    def run_quiet(self, msg: str, cmd, *, as_user: str | None = None):
+    def run_quiet(self, msg: str, cmd, *, as_user: str | None = None,
+                  ok_codes: tuple[int, ...] = (0,)):
         """Run ``cmd`` showing only ``msg`` on success; full output on failure
-        (or always, under ``verbose``). Returns the ``command.Proc``."""
+        (or always, under ``verbose``). Returns the ``command.Proc``.
+
+        ``ok_codes`` exists because "non-zero" and "failed" are not synonyms: fwupd
+        documents ``2`` as *"no actions but successfully executed"* and returns it from
+        `refresh` whenever the metadata is already current — so every healthy machine was
+        being shown a red ✗ for a routine condition.
+        """
         from . import command  # local import keeps output import-free at module load
 
         proc = command.run(cmd, as_user=as_user, capture=not self.verbose)
-        if proc.ok:
+        if proc.returncode in ok_codes:
             self.ok(msg)
         else:
             self.err(f"{msg} failed (exit {proc.returncode}):")
