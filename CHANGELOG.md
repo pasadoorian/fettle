@@ -10,6 +10,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.56.0] — `orphans` asks about everything it removes, and counts it honestly
+
+QA pass on `orphans`, the one action that deletes installed software.
+
+**Removing an orphan can remove more than the orphan.** `pacman -Rs` also drops
+dependencies the chosen package was the last thing needing. Measured on a lab guest:
+`pacman -Qtdq` offers `nmap`; removing it also takes `lua54`. fettle ran
+`pacman -Rsn --noconfirm`, so pacman printed that two-package transaction and then answered
+its own confirmation — the user watched an extra package go by with no way to refuse it —
+and the summary said:
+
+```
+✓ 1 orphan(s) removed          # two packages were removed
+```
+
+The RHEL backend already documents avoiding exactly this: *"Without `--yes` dnf then shows
+its own transaction and confirms, so a removal that cascades into dependents cannot happen
+unseen."* The Arch path did the thing that comment describes avoiding, and Debian's
+`apt-get purge -y` had the same shape.
+
+Both now drop the blanket confirmation-suppressing flag unless `--yes` was given, so the
+package manager's own transaction is a real decision point. Declining it removes nothing and
+reports nothing.
+
+**Counts are now measured, not assumed.** New `PackageBackend.installed_packages()` on all
+three backends; the removal paths diff the installed set around the command and report what
+actually went, naming anything beyond the selection:
+
+```
+✓ 2 package(s) removed (including 1 unused dependency(ies): lua54)
+```
+
+Verified on Arch: declining pacman's prompt leaves 273 packages and says "nothing was
+removed"; `-o --yes` removes 2, reports 2, and names `lua54`.
+
+**Note for scripted use:** a run with two interactive prompts (fettle's per-package chooser,
+then the package manager's) cannot be driven by piping stdin — Python's `input()` buffers,
+and swallows the line the package manager was waiting for. Use `--yes` for automation, which
+is unattended by design and keeps the suppressing flag.
+
+
 ## [0.55.2] — say what you are about to do, in the right order
 
 The last two findings from the `update` sweep. `docs/qa/update.md` now carries the full

@@ -512,3 +512,55 @@ def test_mirrors_requested_but_tool_absent_says_so(capsys):
         ArchBackend().update_system(_ctx())
     out = capsys.readouterr().out
     assert "pacman-mirrors" in out and "reflector" in out
+
+
+# -- orphan removal: consent and an honest count -------------------------------
+def _orphan_run(assume_yes=False, installed=("nmap", "lua54", "bash")):
+    """Run the orphan path with `nmap` chosen; pacman also takes `lua54` with it."""
+    calls = []
+    state = {"pkgs": list(installed)}
+
+    def fake(cmd, *, as_user=None, capture=False):
+        calls.append(list(cmd))
+        if cmd[:2] == ["pacman", "-Qq"]:
+            return command.Proc(0, "\n".join(state["pkgs"]) + "\n", "")
+        if cmd[:2] == ["pacman", "-Qtdq"]:
+            return command.Proc(0, "nmap\n", "")
+        if cmd[:2] == ["pacman", "-Qm"]:
+            return command.Proc(0, "", "")
+        if cmd[0] == "pacman" and cmd[1].startswith("-Rs"):
+            state["pkgs"] = [p for p in state["pkgs"] if p not in ("nmap", "lua54")]
+            return command.Proc(0, "", "")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(assume_yes=assume_yes)
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True), \
+         patch("fettle.backends.base.Context.select", lambda self, items, *, prompt: ["nmap"]):
+        ArchBackend().check_foreign_orphans(ctx)
+    return [c for c in calls], ctx
+
+
+def test_orphan_removal_keeps_pacmans_confirmation():
+    """`-Rs` removes dependencies the chosen package was the last thing needing, so the
+    real transaction is bigger than the consent. pacman prints that set — and
+    `--noconfirm` answered its own question, so the user saw the extra package go by
+    with no way to refuse. Measured: choosing `nmap` also removed `lua54`."""
+    calls, _ = _orphan_run()
+    rm = [c for c in calls if c[0] == "pacman" and c[1].startswith("-Rs")][0]
+    assert "--noconfirm" not in rm
+
+
+def test_orphan_removal_still_unattended_under_yes():
+    calls, _ = _orphan_run(assume_yes=True)
+    rm = [c for c in calls if c[0] == "pacman" and c[1].startswith("-Rs")][0]
+    assert "--noconfirm" in rm
+
+
+def test_orphan_summary_counts_what_was_actually_removed(capsys):
+    """One package was chosen; two went. The summary said "1 orphan(s) removed"."""
+    _, ctx = _orphan_run()
+    ctx.output.print_summary()
+    out = capsys.readouterr().out
+    assert "2 package(s) removed" in out
+    assert "lua54" in out            # and names the one nobody asked about

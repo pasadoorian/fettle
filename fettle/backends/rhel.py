@@ -944,6 +944,9 @@ class RhelBackend(PackageBackend):
         except OSError as exc:
             out.warn(f"could not write obsolete-pkgs report: {exc}")
 
+    def installed_packages(self, ctx: Context) -> set[str]:
+        return set(self._query(["rpm", "-qa", "--qf", "%{NAME}\n"]).split())
+
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
         self._report_foreign(ctx)
@@ -1001,8 +1004,16 @@ class RhelBackend(PackageBackend):
         argv = ["dnf", "remove", *chosen]
         if ctx.assume_yes:
             argv.append("-y")
+        before = self.installed_packages(ctx)
         ctx.execute(argv)
-        out.summary_add(f"{len(chosen)} unused dependency(ies) removed")
+        gone = before - self.installed_packages(ctx) if before else set()
+        if gone:
+            extra = sorted(gone - {c.split(".")[0] for c in chosen})
+            detail = (f" (including {len(extra)} dependent(s): {', '.join(extra)})"
+                      if extra else "")
+            out.summary_add(f"{len(gone)} package(s) removed{detail}")
+        else:
+            out.ok("nothing was removed.")
         return Result()
 
     # -- clean ---------------------------------------------------------------

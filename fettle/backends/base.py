@@ -231,6 +231,17 @@ class PackageBackend(abc.ABC):
     # could not happen, on a prompt whose safe default is No.
     clean_prompt = "remove downloaded package caches?"
 
+    def installed_packages(self, ctx: Context) -> set[str]:
+        """Names of every installed package, or an empty set if it cannot be listed.
+
+        Used to report what a removal *actually* removed rather than what was selected.
+        The two differ: package managers remove dependencies that the chosen packages
+        were the last thing needing, so consenting to one orphan can remove several.
+        QA measured `pacman -Rs nmap` taking `lua54` with it while the summary said
+        "1 orphan(s) removed".
+        """
+        return set()
+
     def cache_paths(self, ctx: Context) -> list[Path]:
         """Directories ``clean_caches`` reclaims, sized before and after by
         ``actions._clean`` so the summary can state what was actually freed.

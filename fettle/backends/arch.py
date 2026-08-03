@@ -516,6 +516,9 @@ class ArchBackend(PackageBackend):
         return None, f"repo sync failed: {detail}"
 
     # -- maintenance checks (M3) ---------------------------------------------
+    def installed_packages(self, ctx: Context) -> set[str]:
+        return set(self._query(["pacman", "-Qq"]).split())
+
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
         # `-Qm` (name + version) mirrors update.sh's alien-pkgs.txt content; filter
@@ -552,12 +555,29 @@ class ArchBackend(PackageBackend):
         for o in removable:
             print(f"    {o}")
         to_remove = ctx.select(removable, prompt="remove orphan")
-        if to_remove:
-            out.note(f"removing: {' '.join(to_remove)}")
-            ctx.execute(["pacman", "-Rsn", "--noconfirm", *to_remove])
-            out.summary_add(f"{len(to_remove)} orphan(s) removed")
-        else:
+        if not to_remove:
             out.ok("no orphans removed.")
+            return Result()
+
+        out.note(f"removing: {' '.join(to_remove)}")
+        # `-Rs` also removes dependencies the chosen packages were the last thing
+        # needing, so the real transaction can be larger than what was consented to —
+        # measured: choosing `nmap` also removed `lua54`. pacman prints that set, but
+        # `--noconfirm` answered its own question, so the user saw the extra package
+        # and had no way to refuse it. Under `--yes` there is nothing to ask.
+        argv = ["pacman", "-Rsn", *(["--noconfirm"] if ctx.assume_yes else []), *to_remove]
+        before = self.installed_packages(ctx)
+        ctx.execute(argv)
+        gone = before - self.installed_packages(ctx) if before else set()
+        if gone:
+            extra = sorted(gone - set(to_remove))
+            detail = f" (including {len(extra)} unused dependency(ies): " \
+                     f"{', '.join(extra)})" if extra else ""
+            out.summary_add(f"{len(gone)} package(s) removed{detail}")
+        else:
+            # pacman printed its plan and the user declined it, or the removal failed;
+            # either way nothing went, and claiming a count would be wrong.
+            out.ok("nothing was removed.")
         return Result()
 
     def check_rebuilds(self, ctx: Context) -> Result:

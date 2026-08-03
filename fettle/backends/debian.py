@@ -328,6 +328,10 @@ class DebianBackend(PackageBackend):
         return Result(summary=", ".join(did))
 
     # -- orphans / obsolete --------------------------------------------------
+    def installed_packages(self, ctx: Context) -> set[str]:
+        out = self._query(["dpkg-query", "-W", "-f", "${binary:Package}\n"])
+        return {n.split(":")[0] for n in out.split() if n}
+
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
 
@@ -356,8 +360,21 @@ class DebianBackend(PackageBackend):
                     print(f"    {o}")
                 chosen = ctx.select(orphans, prompt="purge orphan")
                 if chosen:
-                    ctx.execute(["apt-get", "purge", "-y", *chosen])
-                    out.summary_add(f"{len(chosen)} orphaned lib(s) purged")
+                    # No blanket `-y`: purging can pull in dependents, and apt's own
+                    # transaction is the only place that set is shown. Under `--yes`
+                    # there is no one to ask.
+                    argv = ["apt-get", "purge", *(["-y"] if ctx.assume_yes else []),
+                            *chosen]
+                    before = self.installed_packages(ctx)
+                    ctx.execute(argv)
+                    gone = before - self.installed_packages(ctx) if before else set()
+                    if gone:
+                        extra = sorted(gone - set(chosen))
+                        detail = (f" (including {len(extra)} dependent(s): "
+                                  f"{', '.join(extra)})" if extra else "")
+                        out.summary_add(f"{len(gone)} orphaned package(s) purged{detail}")
+                    else:
+                        out.ok("nothing was purged.")
             else:
                 out.ok("no orphaned libraries (deborphan).")
         else:
