@@ -10,6 +10,48 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.60.0] — "automatic updates are on" did not mean they were working
+
+QA pass on `auto-updates`. This is the action whose *entire output* is a single verdict,
+read by somebody deciding whether they still need to check a machine themselves — so a wrong
+answer here is not a cosmetic problem.
+
+**Every backend stopped at "is the timer enabled".** Measured on Rocky 9 with
+`dnf-automatic.timer` enabled, `apply_updates=yes`, and its service failing on every run
+against a dead repository:
+
+```
+  systemctl: timer enabled, service Result=exit-code, exit 1
+  fettle:    ✓ auto-updates: ON (dnf-automatic)
+```
+
+A host that had not been patched for months looked exactly like one patching itself nightly.
+
+New shared `PackageBackend.timer_health()`, wired into all three backends. The timer names
+its own service in `Unit=`, so no basename guessing is involved. `Result` is empty until the
+service has ever run, which is why **"has not run yet" is a separate answer rather than a
+failure** — a freshly enabled timer is not broken, and calling it broken would cry wolf on
+every machine that just switched automatic updates on.
+
+```
+! but automatic updates are NOT working: dnf-automatic.service last finished with
+  exit-code (exit 1). This host is not being patched — check the unit's logs
+  (journalctl -u dnf-automatic).
+▸ Summary
+  ✓ auto-updates: ON (dnf-automatic)
+  ! auto-updates: enabled but the last run FAILED — this host is NOT being patched
+```
+
+Verified in both directions on the same guest: it warns while the service is failing, and
+the warning disappears once it succeeds.
+
+**Two findings left open**, both recorded in `docs/qa/auto-updates.md` rather than fixed in
+passing: Arch reports `OFF` as a fact when its curated name-list means *no timer I
+recognise*, and an absent `systemctl`/`apt-config` still leaves an empty summary. Fixing the
+first properly means deciding whether to scan every enabled timer's `ExecStart` — a design
+the existing docstring weighed and rejected — and the two want deciding together.
+
+
 ## [0.59.1] — document the output contract the QA pass changed
 
 Documentation only, filling two gaps found by auditing the docs against the behaviour.

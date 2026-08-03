@@ -581,6 +581,7 @@ class DebianBackend(PackageBackend):
                      f"upgrades (Unattended-Upgrade={upgrade}, "
                      "apt-daily-upgrade.timer enabled).")
             out.summary_add("auto-updates: ON (unattended-upgrades)")
+            self.report_timer_health(ctx, ["apt-daily-upgrade.timer"])
         else:
             reasons = []
             if not installed:

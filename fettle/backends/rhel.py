@@ -803,10 +803,12 @@ class RhelBackend(PackageBackend):
                      "upgrades. That unit passes --installupdates, so it applies them "
                      f"regardless of apply_updates in {conf_path or 'automatic.conf'}.")
             out.summary_add("auto-updates: ON (dnf-automatic)")
+            self.report_timer_health(ctx, forced_on)
         elif by_config and apply_updates:
             out.note(f"automatic updates: ENABLED — {', '.join(by_config)} with "
                      f"apply_updates=yes in {conf_path}.")
             out.summary_add("auto-updates: ON (dnf-automatic)")
+            self.report_timer_health(ctx, by_config)
         else:
             reasons = []
             if not enabled:

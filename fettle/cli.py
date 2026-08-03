@@ -78,7 +78,8 @@ ACTION_HELP = {
     "python_rebuild_check": "rebuild packages stranded on an old Python",
     "config_drift": ("did an upgrade change your config? flags files where YOUR "
                      "version is no longer in effect, not just new defaults"),
-    "auto_updates": "report whether automatic/unattended updates are enabled",
+    "auto_updates": ("is this host patching itself? reports whether automatic "
+                     "updates are enabled AND whether they are working"),
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",
     "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",

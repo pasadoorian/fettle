@@ -231,6 +231,53 @@ class PackageBackend(abc.ABC):
     # could not happen, on a prompt whose safe default is No.
     clean_prompt = "remove downloaded package caches?"
 
+    @staticmethod
+    def timer_health(timer: str) -> tuple[str, str]:
+        """Whether an *enabled* update timer is actually working.
+
+        Returns ``("ok"|"failed"|"never", detail)``. Every backend used to stop at "is
+        the timer enabled", which answers a different question from the one the user is
+        asking. Measured on Rocky 9: `dnf-automatic.timer` enabled, `apply_updates=yes`,
+        and its service failing on every run (`Result=exit-code`, exit 1) — fettle
+        reported `✓ auto-updates: ON`. A host that has not been patched for months looks
+        identical to one that is patching itself nightly.
+
+        The timer names its own service in ``Unit=``, so no basename guessing. ``Result``
+        is empty until the service has run at all, which is why "never" is a separate
+        answer rather than a failure — a freshly enabled timer is not broken.
+        """
+        from .. import command
+
+        def show(unit: str, prop: str) -> str:
+            proc = command.run(["systemctl", "show", unit, "-p", prop, "--value"],
+                               capture=True)
+            return (proc.stdout or "").strip()
+
+        service = show(timer, "Unit") or timer.rsplit(".", 1)[0] + ".service"
+        result = show(service, "Result")
+        if not result:
+            return ("never", f"{timer} is enabled but has not run yet")
+        if result != "success":
+            status = show(service, "ExecMainStatus")
+            return ("failed", f"{service} last finished with {result}"
+                              + (f" (exit {status})" if status not in ("", "0") else ""))
+        return ("ok", "")
+
+    def report_timer_health(self, ctx: Context, timers: list[str]) -> None:
+        """Warn when an enabled updater timer is not actually succeeding."""
+        for timer in timers:
+            state, detail = self.timer_health(timer)
+            if state == "failed":
+                ctx.output.warn(f"but automatic updates are NOT working: {detail}. "
+                                "This host is not being patched — check the unit's logs "
+                                f"(journalctl -u {timer.rsplit('.', 1)[0]}).")
+                ctx.output.summary_warn("auto-updates: enabled but the last run FAILED "
+                                        "— this host is NOT being patched")
+                return
+            if state == "never":
+                ctx.output.note(f"{detail} — nothing has been applied automatically yet.")
+                return
+
     def installed_packages(self, ctx: Context) -> set[str]:
         """Names of every installed package, or an empty set if it cannot be listed.
 

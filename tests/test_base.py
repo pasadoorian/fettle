@@ -13,7 +13,7 @@ from conftest import SNAP_LIST_ALL
 
 from fettle import command
 from fettle.backends.arch import ArchBackend
-from fettle.backends.base import Context
+from fettle.backends.base import Context, PackageBackend
 from fettle.backends.debian import DebianBackend
 from fettle.backends.rhel import RhelBackend
 from fettle.config import Config
@@ -109,3 +109,51 @@ def test_dry_run_previews_the_revisions_it_would_offer(capsys):
         assert "core20 (rev 2015)" in out and "firefox (rev 3026)" in out, backend.name
         assert "core20 (rev 1974)" not in out, backend.name   # active, not superseded
         assert not any(a[:2] == ["snap", "remove"] for a in argvs), backend.name
+
+
+# -- auto-updates: enabled is not the same as working -------------------------
+def _systemd(props):
+    """Stub `systemctl show <unit> -p <prop> --value` from a {(unit, prop): value} map."""
+    def run(cmd, *, as_user=None, capture=False):
+        if cmd[:2] == ["systemctl", "show"]:
+            return command.Proc(0, props.get((cmd[2], cmd[4]), "") + "\n", "")
+        return command.Proc(0, "", "")
+    return run
+
+
+def test_timer_health_flags_a_failing_updater():
+    """Measured on Rocky 9: dnf-automatic.timer enabled, apply_updates=yes, and its
+    service failing every run — fettle reported a green "auto-updates: ON". A host that
+    has not been patched for months looked identical to one patching itself nightly."""
+    props = {("dnf-automatic.timer", "Unit"): "dnf-automatic.service",
+             ("dnf-automatic.service", "Result"): "exit-code",
+             ("dnf-automatic.service", "ExecMainStatus"): "1"}
+    with patch("fettle.command.run", side_effect=_systemd(props)):
+        state, detail = PackageBackend.timer_health("dnf-automatic.timer")
+    assert state == "failed"
+    assert "exit-code" in detail and "exit 1" in detail
+
+
+def test_timer_health_ok_when_the_service_succeeded():
+    props = {("dnf-automatic.timer", "Unit"): "dnf-automatic.service",
+             ("dnf-automatic.service", "Result"): "success"}
+    with patch("fettle.command.run", side_effect=_systemd(props)):
+        assert PackageBackend.timer_health("dnf-automatic.timer")[0] == "ok"
+
+
+def test_timer_health_never_run_is_not_a_failure():
+    """A freshly enabled timer has an empty Result. That is not broken, and saying so
+    would cry wolf on every machine that just turned automatic updates on."""
+    props = {("dnf-automatic.timer", "Unit"): "dnf-automatic.service"}
+    with patch("fettle.command.run", side_effect=_systemd(props)):
+        assert PackageBackend.timer_health("dnf-automatic.timer")[0] == "never"
+
+
+def test_failing_timer_reaches_the_summary(capsys):
+    props = {("t.timer", "Unit"): "t.service", ("t.service", "Result"): "exit-code"}
+    ctx = Context(output=Output(color=False), config=Config())
+    with patch("fettle.command.run", side_effect=_systemd(props)):
+        PackageBackend().report_timer_health(ctx, ["t.timer"])
+    ctx.output.print_summary()
+    out = capsys.readouterr()
+    assert "NOT being patched" in out.out + out.err

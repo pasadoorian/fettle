@@ -784,6 +784,7 @@ class ArchBackend(PackageBackend):
         if enabled:
             out.note("automatic-update timer(s) enabled: " + ", ".join(enabled) + ".")
             out.summary_add("auto-updates: ON (" + ", ".join(enabled) + ")")
+            self.report_timer_health(ctx, enabled)
         else:
             out.note("automatic updates: none detected "
                      "(manual updates — the Arch default).")
