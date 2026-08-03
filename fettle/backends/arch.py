@@ -48,6 +48,21 @@ _ARROW_RE = re.compile(r"^(\S+)\s+(\S+)\s+->\s+(\S+)")
 # needs rebuilding — excluded from the Python-rebuild candidate list.
 _PY_INTERP_RE = re.compile(r"^python3?\d*$")
 
+# pacman's config leftovers, in the order pacdiff reports them. NOT interchangeable:
+# a `.pacnew` leaves YOUR file in effect with a new default beside it, while a
+# `.pacorig` means the package's version is in effect and yours was moved aside — a
+# setting somebody made that silently stopped applying. `.pacsave` is your file kept
+# after the package was removed. All four used to be reported as "pacnew files".
+_DRIFT_KINDS = {
+    ".pacnew": (False, "the package shipped a new default; YOUR file is still in "
+                       "effect — review the .pacnew for options worth adopting"),
+    ".pacorig": (True, "YOUR file was moved aside and the PACKAGE's version is now in "
+                       "effect — settings you made are NOT active"),
+    ".pacsave": (False, "your file, kept after the package was removed; nothing is "
+                        "using it now — delete it once you have salvaged anything "
+                        "worth keeping"),
+}
+
 
 def _parse_arrow_upgrades(text: str) -> list[tuple[str, str, str]]:
     out = []
@@ -710,19 +725,48 @@ class ArchBackend(PackageBackend):
         return Result()
 
     def check_config_drift(self, ctx: Context) -> Result:
+        """Pending config merges under ``/etc``.
+
+        **Walks the directory rather than asking ``pacdiff``**, which is a *merge* tool:
+        measured, ``pacdiff -o`` lists only leftovers whose base file still exists,
+        because with nothing to merge against there is nothing for it to do. A
+        ``.pacsave`` is created when a package is *removed*, so its base file is gone by
+        definition — every one of them was invisible here, while the Debian and RHEL
+        backends find their equivalents with exactly this walk.
+
+        Scanning ``/etc`` only, matching the other two backends: pacman can leave these
+        elsewhere, but configuration is what a human needs to reconcile.
+        """
         out = ctx.output
-        if not command.which("pacdiff"):
-            out.note("pacdiff not found (install pacman-contrib); skipping.")
+        etc = ctx.root / "etc"
+        found = {suffix: sorted(str(p) for p in etc.rglob(f"*{suffix}"))
+                 for suffix in _DRIFT_KINDS} if etc.is_dir() else {}
+        total = sum(len(v) for v in found.values())
+
+        if not total:
+            out.ok("no pending config-file merges.")
             return Result()
-        files = [ln for ln in self._query(["pacdiff", "-o"]).splitlines() if ln.strip()]
-        if not files:
-            out.ok("no .pacnew files to merge.")
-            return Result()
-        out.note("pacnew files needing attention:")
-        for f in files:
-            print(f"    {f}")
-        out.summary_add(f"{len(files)} .pacnew file(s) to merge")
-        out.next_step("merge them: pacdiff")
+
+        for suffix, (displaced, advice) in _DRIFT_KINDS.items():
+            files = found.get(suffix) or []
+            if not files:
+                continue
+            # `.pacorig` means a setting silently stopped applying — worse than an
+            # unmerged default, so it warns rather than notes.
+            emit = out.warn if displaced else out.note
+            emit(f"{len(files)} {suffix} file(s): {advice}")
+            for path in files:
+                print(f"    {path}")
+
+        displaced_n = sum(len(found.get(s) or [])
+                          for s, (d, _) in _DRIFT_KINDS.items() if d)
+        out.summary_add(f"{total} config file(s) to review"
+                        + (f" — {displaced_n} where YOUR version is no longer in effect"
+                           if displaced_n else ""))
+        if command.which("pacdiff"):
+            out.next_step("merge them: pacdiff")
+        else:
+            out.next_step("merge them by hand, or install pacman-contrib and run: pacdiff")
         return Result()
 
     def check_auto_updates(self, ctx: Context) -> Result:

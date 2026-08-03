@@ -10,6 +10,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.59.0] — `config-drift` says whether your settings still apply
+
+QA pass on `config-drift`. The action lists files an upgrade left behind — and **which**
+file it left tells you two very different things, which only one of the three backends was
+saying.
+
+| What happened | Arch | Debian | RHEL |
+|---|---|---|---|
+| New default shipped, **your file still in effect** | `.pacnew` | `.dpkg-dist`, `.ucf-dist` | `.rpmnew` |
+| **Your file moved aside — the package's version is in effect now** | `.pacorig` | `.dpkg-old`, `.ucf-old` | `.rpmsave`, `.rpmorig` |
+
+The second row means a setting somebody deliberately made has silently stopped applying. The
+RHEL backend has always warned about it separately, and its docstring names the offender:
+*"Lumping them together (as the Debian backend does for its own three suffixes) would hide
+the case where a machine quietly stopped honouring settings someone deliberately made."*
+
+**It was worse than that comment claims. Debian was not lumping them together — it was never
+looking for them.** `.dpkg-old` and `.ucf-old` appeared in no pattern list, so a config an
+upgrade had replaced was simply invisible to `-d`. Arch received all four of pacman's kinds
+from `pacdiff` and labelled the lot *"pacnew files needing attention"*.
+
+**And `pacdiff` cannot see the files that matter most.** It is a *merge* tool: measured, it
+lists only leftovers whose base file still exists, because with nothing to merge against it
+has nothing to do. Three files seeded into `/etc` — `.pacnew`, `.pacorig`, `.pacsave` — and
+`pacdiff -o` returned **none of them**. A `.pacsave` is created when a package is *removed*,
+so its base is gone by definition and every one was invisible on Arch.
+
+Arch now walks `/etc` like the other two backends, which also retires the "absent or failing
+`pacdiff` reads as clean" problem rather than patching it — there is no longer an external
+tool that can be absent. `pacdiff` and `rpmconf` are still suggested for the merging.
+
+All three now classify, warn on the displaced ones, and carry the count that matters:
+
+```
+✓ 4 config file(s) to review — 1 where YOUR version is no longer in effect
+```
+
+Verified on Arch, Debian and Rocky with both kinds seeded. README gains a section and the
+`-d` help line now describes the outcome rather than listing suffixes.
+
+
 ## [0.58.2] — document what `orphans` and `rebuild-check` now do
 
 Documentation only, and overdue: the `clean` and `only-update` sweeps updated the README and

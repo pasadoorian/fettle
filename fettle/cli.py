@@ -76,7 +76,8 @@ ACTION_HELP = {
     "rebuild_check": ("is the patch in effect? reports a pending reboot and "
                       "services still running old libraries"),
     "python_rebuild_check": "rebuild packages stranded on an old Python",
-    "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist / .rpmnew)",
+    "config_drift": ("did an upgrade change your config? flags files where YOUR "
+                     "version is no longer in effect, not just new defaults"),
     "auto_updates": "report whether automatic/unattended updates are enabled",
     "firmware_check": "check for firmware updates (fwupd)",
     "kernel": "manage installed kernels (running one protected)",

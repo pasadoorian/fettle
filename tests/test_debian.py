@@ -669,3 +669,42 @@ def test_rebuild_check_empty_output_is_not_a_clean_result(capsys):
         res = DebianBackend().check_rebuilds(ctx)
     assert res.ok is False
     assert "no services need restarting" not in capsys.readouterr().out
+
+
+# -- config-drift: "still in effect" vs "no longer in effect" ------------------
+def _seed_etc(tmp_path, names):
+    etc = tmp_path / "etc"
+    etc.mkdir(parents=True)
+    for n in names:
+        (etc / n).write_text("x")
+    return tmp_path
+
+
+def test_config_drift_finds_displaced_configs(tmp_path, capsys):
+    """`.dpkg-old` and `.ucf-old` were never looked for, so the case where YOUR config
+    was replaced by an upgrade — a setting that silently stopped applying — was
+    invisible on Debian while RHEL had always warned about its equivalent."""
+    ctx = _ctx(root=_seed_etc(tmp_path, ["sshd_config.dpkg-old"]))
+    with patch("fettle.command.which", return_value=False):
+        DebianBackend().check_config_drift(ctx)
+    said = capsys.readouterr()
+    assert "sshd_config.dpkg-old" in said.out
+    assert "NOT active" in said.err            # warned, not merely noted
+
+
+def test_config_drift_separates_the_two_kinds(tmp_path, capsys):
+    ctx = _ctx(root=_seed_etc(tmp_path, ["a.dpkg-dist", "b.dpkg-old"]))
+    with patch("fettle.command.which", return_value=False):
+        DebianBackend().check_config_drift(ctx)
+    said = capsys.readouterr()
+    assert "still in\neffect" in said.out or "still in effect" in said.out
+    assert "NOT active" in said.err
+    ctx.output.print_summary()
+    assert "YOUR version is no longer in effect" in capsys.readouterr().out
+
+
+def test_config_drift_quiet_when_clean(tmp_path, capsys):
+    ctx = _ctx(root=_seed_etc(tmp_path, []))
+    with patch("fettle.command.which", return_value=False):
+        DebianBackend().check_config_drift(ctx)
+    assert "no pending config-file merges" in capsys.readouterr().out

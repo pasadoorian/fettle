@@ -101,7 +101,7 @@ Status of each feature's QA pass. `—` = not started.
 | only-update | `-O` | [only-update.md](only-update.md) | **swept — 4 findings fixed, 2 open for decision** |
 | rebuild-check | `-r` | [rebuild-check.md](rebuild-check.md) | **swept — 4 fixed, 1 withdrawn, 1 open (R-06)** |
 | python-rebuild-check | `-y` | — | — |
-| config-drift | `-d` | — | — |
+| config-drift | `-d` | [config-drift.md](config-drift.md) | **swept — 4 findings, all fixed** |
 | auto-updates | `-x` | — | — |
 | firmware | `-f` | — | — |
 | kernel | `-k` | — | — |

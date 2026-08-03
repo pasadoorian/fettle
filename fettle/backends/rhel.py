@@ -870,7 +870,11 @@ class RhelBackend(PackageBackend):
                 emit(f"{len(files)} {suffix} file(s): {advice}")
                 for path in files:
                     print(f"    {path}")
-            out.summary_add(f"{total} config file(s) to review")
+            displaced_n = sum(len(found.get(s) or [])
+                              for s, (d, _) in _DRIFT_KINDS.items() if d)
+            out.summary_add(f"{total} config file(s) to review"
+                            + (f" — {displaced_n} where YOUR version is no longer "
+                               "in effect" if displaced_n else ""))
             if command.which("rpmconf"):
                 out.next_step("reconcile them interactively: sudo rpmconf -a")
             else:

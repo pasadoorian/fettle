@@ -46,6 +46,7 @@ real unit-test coverage the bash originals never had.
 - [Quick start](#quick-start)
 - [Maintenance actions](#maintenance-actions)
   - [Cache cleaning (-c)](#cache-cleaning--c)
+  - [Did an upgrade change your config? (-d)](#did-an-upgrade-change-your-config--d)
   - [Removing orphans (-o)](#removing-orphans--o)
   - [Is the patch actually in effect? (-r)](#is-the-patch-actually-in-effect--r)
   - [Checking for updates (-O)](#checking-for-updates--o)
@@ -333,7 +334,7 @@ just Debian — each revision confirmed individually.
 | `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
 | `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) + **reboot check**: warns if the running kernel's modules were replaced | `needrestart` — services **and** the kernel state (`KSTA`), so a pending reboot is reported | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
-| `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
+| `-d` | `config-drift` | `.pacnew` (yours still live) vs `.pacorig` (**yours displaced**) and `.pacsave` | `.dpkg-dist`/`.ucf-dist` (yours live) vs `.dpkg-old`/`.ucf-old` (**yours displaced**) + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
 | `-f` | `firmware` | `fwupdmgr` (shared) | `fwupdmgr` (shared) | `fwupdmgr` (shared) |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) | **informational only** — dnf enforces `installonly_limit` itself, so nothing is offered for removal; flags a pending reboot |
@@ -419,6 +420,30 @@ offer to rebuild packages built against since-upgraded libraries.
 `needrestart` output, or a dnf4 host without `yum-utils` are all reported as *"not
 determined"* rather than as a clean result — the distinction matters most here, because
 "nothing to do" is exactly what a broken check looks like.
+
+### Did an upgrade change your config? (`-d`)
+
+Package managers leave a file behind whenever an upgrade meets a config file you had
+edited — but **which** file they leave tells you two very different things, and `fettle -d`
+now says which:
+
+| What happened | Arch | Debian | RHEL |
+|---|---|---|---|
+| New default shipped; **your file is still in effect** | `.pacnew` | `.dpkg-dist`, `.ucf-dist` | `.rpmnew` |
+| **Your file was moved aside — the package's version is in effect now** | `.pacorig` | `.dpkg-old`, `.ucf-old` | `.rpmsave`, `.rpmorig` |
+| Your file kept after the package was removed | `.pacsave` | — | — |
+
+The middle row is the one worth waking up for: **a setting you deliberately made has
+silently stopped applying.** Those are reported as warnings and counted separately:
+
+```
+✓ 4 config file(s) to review — 1 where YOUR version is no longer in effect
+```
+
+The scan walks `/etc` on every distro. On Arch that is deliberate rather than delegating to
+`pacdiff`, which only reports leftovers whose base file still exists — a `.pacsave` is
+created when a package is *removed*, so it has no base file and `pacdiff` never mentions it.
+`pacdiff` and `rpmconf` are still suggested as the tools to merge with.
 
 ### Removing orphans (`-o`)
 

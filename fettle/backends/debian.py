@@ -34,6 +34,25 @@ _SNAP_UPDATERS = {"snap", "none"}
 _APT_INST_RE = re.compile(r"^Inst\s+(\S+)\s+(?:\[([^\]]+)\]\s+)?\((\S+)")
 _APT_REMV_RE = re.compile(r"^Remv\s+(\S+)\s+\[([^\]]+)\]")
 
+# dpkg/ucf config leftovers. NOT interchangeable, and the difference is the point:
+# with a `.dpkg-dist` your file is still in effect and the new default sits unmerged
+# beside it, whereas with a `.dpkg-old` **your file is no longer in effect** — dpkg moved
+# it aside and installed the package's version. The second case is a setting somebody
+# deliberately made that has silently stopped applying.
+#
+# `.dpkg-old` and `.ucf-old` were not looked for at all before v0.59.0, so that case was
+# invisible here while the RHEL backend had always warned about its equivalent.
+_DRIFT_KINDS = {
+    ".dpkg-dist": (False, "the package shipped a new default; YOUR file is still in "
+                          "effect — review the .dpkg-dist for options worth adopting"),
+    ".ucf-dist": (False, "same, via ucf: YOUR file is still in effect"),
+    ".dpkg-new": (False, "an unpacked-but-unapplied package file; usually transient, "
+                         "but a leftover can mean an interrupted install"),
+    ".dpkg-old": (True, "YOUR file was moved aside and the PACKAGE's version is now in "
+                        "effect — settings you made are NOT active"),
+    ".ucf-old": (True, "same, via ucf: YOUR version is NOT active"),
+}
+
 
 def _kernel_version_key(name: str) -> tuple[int, ...]:
     """Numeric sort key for a `linux-image-<ver>-<flavor>` package name, so
@@ -500,19 +519,29 @@ class DebianBackend(PackageBackend):
     def check_config_drift(self, ctx: Context) -> Result:
         out = ctx.output
         etc = ctx.root / "etc"
-        files: list[str] = []
-        if etc.is_dir():
-            for pat in ("*.dpkg-dist", "*.dpkg-new", "*.ucf-dist"):
-                files.extend(str(p) for p in etc.rglob(pat))
-        files.sort()
-        if files:
-            out.note("config files needing review (new maintainer versions):")
-            for f in files:
-                print(f"    {f}")
-            out.summary_add(f"{len(files)} config file(s) to merge")
-            out.next_step("review and merge the .dpkg-dist / .ucf-dist files")
-        else:
+        found = {suffix: sorted(str(p) for p in etc.rglob(f"*{suffix}"))
+                 for suffix in _DRIFT_KINDS} if etc.is_dir() else {}
+        total = sum(len(v) for v in found.values())
+
+        if not total:
             out.ok("no pending config-file merges.")
+        else:
+            for suffix, (displaced, advice) in _DRIFT_KINDS.items():
+                files = found.get(suffix) or []
+                if not files:
+                    continue
+                # `.dpkg-old`/`.ucf-old` mean a setting silently stopped applying, which
+                # is worse than an unmerged default — so they warn rather than note.
+                emit = out.warn if displaced else out.note
+                emit(f"{len(files)} {suffix} file(s): {advice}")
+                for f in files:
+                    print(f"    {f}")
+            displaced_n = sum(len(found.get(s) or [])
+                              for s, (d, _) in _DRIFT_KINDS.items() if d)
+            out.summary_add(f"{total} config file(s) to review"
+                            + (f" — {displaced_n} where YOUR version is no longer in "
+                               "effect" if displaced_n else ""))
+            out.next_step("review and merge them (see the paths above)")
         # dpkg --audit surfaces half-configured / broken packages.
         if command.which("dpkg"):
             audit = self._query(["dpkg", "--audit"]).strip()

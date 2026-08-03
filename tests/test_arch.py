@@ -608,3 +608,56 @@ def test_rebuild_check_silent_without_a_module_tree(tmp_path, capsys):
         ArchBackend().check_rebuilds(ctx)
     ctx.output.print_summary()
     assert "reboot" not in capsys.readouterr().out.lower()
+
+
+# -- config-drift: the /etc walk, and the two kinds --------------------------
+def _seed_etc(tmp_path, names):
+    etc = tmp_path / "etc"
+    etc.mkdir(parents=True)
+    for n in names:
+        (etc / n).write_text("x")
+    return tmp_path
+
+
+def _drift(tmp_path, names, has_pacdiff=True):
+    ctx = _ctx(root=_seed_etc(tmp_path, names))
+    with patch("fettle.command.run", return_value=command.Proc(0, "", "")), \
+         patch("fettle.command.which",
+               side_effect=lambda n: has_pacdiff or n != "pacdiff"):
+        ArchBackend().check_config_drift(ctx)
+    return ctx
+
+
+def test_config_drift_warns_about_displaced_configs(tmp_path, capsys):
+    """`.pacorig` means the package's version is in effect and yours was moved aside.
+    All of pacman's leftovers used to be reported as "pacnew files", so a config that
+    had been *replaced* read like a new default sitting harmlessly beside yours."""
+    ctx = _drift(tmp_path, ["sshd_config.pacorig", "fstab.pacnew"])
+    said = capsys.readouterr()
+    assert "NOT active" in said.err               # .pacorig warned
+    assert "still in effect" in said.out          # .pacnew merely noted
+    ctx.output.print_summary()
+    assert "no longer in effect" in capsys.readouterr().out
+
+
+def test_config_drift_finds_pacsave_which_pacdiff_skips(tmp_path, capsys):
+    """`pacdiff -o` lists only leftovers whose base file still exists — it is a merge
+    tool. A `.pacsave` is created when a package is REMOVED, so its base is gone by
+    definition and pacdiff never reported it. Measured: three seeded files, `pacdiff -o`
+    returned none of them."""
+    _drift(tmp_path, ["oldpkg.conf.pacsave"])
+    assert "oldpkg.conf.pacsave" in capsys.readouterr().out
+
+
+def test_config_drift_works_without_pacdiff(tmp_path, capsys):
+    """Detection no longer depends on pacman-contrib at all; only the advice does."""
+    ctx = _drift(tmp_path, ["fstab.pacnew"], has_pacdiff=False)
+    ctx.output.print_summary()                    # next_step prints with the summary
+    out = capsys.readouterr().out
+    assert "fstab.pacnew" in out
+    assert "install pacman-contrib" in out        # still tells you how to merge
+
+
+def test_config_drift_quiet_when_clean(tmp_path, capsys):
+    _drift(tmp_path, [])
+    assert "no pending config-file merges" in capsys.readouterr().out
