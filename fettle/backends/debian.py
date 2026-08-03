@@ -684,9 +684,31 @@ class DebianBackend(PackageBackend):
         for p in removable:
             print(f"    {p}")
         chosen = ctx.select(removable, prompt="purge kernel")
-        if chosen:
-            ctx.execute(["apt-get", "purge", "-y", *chosen])
-            out.summary_add(f"{len(chosen)} old kernel image(s) purged")
+        if not chosen:
+            return Result()
+        # No blanket `-y`. Purging a kernel image can take the **meta-package** with it —
+        # measured on Debian 13, removing one image also purged `linux-image-cloud-amd64`,
+        # which is what pulls in future kernel upgrades. So consenting to drop one old
+        # kernel would silently stop the machine receiving new ones, and apt's own
+        # transaction is the only place that is shown. `orphans` was fixed this way in
+        # v0.56.0; this, the more dangerous action, was missed.
+        argv = ["apt-get", "purge", *(["-y"] if ctx.assume_yes else []), *chosen]
+        before = self.installed_packages(ctx)
+        ctx.execute(argv)
+        gone = before - self.installed_packages(ctx) if before else set()
+        if not gone:
+            out.ok("no kernels were removed.")
+            return Result()
+        extra = sorted(gone - set(chosen))
+        detail = (f" (including {len(extra)} other package(s): {', '.join(extra)})"
+                  if extra else "")
+        out.summary_add(f"{len(gone)} package(s) purged{detail}")
+        if any("linux-image" in p and not re.match(r"linux-image-\d", p) for p in extra):
+            # Losing the meta-package is not a cleanup, it is a policy change.
+            out.warn("a kernel META-package was removed as well — this host will no "
+                     "longer pull in new kernel versions automatically. Reinstall it "
+                     "(e.g. apt-get install linux-image-<flavour>) if that was not "
+                     "intended.")
         return Result()
 
     def _installed_kernel_images(self) -> list[str]:

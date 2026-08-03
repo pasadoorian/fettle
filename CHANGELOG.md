@@ -10,6 +10,44 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.62.0] — the safety change `orphans` got, applied to the action that needs it more
+
+QA pass on `kernel`, the highest-stakes action in the tool: every other mistake can be undone
+from a shell, this one can remove the shell.
+
+**`orphans` was fixed in v0.56.0 to drop the blanket `-y`**, so the package manager shows its
+own transaction and a cascade cannot happen unseen. `kernel` still ran
+`apt-get purge -y <chosen>` — the user saw nothing and could refuse nothing — and still
+reported `len(chosen)` rather than what actually went. Both are now fixed the same way.
+
+That two sibling actions with the same hazard were fixed a release apart, and only because
+one happened to be swept first, is the lesson worth keeping: **a fix applied to one action is
+not a fix applied to the pattern.**
+
+Measured on Debian 13 after the fix — the guest was rebooted mid-sweep so an older kernel
+became genuinely removable:
+
+- declining apt's transaction left all 438 packages and reported `no kernels were removed`
+- `--yes` removed exactly 1, reported `1 package(s) purged`, and left the running kernel
+  and the `linux-image-cloud-amd64` meta-package intact
+
+**The prior hardening is intact.** Before the reboot the guest ran `6.12.96` with `6.12.100`
+installed and **neither** was offered — the newer one labelled "boots next", with a reboot
+advised. That is exactly the rollback the v0.4.3 bug would have proposed.
+
+**A claim made during this sweep is corrected in `docs/qa/kernel.md`.** `apt-get purge
+--dry-run` on a kernel image also purged the meta-package that pulls in future kernel
+upgrades, and that was described as what fettle was about to do. It was not: the meta depends
+on the *newest* image, which fettle protects and never offers. The cascade is real and the
+consent problem was real; that particular consequence was not. The guard that warns when a
+meta-package does go stays in as defence, labelled as defence.
+
+**Left open:** Arch's `mhwd-kernel -r` produces no summary line at all, so the most
+consequential thing fettle can do leaves an empty digest. Not fixed because it cannot be
+exercised — `mhwd-kernel` is Manjaro-only, the lab has no Manjaro guest, and the workstation
+is read-only. Tracked with the Manjaro-VM item.
+
+
 ## [0.61.0] — a dead fwupd daemon no longer reads as "up to date"
 
 QA pass on `firmware`, which closes **B1** — the highest-priority item in the

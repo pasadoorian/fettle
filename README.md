@@ -364,7 +364,7 @@ just Debian — each revision confirmed individually.
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
 | | | **all three also check the timer is actually succeeding** — enabled but failing every night is reported, not counted as ON | | |
 | `-f` | `firmware` | `fwupdmgr` (shared) — verdict from fwupd's **exit code**, so a dead daemon reads as UNKNOWN, not "up to date" | same | same |
-| `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; nudges to reboot if a newer kernel is pending) | **informational only** — dnf enforces `installonly_limit` itself, so nothing is offered for removal; flags a pending reboot |
+| `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; apt confirms its own transaction; nudges to reboot) | **informational only** — dnf enforces `installonly_limit` itself, so nothing is offered for removal; flags a pending reboot |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — | — |
 | `-P` | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |

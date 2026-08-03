@@ -708,3 +708,73 @@ def test_config_drift_quiet_when_clean(tmp_path, capsys):
     with patch("fettle.command.which", return_value=False):
         DebianBackend().check_config_drift(ctx)
     assert "no pending config-file merges" in capsys.readouterr().out
+
+
+# -- kernel purge: the orphans fix, applied to the more dangerous action ------
+def _kernels(installed, running, chosen, assume_yes=False):
+    """Run manage_kernels with a stubbed dpkg/uname; `chosen` is what the user picks."""
+    calls, state = [], {"pkgs": list(installed) + ["linux-image-cloud-amd64"]}
+
+    def run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        calls.append(cmd)
+        if cmd[:2] == ["dpkg", "-l"]:
+            return command.Proc(0, "".join(f"ii  {p}  1.0  amd64  x\n" for p in installed), "")
+        if cmd[0] == "uname":
+            return command.Proc(0, running + "\n", "")
+        if cmd[:2] == ["dpkg-query", "-W"]:
+            return command.Proc(0, "".join(f"ii  {p}\n" for p in state["pkgs"]), "")
+        if cmd[:2] == ["apt-get", "purge"]:
+            # apt takes the meta-package with the image, as measured on Debian 13.
+            state["pkgs"] = [p for p in state["pkgs"]
+                             if p not in chosen and p != "linux-image-cloud-amd64"]
+            return command.Proc(0, "", "")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(assume_yes=assume_yes)
+    with patch("fettle.command.run", side_effect=run), \
+         patch("fettle.command.which", return_value=True), \
+         patch("fettle.backends.base.Context.select",
+               lambda self, items, *, prompt: list(chosen)):
+        DebianBackend().manage_kernels(ctx)
+    return calls, ctx
+
+
+_IMGS = ["linux-image-6.12.100+deb13-cloud-amd64", "linux-image-6.12.96+deb13-cloud-amd64",
+         "linux-image-6.12.48+deb13-cloud-amd64"]
+
+
+def test_kernel_purge_lets_apt_show_its_transaction():
+    """Purging a kernel image also purges the meta-package that pulls in future kernel
+    upgrades — measured on Debian 13. With `-y` apt never shows that, so consenting to
+    drop one old kernel silently stopped the host receiving new ones. `orphans` was
+    fixed this way in v0.56.0; this, the more dangerous action, was missed."""
+    calls, _ = _kernels(_IMGS, "6.12.100+deb13-cloud-amd64",
+                        ["linux-image-6.12.48+deb13-cloud-amd64"])
+    purge = [c for c in calls if c[:2] == ["apt-get", "purge"]][0]
+    assert "-y" not in purge
+
+
+def test_kernel_purge_unattended_under_yes():
+    calls, _ = _kernels(_IMGS, "6.12.100+deb13-cloud-amd64",
+                        ["linux-image-6.12.48+deb13-cloud-amd64"], assume_yes=True)
+    assert "-y" in [c for c in calls if c[:2] == ["apt-get", "purge"]][0]
+
+
+def test_kernel_purge_warns_when_the_meta_package_goes(capsys):
+    _, ctx = _kernels(_IMGS, "6.12.100+deb13-cloud-amd64",
+                      ["linux-image-6.12.48+deb13-cloud-amd64"])
+    ctx.output.print_summary()
+    said = capsys.readouterr()
+    assert "linux-image-cloud-amd64" in said.out          # named in the count
+    assert "no longer pull in new kernel" in said.err     # and the consequence stated
+
+
+def test_kernel_never_offers_running_or_newest():
+    """Prior hardening (v0.4.3) that must not regress: after an upgrade but before the
+    reboot the RUNNING kernel is the OLD one, so protecting only `running` would offer
+    to purge the newer next-boot kernel."""
+    calls, _ = _kernels(_IMGS, "6.12.96+deb13-cloud-amd64", [])
+    # running = .96, newest = .100 -> only .48 may ever be offered
+    assert not any("6.12.96" in a or "6.12.100" in a
+                   for c in calls if c[:2] == ["apt-get", "purge"] for a in c)
