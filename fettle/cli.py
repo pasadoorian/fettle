@@ -68,11 +68,13 @@ REMOTE_DEFAULT_ACTIONS = ("clean", "update", "firmware_check")
 ACTION_HELP = {
     "clean": ("reclaim disk from downloaded package files; keeps rollback versions "
               "on Arch (asks first; --yes to skip the prompt)"),
-    "orphans": "list foreign packages; remove true orphans",
+    "orphans": ("list foreign packages; offer to remove ones nothing needs any "
+                "more (asks per package, then again for the real transaction)"),
     "update": "update everything (asks before upgrading; --yes to skip)",
     "only_update": ("check for updates: refresh repo metadata and report what's "
                     "waiting, without installing anything"),
-    "rebuild_check": "find packages/services needing a rebuild or restart",
+    "rebuild_check": ("is the patch in effect? reports a pending reboot and "
+                      "services still running old libraries"),
     "python_rebuild_check": "rebuild packages stranded on an old Python",
     "config_drift": "list pending config-file merges (.pacnew / .dpkg-dist / .rpmnew)",
     "auto_updates": "report whether automatic/unattended updates are enabled",

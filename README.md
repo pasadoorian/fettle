@@ -46,6 +46,8 @@ real unit-test coverage the bash originals never had.
 - [Quick start](#quick-start)
 - [Maintenance actions](#maintenance-actions)
   - [Cache cleaning (-c)](#cache-cleaning--c)
+  - [Removing orphans (-o)](#removing-orphans--o)
+  - [Is the patch actually in effect? (-r)](#is-the-patch-actually-in-effect--r)
   - [Checking for updates (-O)](#checking-for-updates--o)
   - [Mirror refresh before upgrading — Arch family (-u)](#mirror-refresh-before-upgrading--arch-family--u)
 - [Package supply-chain](#package-supply-chain)
@@ -326,10 +328,10 @@ just Debian — each revision confirmed individually.
 | Flag | Action | Arch | Debian | RHEL family |
 |---|---|---|---|---|
 | `-c` | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
-| `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove` | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
+| `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) — **the package manager confirms the full transaction**, which may exceed what you picked | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove`, same confirmation | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
 | `-u` / `--upgrade` | `update` | mirrorlist refresh (Manjaro; `[updaters.arch] refresh_mirrors`), then pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
-| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) | `needrestart` (services to restart) | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
+| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) + **reboot check**: warns if the running kernel's modules were replaced | `needrestart` — services **and** the kernel state (`KSTA`), so a pending reboot is reported | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
 | `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
 | `-d` | `config-drift` | `pacdiff` `.pacnew` files | `*.dpkg-dist`/`*.dpkg-new`/`*.ucf-dist` + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
 | `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
@@ -394,6 +396,53 @@ reached no repository at all, which is why fettle passes `--error-on=any` on apt
 upgrade is the classic partial-upgrade footgun, so the preview is resolved against a private
 temporary database (the `checkupdates` technique) and `/var/lib/pacman/sync` is left
 untouched. It also honours `IgnorePkg`, so packages you have pinned are not reported.
+
+### Is the patch actually in effect? (`-r`)
+
+`fettle -r` answers the question that matters after an upgrade: **is the new code actually
+running, or is something still on the old version?** An update you have installed but not
+activated is not an update. It is in the default action set for that reason.
+
+It reports two different things:
+
+- **A pending reboot.** On Debian/Ubuntu from `needrestart`'s kernel state, on RHEL from
+  `needs-restarting -r`, and on Arch/Manjaro by noticing that the running kernel's module
+  directory has been replaced — at which point that kernel can no longer load *any* module
+  it has not already loaded, so a USB device plugged in after the upgrade simply will not
+  work.
+- **Services still running old libraries**, which need restarting but not a reboot.
+
+It never restarts or reboots anything itself; it tells you and stops. On Arch, `-R` will
+offer to rebuild packages built against since-upgraded libraries.
+
+**If the check cannot run, it says so.** A missing or failing `checkrebuild`, empty
+`needrestart` output, or a dnf4 host without `yum-utils` are all reported as *"not
+determined"* rather than as a clean result — the distinction matters most here, because
+"nothing to do" is exactly what a broken check looks like.
+
+### Removing orphans (`-o`)
+
+`fettle -o` lists packages nothing depends on any more and offers to remove them, one at a
+time. Two things worth knowing before you say yes:
+
+**The real transaction can be larger than your selection.** Removing an orphan also removes
+dependencies that orphan was the last thing needing — choosing one package can remove
+several. fettle therefore lets the package manager show and confirm its own transaction, so
+the full set is a decision point rather than a surprise. Declining there removes nothing.
+
+**The count reported is what actually went**, measured from the installed set before and
+after, and it names anything removed beyond what you picked:
+
+```
+✓ 2 package(s) removed (including 1 unused dependency(ies): lua54)
+```
+
+`keep_orphans` in the config protects packages from ever being offered, and they are named
+when held back. On RHEL, kernels are never offered at all — and if the query that identifies
+them fails, nothing is offered rather than guessing.
+
+> **`--yes` means "delete them" here.** For automation that is the point; it is also the one
+> action where an unattended run removes software. `--dry-run` first if in doubt.
 
 ### Cache cleaning (`-c`)
 

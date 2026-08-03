@@ -10,6 +10,25 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.58.2] — document what `orphans` and `rebuild-check` now do
+
+Documentation only, and overdue: the `clean` and `only-update` sweeps updated the README and
+the help text as part of the pass, the `orphans` and `rebuild-check` sweeps did not. The
+action table was still describing behaviour that changed several releases ago.
+
+- **`-r` now has its own section.** What it actually answers — *is the patch in effect?* —
+  and the three ways a pending reboot is detected, including the Arch case where the running
+  kernel can no longer load modules. Also that a check which could not run says so, since
+  "nothing to do" is precisely what a broken check looks like.
+- **`-o` now has its own section.** That the real transaction can exceed your selection and
+  the package manager gets to confirm it; that the reported count is measured rather than
+  assumed; that `keep_orphans` holds packages back by name; and a warning that `--yes` means
+  "delete them" in this one action.
+- **Help lines rewritten for both**, from mechanism to outcome. `-r` was "find
+  packages/services needing a rebuild or restart"; it is now "is the patch in effect?
+  reports a pending reboot and services still running old libraries".
+
+
 ## [0.58.1] — audit of the QA findings so far
 
 Documentation only. An end-to-end check that every finding from the five completed sweeps
