@@ -10,6 +10,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.59.1] — document the output contract the QA pass changed
+
+Documentation only, filling two gaps found by auditing the docs against the behaviour.
+
+**Exit status is now part of the contract and was documented in one place only.** Since
+0.52.0 fettle exits `1` whenever an action reports a failure, and `0` otherwise — including
+for a run you *declined*, because you got what you asked for. That was mentioned inside the
+`only-update` section and nowhere else, though it changed for every action and matters most
+to the cron and CI callers least likely to read a feature section.
+
+**The summary vocabulary was never documented.** `✓ / ! / ✗` now have a table, and the
+reason the middle state exists: `pacman`, `apt` and `dnf` all exit non-zero **both** when you
+answer "no" and when they genuinely break, so an interactive run that stops early is
+ambiguous and fettle says only what it knows.
+
+New **"Reading the output"** section covers both, plus the invariant the whole QA plan is
+organised around — *"could not look" is never reported as "clean"*.
+
+Also: the support matrix row for `-r` said "Rebuilds & service restarts", which
+undersells it since 0.57.0/0.58.0 — it reports a pending reboot on all three families now.
+
+
 ## [0.59.0] — `config-drift` says whether your settings still apply
 
 QA pass on `config-drift`. The action lists files an upgrade left behind — and **which**

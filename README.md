@@ -44,6 +44,7 @@ real unit-test coverage the bash originals never had.
 - [Installation](#installation)
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
 - [Quick start](#quick-start)
+- [Reading the output](#reading-the-output)
 - [Maintenance actions](#maintenance-actions)
   - [Cache cleaning (-c)](#cache-cleaning--c)
   - [Did an upgrade change your config? (-d)](#did-an-upgrade-change-your-config--d)
@@ -126,7 +127,7 @@ the at-a-glance "will it run on my box" view.
 | Refresh metadata + report upgradable | `-O` | ● | ● | ● | |
 | Clean package caches | `-c` | ● | ● | ● | ✔︎ |
 | Orphaned / unused packages | `-o` | ● | ● | ● | ✔︎ |
-| Rebuilds & service restarts | `-r` | ● | ● | ● | ✔︎ |
+| Pending reboot, rebuilds & restarts | `-r` | ● | ● | ● | ✔︎ |
 | Pending config-file merges | `-d` | ● | ● | ● | ✔︎ |
 | Automatic-update posture | `-x` | ● | ● | ● | ✔︎ |
 | Firmware updates | `-f` | ● | ● | ● | ✔︎ |
@@ -303,6 +304,31 @@ fettle -P                  # package supply-chain audit -> ~/.fettle/reports/
 fettle -S                  # full security scan (sys-audit --all; self-elevates)
 fettle -U                  # AI: is this upgrade safe? [experimental] (needs API key)
 ```
+
+## Reading the output
+
+Every run ends in a **Summary**, and the mark in front of each line is load-bearing:
+
+| Mark | Means |
+|---|---|
+| `✓` | it happened |
+| `!` | it did **not** happen, and that may be fine — you declined a prompt, or a tool was absent |
+| `✗` | it failed |
+
+The distinction between the last two is deliberate and was added because it is genuinely
+ambiguous: `pacman`, `apt` and `dnf` all exit non-zero **both** when you answer "no" at their
+prompt and when they genuinely break. With `--yes` there was no prompt to decline, so a
+non-zero exit is a real failure and gets `✗`. Without it, fettle says what it knows and no
+more.
+
+**Exit status:** `0` unless something reported a failure (`✗`), in which case `1`. A run you
+declined exits `0` — you got what you asked for. This matters for cron and CI: a maintenance
+run whose work was blocked no longer looks like a successful one.
+
+**"Could not look" is never reported as "clean."** If a check could not run — a tool missing,
+a repository unreachable, a query that failed — it says so rather than returning the same
+output as a healthy system. Several of fettle's worst bugs were exactly that confusion, and
+the QA plan in [`docs/qa/`](docs/qa/) exists to keep finding them.
 
 ## Maintenance actions
 
