@@ -583,20 +583,36 @@ class ArchBackend(PackageBackend):
     def check_rebuilds(self, ctx: Context) -> Result:
         out = ctx.output
         if not command.which("checkrebuild"):
-            out.note("checkrebuild not found (install rebuild-detector); skipping.")
-            return Result()
-        lines = [ln for ln in self._query(["checkrebuild"]).splitlines() if ln.strip()]
+            # Not a silent skip: the summary would otherwise be empty, which reads
+            # exactly like "nothing needs rebuilding" to anyone not watching closely.
+            out.warn("checkrebuild not found (install rebuild-detector) — whether any "
+                     "package needs rebuilding was NOT checked.")
+            return Result(ok=False)
+        proc = command.run(["checkrebuild"], capture=True)
+        if not proc.ok and not (proc.stdout or "").strip():
+            out.warn(f"checkrebuild failed (exit {proc.returncode}) — whether any "
+                     "package needs rebuilding was NOT determined.")
+            return Result(ok=False)
+        lines = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
         if not lines:
             out.ok("no packages need rebuilding.")
             return Result()
         out.note("packages that may require a rebuild:")
         for ln in lines:
             print(f"    {ln}")
-        pkgs = [parts[1] for ln in lines if len(parts := ln.split()) >= 2]
+        # checkrebuild prints "<pkgbase> <pkgname>"; older builds print just the name.
+        # Taking field 2 unconditionally silently dropped every single-field line, so
+        # `-R` could report N candidates and rebuild none of them.
+        pkgs = [p[1] if len(p := ln.split()) >= 2 else p[0] for ln in lines]
         if ctx.auto_rebuild and pkgs:
             if ctx.confirm(f"rebuild {len(pkgs)} package(s)?"):
+                failed_before = len(ctx.failed_commands)
                 self._rebuild(pkgs, ctx)
-                out.summary_add("rebuilt packages with outdated deps")
+                if len(ctx.failed_commands) > failed_before:
+                    out.summary_fail(f"rebuild of {len(pkgs)} package(s) did NOT "
+                                     "complete — see the errors above.")
+                else:
+                    out.summary_add(f"{len(pkgs)} package(s) rebuilt")
         else:
             out.summary_add(f"{len(lines)} package(s) may need rebuilding")
             out.next_step("rebuild them: fettle -r -R")

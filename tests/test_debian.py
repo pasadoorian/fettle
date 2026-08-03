@@ -625,3 +625,47 @@ def test_installed_packages_excludes_config_only_leftovers():
     with patch("fettle.command.run", return_value=command.Proc(0, listing, "")):
         pkgs = DebianBackend().installed_packages(_ctx())
     assert pkgs == {"bash", "coreutils"}
+
+
+# -- rebuild-check: the reboot is the answer that matters ---------------------
+_NEEDRESTART_REBOOT = ("NEEDRESTART-VER: 3.11\n"
+                       "NEEDRESTART-KCUR: 6.12.96+deb13-cloud-amd64\n"
+                       "NEEDRESTART-KEXP: 6.12.100+deb13-cloud-amd64\n"
+                       "NEEDRESTART-KSTA: 3\n"
+                       "NEEDRESTART-SVC: dbus.service\n")
+
+
+def test_rebuild_check_reports_a_required_reboot(capsys):
+    """Measured on a guest running 6.12.96 with 6.12.100 installed: fettle said
+    "3 service(s) need restarting" and never mentioned the reboot. Restarting those
+    services cannot help — the running kernel is the unpatched one. RHEL has always
+    reported this; Debian silently did not, and `-r` is in the default action set."""
+    ctx = _ctx()
+    with patch("fettle.command.run",
+               return_value=command.Proc(0, _NEEDRESTART_REBOOT, "")), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_rebuilds(ctx)
+    ctx.output.print_summary()
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert "reboot required" in out.lower()
+
+
+def test_rebuild_check_quiet_when_kernel_is_current(capsys):
+    listing = _NEEDRESTART_REBOOT.replace("KSTA: 3", "KSTA: 1")
+    ctx = _ctx()
+    with patch("fettle.command.run", return_value=command.Proc(0, listing, "")), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().check_rebuilds(ctx)
+    ctx.output.print_summary()
+    assert "reboot" not in capsys.readouterr().out.lower()
+
+
+def test_rebuild_check_empty_output_is_not_a_clean_result(capsys):
+    """needrestart always prints a header. Nothing at all means it did not run —
+    saying "no services need restarting" would invent a clean result."""
+    ctx = _ctx()
+    with patch("fettle.command.run", return_value=command.Proc(1, "", "boom")), \
+         patch("fettle.command.which", return_value=True):
+        res = DebianBackend().check_rebuilds(ctx)
+    assert res.ok is False
+    assert "no services need restarting" not in capsys.readouterr().out

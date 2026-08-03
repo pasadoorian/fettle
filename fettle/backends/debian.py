@@ -435,12 +435,47 @@ class DebianBackend(PackageBackend):
         return []
 
     # -- rebuilds (service restarts after library upgrades) ------------------
+    # needrestart's kernel verdict (`NEEDRESTART-KSTA`), from its own documentation.
+    # Only 1 means "the running kernel is the one you have installed".
+    _KSTA = {
+        "0": (True, "could not determine whether the running kernel is current"),
+        "1": (False, ""),
+        "2": (True, "a newer kernel is installed with a compatible ABI — the running "
+                    "one is still the old build"),
+        "3": (True, "a newer kernel is installed; the running one is OLD"),
+    }
+
     def check_rebuilds(self, ctx: Context) -> Result:
         out = ctx.output
         if command.which("needrestart"):
-            svc = [ln.split(":", 1)[1].strip()
-                   for ln in self._query(["needrestart", "-b", "-r", "l"]).splitlines()
-                   if ln.startswith("NEEDRESTART-SVC:")]
+            text = self._query(["needrestart", "-b", "-r", "l"])
+            if not text.strip():
+                # An empty answer is not "nothing to do" — needrestart always prints its
+                # header. Saying "no services need restarting" here would be inventing a
+                # clean result out of a check that did not run.
+                out.warn("needrestart produced no output — whether anything needs "
+                         "restarting was NOT determined.")
+                return Result(ok=False)
+            fields = {}
+            for ln in text.splitlines():
+                key, _, val = ln.partition(":")
+                fields.setdefault(key.strip(), []).append(val.strip())
+
+            # The kernel first: fettle read only the service lines, so a box running an
+            # OLD kernel after its own upgrade was told to restart three services —
+            # advice that cannot help, because the running kernel is the unpatched one.
+            # RHEL has always reported this; Debian silently did not.
+            ksta = (fields.get("NEEDRESTART-KSTA") or ["0"])[0]
+            reboot, why = self._KSTA.get(ksta, self._KSTA["0"])
+            if reboot:
+                cur = (fields.get("NEEDRESTART-KCUR") or [""])[0]
+                exp = (fields.get("NEEDRESTART-KEXP") or [""])[0]
+                detail = f" (running {cur}, installed {exp})" if cur and exp else ""
+                out.warn(f"REBOOT REQUIRED — {why}{detail}.")
+                out.summary_add("reboot required (kernel)")
+                out.next_step("reboot to start running the kernel you have installed")
+
+            svc = fields.get("NEEDRESTART-SVC", [])
             if not svc:
                 out.ok("no services need restarting.")
                 return Result()

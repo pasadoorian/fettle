@@ -10,6 +10,55 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.57.0] — Debian never told you to reboot
+
+QA pass on `rebuild-check`. The question this action exists to answer is *"I just patched
+this box — is the patch actually in effect?"*, and on the Debian family it was answering a
+different one.
+
+**`needrestart` reports the kernel state and fettle read only the service lines.** Measured
+on a guest that had just upgraded its own kernel:
+
+```
+NEEDRESTART-KCUR: 6.12.96+deb13-cloud-amd64     <- running
+NEEDRESTART-KEXP: 6.12.100+deb13-cloud-amd64    <- installed
+NEEDRESTART-KSTA: 3                             <- needrestart: reboot required
+```
+
+fettle's answer on that machine:
+
+```
+✓ 3 service(s) need restarting
+→ restart them: sudo needrestart
+```
+
+The advice was not merely incomplete, it was wrong: restarting those services cannot help
+while the running kernel is the old one. And **`kernel` (`-k`) is not in the default action
+set**, so a routine `fettle -a` that upgraded the kernel told nobody to reboot — while the
+identical run on Rocky said "reboot required", because the RHEL backend has a whole
+docstring about this exact asymmetry.
+
+`NEEDRESTART-KSTA` is now read, with its own documented meanings (0 unknown, 1 current,
+2 ABI-compatible newer kernel, 3 newer kernel — reboot). Same box, now:
+
+```
+✓ reboot required (kernel)
+✓ 3 service(s) need restarting
+→ reboot to start running the kernel you have installed
+```
+
+**Two more "could not look" holes closed while here.** Empty `needrestart` output — it
+always prints a header, so nothing at all means it did not run — reported *"no services need
+restarting"*. On Arch, a missing `checkrebuild` was a quiet note with an empty summary, and a
+*failing* `checkrebuild` produced *"no packages need rebuilding"*. Both now say the check
+did not run.
+
+**And `-r -R` could rebuild nothing while offering to.** The package list took field 2 of
+each `checkrebuild` line and dropped anything shorter, so on a build that prints one field
+per line the count shown and the count acted on differed silently. A failed rebuild is also
+now a failure rather than `✓ rebuilt packages with outdated deps`.
+
+
 ## [0.56.1] — count only what is actually installed on Debian
 
 Follow-up to 0.56.0, found by chasing a number that did not add up.
