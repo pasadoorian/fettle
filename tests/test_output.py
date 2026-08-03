@@ -82,3 +82,18 @@ def test_run_streamed_labels_real_tool_not_env(capsys):
                                           "apt-get", "full-upgrade"])
     out = capsys.readouterr().out
     assert "apt-get" in out and "output below is apt-get's" in out
+
+
+def test_diagnostics_flush_stdout_first(monkeypatch):
+    """stderr is unbuffered, stdout is block-buffered off a terminal — so warnings
+    jumped ahead of the section they belonged to in logs and over ssh. QA caught a
+    signature warning printed above the header it was warning about."""
+    from unittest.mock import MagicMock
+    import sys as _sys
+    from fettle.output import Output
+
+    fake_out, fake_err = MagicMock(), MagicMock()
+    monkeypatch.setattr(_sys, "stdout", fake_out)
+    monkeypatch.setattr(_sys, "stderr", fake_err)
+    Output(color=False).warn("something")
+    assert fake_out.flush.called

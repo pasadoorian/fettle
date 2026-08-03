@@ -8,7 +8,7 @@ truth about what happened."*
 The riskiest action fettle has: it is the only one that installs software. Lab guests take
 the full mutating set and are reverted between cases; `manjaro-local` is `--dry-run` only.
 
-Status: **spec written from source at v0.54.1, not yet run.**
+Status: **swept and fixed.** One sweep across all seven targets at v0.54.1; six findings, all fixed by v0.55.2.
 
 ---
 
@@ -113,8 +113,99 @@ repo rolls a package back.
 
 ## Results
 
-*(to be filled by the sweep)*
+**Sweep 1 — v0.54.1, 2026-07-31.** Six lab guests took the full mutating set (reverted
+between runs); `manjaro-local` was `--dry-run` only. **340 packages were genuinely
+installed across the fleet.**
+
+| Target | Pending before | After | Package set changed | Dry-run installed |
+|---|---|---|---|---|
+| arch | 27 | **0** | yes | nothing |
+| debian | 3 | **0** | yes | nothing |
+| ubuntu | 13 | **0** | yes | nothing |
+| rocky9 | 67 | **0** | yes | nothing |
+| alma9 | 57 | **0** | yes | nothing |
+| fedora | **173** | **0** | yes | nothing |
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| QA-UP-01 | PASS | pending → 0 on all six; package-set hash changed on all six |
+| QA-UP-02 | PASS | exit 0 on the healthy path |
+| QA-UP-03 | **FAIL → fixed** | U-05: the mirror step announced only after finishing |
+| QA-UP-04 | PASS | metadata mtime advanced during `-u` — no separate `-O` needed |
+| QA-UP-05 | **FAIL → fixed** | U-01: a second run with nothing to do said `✓ packages updated` |
+| QA-UP-06 | PASS | declined run left the package set byte-identical |
+| QA-UP-07 | PASS | `< /dev/null` did not hang and installed nothing |
+| QA-UP-08 | PASS | `--yes` prompted nowhere |
+| QA-UP-09 | not run | needs a seeded advisory DB with unpatched Criticals |
+| QA-UP-10 | **FAIL → fixed** | U-01: `--dry-run` claimed `✓ packages updated` |
+| QA-UP-11 | **FAIL → fixed** | U-02: a failed upgrade claimed success |
+| QA-UP-12 | **FAIL → fixed** | U-02: exit 0 over a failed upgrade |
+| QA-UP-13 | not run | needs a guest with `yay` deliberately removed |
+| QA-UP-14 | PASS | arch: `-O`, `-u --dry-run` and the real run all named 27 |
+| QA-UP-15 | PASS (by design) | `Result.summary` composes "repos: pacman, AUR: yay" |
+| QA-UP-16 | PASS | `--yes` states "UNATTENDED — PKGBUILD review skipped" |
+| QA-UP-17 | not run | needs a seeded IoC feed |
+| QA-UP-18 | PASS | EL: the gate names the repo and asks |
+| QA-UP-19 | **FAIL → fixed** | U-04: proceeded and warned, then logged it as a green ✓ |
+| QA-UP-20 | not run | — |
+| QA-UP-21 | not run | — |
+| QA-UP-22 | n/a | no flatpak or snapd on any guest |
+| QA-UP-23 | PASS | manjaro-local: `refresh_mirrors = false` skips and says so |
+| QA-UP-24 | not run | needs a kernel upgrade followed by a reboot check |
+| QA-UP-25 | not run | belongs to the `rebuild-check` sweep |
+| QA-UP-26 | **DEFERRED** | run-log permissions — see B4, deferred by decision |
+
+**Not measured, and worth stating plainly:** the in-sweep failure injection (step S5) was
+partly void. By the time it ran, each guest had already been fully upgraded, so a broken
+repository had nothing left to fail on. The failure path was instead verified separately on
+freshly-reverted Arch and Rocky guests with updates still pending — those results are the
+trustworthy ones, and the S5 numbers are not.
 
 ## Findings
 
-*(to be filled by the sweep)*
+### U-01 — the summary claimed success unconditionally. FIXED v0.55.0
+`update_extras` ended with `summary_add("packages updated (…)")` outside any check. Three
+runs that installed nothing all signed off green:
+
+| Run | Installed | Reported |
+|---|---|---|
+| `-u --dry-run` | nothing | `✓ packages updated (repos: pacman, AUR: yay)` |
+| `-u`, **declined at the prompt** | nothing | `✓ packages updated` |
+| `-u --yes`, nothing to do | nothing | `✓ packages updated` |
+
+On an up-to-date Manjaro box the dry-run printed `✓ no updates pending` and
+`✓ packages updated` in the same summary. The declined case is the worst of the three: the
+user said no, and fettle recorded the upgrade as done.
+
+Backends now describe what they did via `Result.summary`; `actions._update` decides whether
+the description was earned.
+
+### U-02 — a failed upgrade reported success and exited 0. FIXED v0.55.0
+`_update` discarded both backends' `Result` and never consulted `ctx.failed_commands`.
+Measured on Rocky with an unreachable repo: dnf errored, summary said
+`✓ packages updated (dnf)`, exit 0.
+
+### U-03 — the first fix reported *declined* upgrades as failures. FIXED v0.55.0
+Introduced and caught within the same pass. pacman, apt and dnf all exit non-zero both when
+the user answers "no" and when they genuinely break — an ambiguity this codebase already
+documented for dnf and then walked into. `--yes` is the discriminator: with it there was no
+prompt to decline. Hence `Output.summary_warn()` and a third summary state.
+
+### U-04 — installing unverified packages was logged as an achievement. FIXED v0.55.1
+`✓ upgraded from 1 unsigned repo(s)`, in green, for installing code whose signature was
+never checked. Now `! installed packages from N repo(s) WITHOUT signature verification`.
+
+### U-05 — the mirror step announced only after it finished. FIXED v0.55.2
+Reported by Paul from a live `fettle -a`. It runs `quiet=True`, so it printed a tick once
+complete while every other step announces beforehand — and with a bare `-f` it probes every
+known mirror, so the user watches a silent terminal for the duration and reasonably reads it
+as a hang. It now says `regenerating the mirror list (probing mirrors — this can take a
+while)...` first. Under `--dry-run` the existing `would run:` line is the announcement, so
+nothing extra is printed and nothing false is claimed.
+
+### U-06 — diagnostics jumped ahead of the output they belonged to. FIXED v0.55.2
+stderr is unbuffered; stdout is *block*-buffered whenever it is not a terminal. Over ssh, in
+a run-log or through a pipe, every warning therefore appeared **before** its own section
+header — measured with the signature warning printed above the `▸ Updating packages` line it
+was warning about. `Output` now flushes stdout before writing any diagnostic. Not specific
+to `update`: it affects every warning fettle has ever emitted into a log.

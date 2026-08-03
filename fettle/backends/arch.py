@@ -284,6 +284,14 @@ class ArchBackend(PackageBackend):
                 out.note("skipping mirror refresh "
                          "([updaters.arch] refresh_mirrors = false).")
             else:
+                if not ctx.dry_run:
+                    # Announce BEFORE probing. This step runs quiet, so it used to
+                    # print only a tick once finished — and with a bare `-f` it probes
+                    # every known mirror, so the user watched a silent terminal for as
+                    # long as that took and reasonably read it as a hang. Every other
+                    # step of the upgrade says what it is about to do.
+                    out.note("regenerating the mirror list (probing mirrors — this "
+                             "can take a while)...")
                 ctx.execute(argv, quiet=True,
                             msg="mirror list regenerated (/etc/pacman.d/mirrorlist)")
         elif argv is not None:

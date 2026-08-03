@@ -10,6 +10,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.55.2] — say what you are about to do, in the right order
+
+The last two findings from the `update` sweep. `docs/qa/update.md` now carries the full
+results: 340 packages installed across six guests, six findings, all fixed.
+
+**The mirror step announced only after it had finished.** Reported from a live `fettle -a`.
+It runs `quiet=True`, so it printed its tick on completion while every other step of the
+upgrade announces beforehand — and with a bare `-f` it probes *every* known mirror, so the
+user watches a silent terminal for however long that takes and reasonably reads it as a
+hang. It now says `regenerating the mirror list (probing mirrors — this can take a
+while)...` first. Under `--dry-run` the existing `would run:` line already is the
+announcement, so nothing extra is printed and nothing false is claimed.
+
+**Diagnostics jumped ahead of the output they belonged to.** stderr is unbuffered while
+stdout is *block*-buffered whenever it is not a terminal, so over ssh, in a run-log, or
+through a pipe, every warning appeared **before** its own section header. Measured with a
+signature warning printed above the `▸ Updating packages` line it was warning about:
+
+```
+  ! 1 enabled repository install packages WITHOUT verifying their signature
+  ▸ [1/1] Updating packages          <- the header arrived second
+```
+
+`Output` now flushes stdout before writing any diagnostic. This is not specific to
+`update` — it has silently scrambled the ordering of every warning fettle has ever written
+into a log or an ssh session.
+
+
 ## [0.55.1] — installing unverified packages is not an achievement
 
 The RHEL-family half of the `update` sweep. With a `gpgcheck=0` repository enabled and

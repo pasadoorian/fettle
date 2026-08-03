@@ -65,14 +65,28 @@ class Output:
         if not self.quiet:
             print(f"  {self.DIM}{msg}{self.NC}")
 
+    def _to_stderr(self, line: str) -> None:
+        """Write a diagnostic, keeping it in step with the surrounding output.
+
+        stderr is unbuffered while stdout is *block*-buffered whenever it is not a
+        terminal — so over ssh, in a run-log, or through a pipe, every warning jumped
+        ahead of the section it belongs to. QA caught a signature warning printed above
+        the `▸ Updating packages` header it was warning about, and a failed-command
+        message detached from its step. Flushing stdout first costs nothing and keeps
+        the transcript readable.
+        """
+        sys.stdout.flush()
+        print(line, file=sys.stderr)
+        sys.stderr.flush()
+
     def warn(self, msg: str) -> None:
-        print(f"  {self.YLW}!{self.NC} {msg}", file=sys.stderr)
+        self._to_stderr(f"  {self.YLW}!{self.NC} {msg}")
 
     def err(self, msg: str) -> None:
-        print(f"  {self.RED}✗{self.NC} {msg}", file=sys.stderr)
+        self._to_stderr(f"  {self.RED}✗{self.NC} {msg}")
 
     def alert(self, msg: str) -> None:
-        print(f"{self.B}{self.RED}  !! {msg}{self.NC}", file=sys.stderr)
+        self._to_stderr(f"{self.B}{self.RED}  !! {msg}{self.NC}")
 
     # -- run a noisy command, show a one-line status -------------------------
     def run_quiet(self, msg: str, cmd, *, as_user: str | None = None):
@@ -87,7 +101,7 @@ class Output:
             self.err(f"{msg} failed (exit {proc.returncode}):")
             text = (proc.stdout + proc.stderr).strip()
             if text:
-                print(text, file=sys.stderr)
+                self._to_stderr(text)   # same ordering guarantee as warn/err
         return proc
 
     # -- run an interactive command, framed so its output isn't mistaken for ours --
