@@ -106,7 +106,7 @@ Status of each feature's QA pass. `—` = not started.
 | firmware | `-f` | [firmware.md](firmware.md) | **swept — 3 fixed (incl. B1), 1 blocked** |
 | kernel | `-k` | [kernel.md](kernel.md) | **swept — 2 fixed, 1 open (Arch-only)** |
 | aur-audit | `-A` | [aur-audit.md](aur-audit.md) | **swept — 2 findings, both fixed** |
-| aur-ioc-scan | `-I` | — | — |
+| aur-ioc-scan | `-I` | [aur-ioc-scan.md](aur-ioc-scan.md) | **swept — 5 findings, all fixed** |
 | pkg-audit | `-P` | — | — |
 | hardening-audit | `-H` | — | — |
 | container-update | `-C` | — | — |

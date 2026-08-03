@@ -18,19 +18,19 @@ def _backdate(cache_dir, seconds):
 
 def test_bad_packages_merges_and_strips_comments(tmp_path):
     text = "# comment\nevil-pkg\n\nother-pkg\n"
-    with patch("fettle.aur.ioc._fetch", return_value=text):
+    with patch("fettle.aur.ioc._fetch", return_value=(text, "ok")):
         pkgs = _ioc(tmp_path).bad_packages()
     assert pkgs == {"evil-pkg", "other-pkg"}
 
 
 def test_bad_accounts_parses_json(tmp_path):
     payload = json.dumps({"accounts": {"baduser": {}, "eviluser": {}}})
-    with patch("fettle.aur.ioc._fetch", return_value=payload):
+    with patch("fettle.aur.ioc._fetch", return_value=(payload, "ok")):
         assert _ioc(tmp_path).bad_accounts() == {"baduser", "eviluser"}
 
 
 def test_cache_hit_avoids_refetch(tmp_path):
-    with patch("fettle.aur.ioc._fetch", return_value="pkg-a\n") as m:
+    with patch("fettle.aur.ioc._fetch", return_value=("pkg-a\n", "ok")) as m:
         ioc = _ioc(tmp_path)
         ioc.bad_npm()
         first = m.call_count
@@ -39,7 +39,7 @@ def test_cache_hit_avoids_refetch(tmp_path):
 
 
 def test_stale_cache_refetches(tmp_path):
-    with patch("fettle.aur.ioc._fetch", return_value="pkg-a\n") as m:
+    with patch("fettle.aur.ioc._fetch", return_value=("pkg-a\n", "ok")) as m:
         _ioc(tmp_path).bad_npm()
         n1 = m.call_count
         _backdate(tmp_path / "ioc", 10_000)  # older than the 100s TTL
@@ -49,15 +49,15 @@ def test_stale_cache_refetches(tmp_path):
 
 def test_bad_npm_seeds_when_feed_empty(tmp_path):
     # Offline with no npm IOC list -> fall back to the seed, never silently empty.
-    with patch("fettle.aur.ioc._fetch", return_value=""):
+    with patch("fettle.aur.ioc._fetch", return_value=("", "unreachable")):
         assert _ioc(tmp_path).bad_npm() == set(DEFAULT_NPM_SEED)
 
 
 def test_failed_fetch_falls_back_to_stale(tmp_path):
-    with patch("fettle.aur.ioc._fetch", return_value="pkg-a\n"):
+    with patch("fettle.aur.ioc._fetch", return_value=("pkg-a\n", "ok")):
         _ioc(tmp_path).bad_npm()  # seed cache
     _backdate(tmp_path / "ioc", 10_000)
-    with patch("fettle.aur.ioc._fetch", return_value=""):  # network down
+    with patch("fettle.aur.ioc._fetch", return_value=("", "unreachable")):  # network down
         pkgs = _ioc(tmp_path).bad_npm()
     assert pkgs == {"pkg-a"}  # stale cache used rather than "clean"
 
@@ -66,8 +66,8 @@ def test_unreadable_cache_degrades_not_crashes(tmp_path):
     # B6: an earlier elevated run can leave the cache root-owned; a later
     # unprivileged read must return empty, not raise PermissionError.
     ioc = _ioc(tmp_path)
-    with patch("fettle.aur.ioc._fetch", return_value="evil-pkg\n"):
+    with patch("fettle.aur.ioc._fetch", return_value=("evil-pkg\n", "ok")):
         assert "evil-pkg" in ioc.bad_packages()          # prime a fresh cache
     with patch("pathlib.Path.read_text", side_effect=PermissionError), \
-         patch("fettle.aur.ioc._fetch", return_value=""):   # offline + unreadable
+         patch("fettle.aur.ioc._fetch", return_value=("", "unreachable")):   # offline + unreadable
         assert ioc.bad_packages() == set()                # no crash

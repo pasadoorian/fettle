@@ -10,6 +10,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.65.0] — the malware scan could report "clean" without having checked
+
+QA pass on `aur-ioc-scan`. It is **in the default action set**, so it runs on every
+`fettle -a`, and its entire value is the answer to "have I installed anything known to be
+malicious?"
+
+**With the feeds unreachable it printed a green `✓ scan complete: no indicators matched`**
+and added nothing at all to the summary. A machine that had never been checked was
+indistinguishable — on screen and in the digest — from one that had been checked and was
+clean.
+
+**A stale cache was used silently.** The fallback was deliberate and `ioc.py` says so —
+*"stale cache rather than silently reporting clean"* — but the caller got no signal, so a
+laptop three weeks offline scanned against a three-week-old feed and announced itself exactly
+like a current scan. The age is now reported.
+
+**Only one of the three feeds was ever checked for failure.** `bad_packages()` had an
+emptiness test; the accounts feed — the one that catches a *maintainer takeover* — and the
+npm feed had none.
+
+A degraded scan now refuses to claim a clean bill, names the feeds it could not read, and
+says so in the summary. A genuinely clean scan now leaves a trace too, since "scanned and
+clean" and "never ran" previously produced identical digests.
+
+**And the first cut of this fix cried wolf**, which is recorded rather than quietly
+corrected. It counted every unfetchable feed as a coverage gap, so a healthy machine reported
+`INCOMPLETE` on every run — because campaigns publish different list types and a 404 is
+normal absence, not failure. Measured: `aur-infected` has all four lists, `chaos-rat` and
+`russian-spam` have no `packages-extra.txt` or `npm-packages.txt` at all. `_fetch` now
+distinguishes `ok` / `missing` / `unreachable`.
+
+That is the **same mistake as the fwupd `exit 2` case one release earlier** — treating a
+routine, documented non-success as a failure — made immediately after writing a changelog
+entry about it.
+
+
 ## [0.64.1] — say the removal command once, not 59 times
 
 `aur-audit`'s "Candidates for removal" section repeated

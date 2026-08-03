@@ -25,11 +25,13 @@ def _records():
 
 
 def _fake_ioc_fetch(url, timeout=20.0):
+    # (text, status). 404 is normal: campaigns publish different list types, so an
+    # absent list is "missing", not a gap in coverage.
     if url.endswith("packages.txt"):        # covers packages.txt (not -extra)
-        return "evil-pkg\nchaos-rat-bin\n"
+        return "evil-pkg\nchaos-rat-bin\n", "ok"
     if url.endswith("accounts.json"):
-        return json.dumps({"accounts": {"baduser": {}}})
-    return ""
+        return json.dumps({"accounts": {"baduser": {}}}), "ok"
+    return "", "missing"
 
 
 @pytest.fixture
@@ -117,7 +119,8 @@ def test_compromised_list_from_cache_when_offline(env):
     out = []
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: None)
-        mp.setattr("fettle.aur.ioc._fetch", lambda url, timeout=20.0: "")  # network down
+        mp.setattr("fettle.aur.ioc._fetch",
+                   lambda url, timeout=20.0: ("", "unreachable"))  # network down
         precheck.check(["evil-pkg"], emit=out.append)
     assert any("CRIT evil-pkg is on the KNOWN-COMPROMISED package list" in ln for ln in out)
 

@@ -21,6 +21,15 @@ class FakeIOC:
     def bad_npm(self):
         return self._n
 
+    # Feed provenance: a scan is only as current as its worst feed, and the verdict
+    # has to be able to say so instead of reporting a confident "clean".
+    stale: list = []
+    unavailable: list = []
+
+    @property
+    def degraded(self):
+        return bool(self.stale or self.unavailable)
+
 
 def _ctx(tmp_path):
     return Context(output=Output(color=False), config=Config(),
@@ -69,3 +78,51 @@ def test_no_foreign_packages(tmp_path, capsys):
     cap = _run(tmp_path, foreign=[], ioc=FakeIOC(), capsys=capsys)
     assert "no foreign (AUR) packages" in cap.out
     assert not list((tmp_path / ".fettle/reports/local").glob("aur-ioc-scan-*.txt"))  # nothing written
+
+
+def test_degraded_feeds_never_report_a_clean_bill(tmp_path, capsys):
+    """This action runs on every `fettle -a`, and its whole value is the answer. With
+    the feeds unreachable it used to warn on stderr and then print a green "no
+    indicators matched" — so a machine that was never checked looked checked."""
+    ioc = FakeIOC()
+    ioc.unavailable = ["aur-infected/packages.txt"]
+    ctx = _ctx(tmp_path)
+    with patch("fettle.command.run") as run, \
+         patch("fettle.aur.ioc_scan.aur_common.ioc_feed", return_value=ioc), \
+         patch("fettle.aur.ioc_scan.aur_meta.query_info", return_value=[]):
+        run.return_value.stdout = "somepkg"
+        ioc_scan.run(ctx)
+    ctx.output.print_summary()
+    cap = capsys.readouterr()
+    assert "no indicators matched" not in cap.out
+    assert "INCOMPLETE" in cap.err
+    assert "INCOMPLETE feeds" in cap.out          # and it reaches the summary
+    ioc.unavailable = []
+
+
+def test_stale_cache_is_disclosed(tmp_path, capsys):
+    """A laptop offline for three weeks scanned against a three-week-old feed and said
+    nothing about it."""
+    ioc = FakeIOC()
+    ioc.stale = ["aur-infected/packages.txt (21d old)"]
+    ctx = _ctx(tmp_path)
+    with patch("fettle.command.run") as run, \
+         patch("fettle.aur.ioc_scan.aur_common.ioc_feed", return_value=ioc), \
+         patch("fettle.aur.ioc_scan.aur_meta.query_info", return_value=[]):
+        run.return_value.stdout = "somepkg"
+        ioc_scan.run(ctx)
+    cap = capsys.readouterr()
+    assert "21d old" in cap.err
+    ioc.stale = []
+
+
+def test_clean_scan_leaves_a_trace_in_the_summary(tmp_path, capsys):
+    """"Scanned and clean" and "never ran" produced identical digests."""
+    ctx = _ctx(tmp_path)
+    with patch("fettle.command.run") as run, \
+         patch("fettle.aur.ioc_scan.aur_common.ioc_feed", return_value=FakeIOC()), \
+         patch("fettle.aur.ioc_scan.aur_meta.query_info", return_value=[]):
+        run.return_value.stdout = "somepkg"
+        ioc_scan.run(ctx)
+    ctx.output.print_summary()
+    assert "1 package(s) checked, none flagged" in capsys.readouterr().out

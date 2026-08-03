@@ -217,7 +217,7 @@ def test_read_only_actions_survive_dry_run(action, tmp_path):
              "NumVotes": 5}]
     with patch("fettle.command.run", return_value=Proc(0, stdout="somepkg")), \
          patch("fettle.aur.meta.fetch_info", return_value=info), \
-         patch("fettle.aur.ioc._fetch", return_value=""):
+         patch("fettle.aur.ioc._fetch", return_value=("", "unreachable")):
         ctx = Context(output=Output(color=False), config=Config(), dry_run=True,
                       sudo_user="paul", user_home=tmp_path)
         actions.run([action], ArchBackend(), ctx)   # must not raise

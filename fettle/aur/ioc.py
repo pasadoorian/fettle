@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -25,12 +26,22 @@ DEFAULT_TTL = 21600  # 6 hours
 DEFAULT_NPM_SEED = ("atomic-lockfile", "js-digest", "lockfile-js", "nextfile-js")
 
 
-def _fetch(url: str, timeout: float = 20.0) -> str:
+def _fetch(url: str, timeout: float = 20.0) -> tuple[str, str]:
+    """``(text, status)`` where status is ``ok`` | ``missing`` | ``unreachable``.
+
+    **404 is not a failure.** Campaigns publish different list types — measured
+    against the live feed, ``aur-infected`` has all four files while ``chaos-rat`` and
+    ``russian-spam`` have no ``packages-extra.txt`` or ``npm-packages.txt`` at all.
+    Counting those absences as fetch failures marked every healthy scan as having
+    incomplete coverage, which makes the warning worthless precisely when it is true.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (fixed https base)
-            return resp.read().decode("utf-8", "replace")
+            return resp.read().decode("utf-8", "replace"), "ok"
+    except urllib.error.HTTPError as exc:
+        return "", ("missing" if exc.code == 404 else "unreachable")
     except OSError:
-        return ""
+        return "", "unreachable"
 
 
 def _nonempty(text: str) -> set[str]:
@@ -51,6 +62,16 @@ class IOC:
         self.campaigns = list(campaigns)
         self.ttl = ttl
         self.owner = owner  # chown cache files back to this user (root-run safety)
+        # Feeds served from a stale cache, and feeds that could not be obtained at all.
+        # A scan is only as current as its worst feed, and the caller has to be able to
+        # say so instead of reporting a confident "clean".
+        self.stale: list[str] = []
+        self.unavailable: list[str] = []
+
+    @property
+    def degraded(self) -> bool:
+        """Whether any feed was stale or missing — i.e. coverage is not current."""
+        return bool(self.stale or self.unavailable)
 
     @staticmethod
     def _read(fp: Path) -> str:
@@ -62,11 +83,19 @@ class IOC:
             return ""
 
     def _cached(self, url: str) -> str:
+        """Feed text, recording **where it came from**.
+
+        A stale cache is better than reporting "clean" — that was already the design —
+        but the caller could not tell fresh data from a month-old fallback, so a scan
+        against an outdated feed announced itself exactly like a current one. Provenance
+        is tracked in :attr:`stale` and :attr:`unavailable` so the verdict can be
+        qualified.
+        """
         key = url.replace("://", "_").replace("/", "_")
         fp = self.cache_dir / key
         if fp.is_file() and (time.time() - fp.stat().st_mtime) < self.ttl:
             return self._read(fp)
-        text = _fetch(url)
+        text, status = _fetch(url)
         if text:
             try:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -76,8 +105,16 @@ class IOC:
             except OSError:
                 pass
             return text
-        # Fetch failed — fall back to a stale cache if we have one.
-        return self._read(fp) if fp.is_file() else ""
+        if status == "missing":
+            return ""      # this campaign simply has no such list; not a gap in coverage
+        # Fetch failed — fall back to a stale cache if we have one, and say so.
+        if fp.is_file():
+            age_days = int((time.time() - fp.stat().st_mtime) // 86400)
+            self.stale.append(f"{url.rsplit('/', 2)[-2]}/{fp.name.rsplit('_', 1)[-1]} "
+                              f"({age_days}d old)")
+            return self._read(fp)
+        self.unavailable.append(url.rsplit("/", 2)[-2] + "/" + url.rsplit("/", 1)[-1])
+        return ""
 
     def bad_accounts(self) -> set[str]:
         out: set[str] = set()

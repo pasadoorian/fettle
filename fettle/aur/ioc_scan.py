@@ -28,8 +28,6 @@ def run(ctx) -> None:
 
     # 1) Installed package names vs the known-malicious package list.
     bad_pkgs = ioc.bad_packages()
-    if not bad_pkgs:
-        out.warn("could not load malicious-package lists (offline?); coverage degraded.")
     findings += [Finding(Severity.CRIT, "aur", name, KNOWN_BAD,
                          "on a known-malicious package list — REMOVE/INVESTIGATE")
                  for name in foreign if name in bad_pkgs]
@@ -47,19 +45,42 @@ def run(ctx) -> None:
                          f"malicious JS package trace under {path}")
                  for name, path in aur_common.js_cache_hits(ioc.bad_npm(), ctx.user_home)]
 
-    _report(ctx, foreign, findings)
+    # Only the package list was ever checked for emptiness, so a failure of the
+    # *accounts* or *npm* feed passed without a word — and the scan then reported a
+    # confident "no indicators matched" having consulted two lists instead of three.
+    _report(ctx, foreign, findings, ioc)
 
 
-def _report(ctx, foreign, findings) -> None:
+def _report(ctx, foreign, findings, ioc) -> None:
     out = ctx.output
     findings.sort(key=lambda f: (f.package, f.detail))
-    if not findings:
-        out.ok(f"scan complete: no indicators matched across {len(foreign)} package(s).")
-        out.note("(a clean result is not a guarantee — lists cover known campaigns only.)")
-    else:
+    degraded = ioc.degraded
+
+    if findings:
         for f in findings:
             out.alert(f"[{f.source}] {f.package}: {f.detail}")
         out.summary_add(f"{len(findings)} IoC indicator(s) flagged — INVESTIGATE")
+    elif degraded:
+        # Never a green "no indicators matched" over feeds that could not be read.
+        # This action runs on every `fettle -a`, and its whole value is the answer.
+        out.warn(f"scan of {len(foreign)} package(s) matched nothing, but coverage was "
+                 "INCOMPLETE — this is not a clean bill of health.")
+    else:
+        out.ok(f"scan complete: no indicators matched across {len(foreign)} package(s).")
+        out.note("(a clean result is not a guarantee — lists cover known campaigns only.)")
+        # A clean scan left no trace at all, so "scanned and clean" and "never ran"
+        # were the same digest.
+        out.summary_add(f"AUR IoC scan: {len(foreign)} package(s) checked, none flagged")
+
+    if ioc.unavailable:
+        out.warn("IoC feeds that could not be fetched at all: "
+                 + ", ".join(sorted(set(ioc.unavailable))))
+    if ioc.stale:
+        out.warn("IoC feeds served from an out-of-date cache: "
+                 + ", ".join(sorted(set(ioc.stale))))
+    if degraded:
+        out.summary_warn("AUR IoC scan ran with INCOMPLETE feeds — packages compromised "
+                         "in campaigns published since then would not be seen")
 
     if not ctx.dry_run:
         try:
