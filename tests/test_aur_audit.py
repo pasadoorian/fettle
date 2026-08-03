@@ -97,7 +97,12 @@ def test_reverse_dependents_flags_and_removal_candidates(tmp_path, capsys):
         audit.run(_ctx(tmp_path))
     out = capsys.readouterr().out
     assert "NO-DEPENDENTS" in out and "Candidates for removal" in out
-    assert "sudo pacman -Rns lib-leftover" in out
+    # The removal command is stated once at the top of the section, not repeated under
+    # every candidate — 59 of them on a real host made the list twice as long as its
+    # content.
+    assert "remove with: sudo pacman -Rns <package name>" in out
+    assert out.count("sudo pacman -Rns") == 1
+    assert "lib-leftover" in out
 
     d = tmp_path / ".fettle/reports/local"
     data = json.loads(list(d.glob("aur-audit-*.json"))[0].read_text())["data"]

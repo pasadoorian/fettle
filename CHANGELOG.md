@@ -10,6 +10,30 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.64.1] — say the removal command once, not 59 times
+
+`aur-audit`'s "Candidates for removal" section repeated
+`review, then: sudo pacman -Rns <name>` beneath **every** candidate. On a real 77-package
+host that is 59 candidates and 118 lines, half of them the same sentence with a different
+name in it — so the list was twice as long as the information in it, and the actual package
+names were harder to scan.
+
+The instruction is now given once, at the top of the section:
+
+```
+=== Candidates for removal (no packaged dependents) ===
+  Review these packages and decide if you need to keep them;
+  remove with: sudo pacman -Rns <package name>
+
+  krdc-xfreerdp  [shared library]
+  reiserfsprogs  [shared library]
+  …
+```
+
+The "pacman only tracks PACKAGED dependents" caveat stays where it was, at the end, since it
+is a warning about the whole list rather than an instruction.
+
+
 ## [0.64.0] — the AUR audit reported that it ran, not what it found
 
 QA pass on `aur-audit`, run against a workstation carrying 77 real AUR packages.

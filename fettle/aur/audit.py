@@ -85,11 +85,14 @@ def run(ctx) -> None:
 
     removal = _removal_candidates(foreign, deps, libs)
     if removal:
-        lines += ["", "=== Candidates for removal (no packaged dependents) ==="]
+        # The command was repeated under every single candidate — 59 of them on a real
+        # host, so the list was twice as long as the information in it. Said once.
+        lines += ["", "=== Candidates for removal (no packaged dependents) ===",
+                  "  Review these packages and decide if you need to keep them;",
+                  "  remove with: sudo pacman -Rns <package name>", ""]
         for c in removal:
             tag = "  [shared library]" if c["is_library"] else ""
             lines.append(f"  {c['name']}{tag}")
-            lines.append(f"    review, then: sudo pacman -Rns {c['name']}")
         lines += ["  (pacman only tracks PACKAGED dependents; unpackaged software —",
                   "   AppImage, /opt, manually built, dlopen — could still use these.",
                   "   Verify before removing.)"]
