@@ -37,6 +37,10 @@ def run(ctx) -> None:
     results = aur_meta.fetch_info(foreign)  # None => RPC unreachable
     if not results:
         out.err("AUR RPC returned no data (offline, or none resolve in the AUR).")
+        # Not silent in the digest: an audit that could not run was indistinguishable
+        # from one that found nothing wrong.
+        out.summary_warn(f"AUR audit did NOT run — the RPC returned no data for "
+                         f"{len(foreign)} foreign package(s)")
         return
     by_name = {r.get("Name"): r for r in results if r.get("Name")}
 
@@ -91,9 +95,12 @@ def run(ctx) -> None:
                   "   Verify before removing.)"]
 
     lines += ["", "=== Maintainer changes since last run ==="]
-    changes = _maintainer_changes(by_name, ctx)
+    changes, first_run = _maintainer_changes(by_name, ctx)
+    # "none (or first run)" made the run that matters most — the first — indistinguishable
+    # from a run where genuinely nothing moved.
     lines += ([f"  [REVIEW BEFORE UPGRADE] {c}" for c in changes]
-              or ["  none (or first run - baseline saved)"])
+              or ["  first run - baseline saved; changes will be reported from now on"
+                  if first_run else "  none"])
 
     for ln in lines:
         print(ln)
@@ -118,8 +125,34 @@ def run(ctx) -> None:
             out.note(f"full report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write aur-audit report: {exc}")
+    # Say what was FOUND, not merely that the audit ran. Measured on a real 77-package
+    # host: 9 absent from the AUR and 4 flagged out-of-date, all summarised as
+    # "AUR audit of 77 package(s)" — and "no longer exists upstream" is exactly what a
+    # package deleted for malware looks like from here.
+    orphaned = sum(1 for r in rows if "ORPHAN" in r[5])
+    ood = sum(1 for r in rows if r[3] == "FLAGGED")
+    notes = []
+    if missing:
+        notes.append(f"{len(missing)} no longer in the AUR")
+    if ood:
+        notes.append(f"{ood} flagged out-of-date")
+    if orphaned:
+        notes.append(f"{orphaned} orphaned")
+    if changes:
+        notes.append(f"{len(changes)} maintainer change(s)")
     summary = f"AUR audit of {len(foreign)} package(s)"
-    out.summary_add(f"{summary} written to {report}" if report else summary)
+    if notes:
+        summary += " — " + ", ".join(notes)
+    if report:
+        summary += f"; written to {report}"
+    out.summary_add(summary)
+    if missing:
+        out.warn(f"{len(missing)} installed AUR package(s) are NOT in the AUR any more "
+                 "(deleted or renamed upstream) — a package removed for malware looks "
+                 f"exactly like this: {', '.join(missing)}")
+    if changes:
+        out.warn(f"{len(changes)} AUR package(s) changed maintainer since the last run "
+                 "— review before upgrading them.")
 
 
 def _append_dep_flags(flags: list[str], name, deps: dict, libs: set) -> None:
@@ -201,18 +234,26 @@ def _library_packages(names) -> set:
     return libs
 
 
-def _maintainer_changes(by_name, ctx) -> list[str]:
-    """Diff current maintainers against the snapshot (the re-adoption tell), then
-    refresh it. Shares the snapshot file with pkg-audit's AUR provider."""
+def _maintainer_changes(by_name, ctx) -> tuple[list[str], bool]:
+    """``(changes, first_run)`` — maintainers that moved since the snapshot, and whether
+    there was a snapshot at all.
+
+    The re-adoption tell. ``first_run`` is returned because "nothing changed" and "there
+    was nothing to compare against" were reported with one sentence, so on the run where
+    it matters most the user could not tell which they were looking at.
+    Shares the snapshot file with pkg-audit's AUR provider.
+    """
     snap_path = ctx.user_home / _SNAPSHOT
     current = {n: (r.get("Maintainer") or "ORPHAN") for n, r in by_name.items()}
     previous: dict[str, str] = {}
-    if snap_path.is_file():
+    had_snapshot = snap_path.is_file()
+    if had_snapshot:
         # OSError too: a prior elevated run may have left this root-owned.
         try:
             previous = json.loads(snap_path.read_text())
         except (OSError, ValueError):
             previous = {}
+            had_snapshot = False
     changes = [f"{n}: {previous[n]} -> {m}"
                for n, m in current.items()
                if n in previous and previous[n] != m]
@@ -224,4 +265,4 @@ def _maintainer_changes(by_name, ctx) -> list[str]:
             chown_to_user(snap_path, ctx.sudo_user)
         except OSError:
             pass
-    return changes
+    return changes, not had_snapshot

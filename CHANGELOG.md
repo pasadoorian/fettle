@@ -10,6 +10,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.64.0] — the AUR audit reported that it ran, not what it found
+
+QA pass on `aur-audit`, run against a workstation carrying 77 real AUR packages.
+
+| What the audit found | |
+|---|---|
+| **not in the AUR any more** | **9** — `claude-desktop-bin`, `littlesnitch`, `vanta`, … |
+| flagged out-of-date | 4 |
+| removal candidates | 59 |
+
+What the summary said:
+
+```
+✓ AUR audit of 77 package(s)
+```
+
+Those nine are the most alarming thing this action can produce — its own report labels them
+*"deleted/renamed - investigate"* — and they appeared only in body text. **A package removed
+from the AUR for malware looks exactly like a package that was renamed**, which is why the
+case is worth surfacing rather than burying. Now:
+
+```
+! 9 installed AUR package(s) are NOT in the AUR any more (deleted or renamed upstream)
+  — a package removed for malware looks exactly like this: claude-desktop-bin, …
+▸ Summary
+  ✓ AUR audit of 77 package(s) — 9 no longer in the AUR, 4 flagged out-of-date
+```
+
+Maintainer changes are warned about for the same reason, and a failed RPC no longer leaves
+the summary silent — an audit that could not run was indistinguishable from one that found
+nothing.
+
+**Second finding: "none (or first run - baseline saved)".** One sentence for two different
+facts, on the run where it matters most. A first run now says the baseline was saved and
+changes will be reported from now on; a later run with nothing moved says `none`. An
+*unreadable* baseline counts as a first run rather than as "nothing changed" — that path is
+reached when a prior elevated run left the snapshot root-owned.
+
+
 ## [0.63.0] — fix the pattern, not the instance
 
 QA pass on `python-rebuild-check`, which found the same *shape* of bug the `kernel` sweep had

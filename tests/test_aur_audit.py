@@ -3,6 +3,7 @@
 import time
 from unittest.mock import patch
 
+from fettle import command
 from fettle.aur import audit
 from fettle.backends.base import Context
 from fettle.config import Config
@@ -143,5 +144,37 @@ def test_maintainer_snapshot_unreadable_does_not_crash(tmp_path):
     snap.parent.mkdir(parents=True)
     snap.write_text('{"pkg": "bob"}')  # a real prior snapshot
     with patch("pathlib.Path.read_text", side_effect=PermissionError):
-        changes = audit._maintainer_changes(by_name, _ctx(tmp_path))
+        changes, first_run = audit._maintainer_changes(by_name, _ctx(tmp_path))
     assert changes == []  # degraded (couldn't read baseline) rather than raised
+    # An unreadable baseline is not a comparison — it must not be reported as "none".
+    assert first_run is True
+
+
+def test_summary_carries_what_was_found(tmp_path, capsys):
+    """Measured on a real 77-package host: 9 packages absent from the AUR and 4 flagged
+    out-of-date, all summarised as "AUR audit of 77 package(s)". "No longer exists
+    upstream" is exactly what a package deleted for malware looks like from here."""
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time(),
+             "NumVotes": 10},
+            {"Name": "stale", "Maintainer": "bob", "LastModified": time.time(),
+             "NumVotes": 3, "OutOfDate": 1}]
+    ctx = _ctx(tmp_path)
+    with patch("fettle.aur.common.foreign_packages",
+               return_value=["good", "stale", "vanished"]), \
+         patch("fettle.aur.meta.fetch_info", return_value=info), \
+         patch("fettle.command.run", return_value=command.Proc(0, "", "")):
+        audit.run(ctx)
+    ctx.output.print_summary()
+    out = capsys.readouterr()
+    assert "1 no longer in the AUR" in out.out
+    assert "1 flagged out-of-date" in out.out
+    assert "vanished" in out.err          # and warned about by name
+
+
+def test_rpc_failure_is_not_silent_in_the_summary(tmp_path, capsys):
+    ctx = _ctx(tmp_path)
+    with patch("fettle.aur.common.foreign_packages", return_value=["a", "b"]), \
+         patch("fettle.aur.meta.fetch_info", return_value=None):
+        audit.run(ctx)
+    ctx.output.print_summary()
+    assert "did NOT run" in capsys.readouterr().out

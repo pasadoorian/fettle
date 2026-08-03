@@ -85,7 +85,8 @@ ACTION_HELP = {
                        "than \"up to date\" if the daemon cannot be reached"),
     "kernel": ("list kernels and offer to purge old ones (the running one AND "
                "the next-boot one are always protected)"),
-    "aur_audit": "AUR health census: age/votes/out-of-date/orphan -> ~/.fettle/reports/",
+    "aur_audit": ("AUR health census: flags packages that are orphaned, "
+                  "out-of-date, or GONE from the AUR -> ~/.fettle/reports/"),
     "aur_ioc_scan": "scan installed AUR pkgs vs known-compromise feeds -> ~/.fettle/reports/",
     "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (asks per image; see [containers] config)",
