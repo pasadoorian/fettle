@@ -10,6 +10,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.68.0] — a green tick over a Critical band, and a gap that was not there
+
+QA pass on `hardening-audit` — the action the VM lab caught first, when it reported "no
+deviations" after analysing **zero** binaries on three distros. That fix (v0.48.0/0.48.1)
+is verified intact here.
+
+**A green tick over a Critical band.** Measured on a real workstation:
+`✓ 1 Critical, 7 High, 130 Medium, 95 Low (816 deviations across 233 packages)`. Deviations
+are open items, so the mark is now `!`.
+
+Deliberately **not** a failure, unlike `pkg-audit`'s CRITICAL. There, critical means a
+known-malicious package is installed — rare and actionable. Here "Critical" is the worst band
+of a scoring scheme and every real desktop has some; failing the run would make `-H` exit
+non-zero forever and teach people to ignore it.
+
+**"Not audited" looked like "nothing wrong", twice.** A missing `checksec`, and finding no
+ELF binaries at all, were each a quiet note with an **empty summary** — the exact confusion
+the analysed-zero guard exists to prevent, left unhandled in the two easier cases.
+
+**The install advice was wrong on the RHEL family**: `dnf install checksec` fails there,
+because the package is in EPEL rather than the base repositories. The hint is now chosen from
+the backend.
+
+## A gap that was recorded twice and does not exist
+
+The lab notes and the QA plan both said *"`checksec` is not packaged for EL at all, EPEL
+included — Fedora is the only dnf target that can run it"*, and two lab targets were marked
+permanently blocked on the strength of it.
+
+**False for EL9.** `dnf install epel-release && dnf install checksec` installs checksec 2.5.0
+on Rocky 9, and `fettle -H` then reports **147 deviations across 35 packages**, including a
+Critical on `grub2-tools-minimal`.
+
+The original measurement was taken on the **EL10** box, where checksec genuinely is absent
+from every repository, and generalised to "EL" without retesting on EL9 — which is 53% of the
+EL fleet. `rocky9` and `alma9` now install it, turning two permanent SKIPs into real coverage.
+
+**A measurement is true of the thing measured.** EL10 is not EL.
+
 ## [0.67.0] — findings are a to-do list, not an accomplishment
 
 QA pass on `pkg-audit`, the only audit in the default set and the broadest thing fettle

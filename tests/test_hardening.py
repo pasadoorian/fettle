@@ -414,3 +414,79 @@ def test_a_2x_weak_binary_still_produces_deviations():
     devs, stats = engine.evaluate(results, base)
     assert stats["analyzed"] == 1
     assert {d.check for d in devs} == {"pie", "canary", "relro"}
+
+
+# -- the summary mark has to match what was found ------------------------------
+def _run_audit(tmp_path, **patches):
+    from unittest.mock import patch as _p
+    from fettle.backends.arch import ArchBackend
+    from fettle.backends.base import Context
+    from fettle.config import Config
+    from fettle.hardening import audit
+    from fettle.output import Output
+
+    ctx = Context(output=Output(color=False), config=Config(), dry_run=True,
+                  root=tmp_path, user_home=tmp_path)
+    stack = []
+    for target, kw in patches.items():
+        stack.append(_p(target, **kw))
+    for s in stack:
+        s.start()
+    try:
+        audit.run(ArchBackend(), ctx)
+    finally:
+        for s in stack:
+            s.stop()
+    ctx.output.print_summary()
+    return ctx
+
+
+def test_missing_checksec_is_not_a_silent_skip(tmp_path, capsys):
+    """It was a note with an empty summary — which is how "not audited" comes to look
+    like "nothing wrong", the exact confusion the analysed-zero guard prevents in the
+    harder case."""
+    ctx = _run_audit(tmp_path, **{"fettle.command.which": {"return_value": None}})
+    out = capsys.readouterr()
+    assert "NOT audited" in out.err
+    assert "did NOT run" in out.out          # and it reaches the summary
+    assert ctx.output.had_failures is False  # a missing tool is not fettle failing
+
+
+def test_no_binaries_found_is_not_a_clean_result(tmp_path, capsys):
+    ctx = _run_audit(tmp_path, **{
+        "fettle.command.which": {"return_value": "/usr/bin/checksec"},
+        "fettle.hardening.engine.default_targets": {"return_value": []},
+    })
+    assert "did NOT run" in capsys.readouterr().out
+    assert ctx.output.had_failures is False
+
+
+def test_deviations_are_not_reported_with_a_green_tick(tmp_path, capsys):
+    """Measured on a real workstation: "✓ 1 Critical, 7 High, 130 Medium, 95 Low
+    (816 deviations across 233 packages)". A green tick over a Critical band reads as
+    a pass at a glance."""
+    from fettle.hardening import audit
+    from fettle.backends.arch import ArchBackend
+    from fettle.backends.base import Context
+    from fettle.config import Config
+    from fettle.output import Output
+    from unittest.mock import patch as _p
+
+    ctx = Context(output=Output(color=False), config=Config(), dry_run=True,
+                  root=tmp_path, user_home=tmp_path)
+    with _p("fettle.command.which", return_value="/usr/bin/checksec"), \
+         _p("fettle.hardening.engine.default_targets", return_value=["/usr/bin/x"]), \
+         _p("fettle.hardening.engine.scan", return_value=([], {"analyzed": 1})), \
+         _p("fettle.hardening.report.apply",
+            return_value=(["a-report"], {"excluded_check": 0, "excluded_package": 0,
+                                         "excluded_path": 0})), \
+         _p("fettle.hardening.report.render_screen", return_value=["row"]), \
+         _p("fettle.hardening.report.band_summary", return_value="1 Critical, 7 High"):
+        audit.run(ArchBackend(), ctx)
+    ctx.output.print_summary()
+    out = capsys.readouterr().out
+    assert "! 1 Critical, 7 High" in out
+    assert "✓ 1 Critical" not in out
+    # Deliberately not a failure: "Critical" here is a scoring band every real desktop
+    # has, unlike pkg-audit's CRITICAL which means a known-malicious package.
+    assert ctx.output.had_failures is False

@@ -140,5 +140,11 @@ SKIP-with-a-reason rather than silently passing:
 
 - **Firmware updates** — no updatable firmware in a VM; only the no-updatable-devices path runs.
 - **Secure Boot / TPM** — needs OVMF + swtpm; worth trying, not assumed.
-- **`hardening-audit` on EL** — `checksec` is not packaged for el10 at all, EPEL included.
-  Fedora is the only dnf target that can run it.
+- ~~**`hardening-audit` on EL**~~ — **this was wrong for EL9; corrected 2026-08-04.** The
+  original measurement was on **EL10**, where `checksec` genuinely is absent from every
+  repository, and it was generalised to "EL" without retesting on EL9 — which is 53% of the
+  EL fleet. Measured during the `hardening-audit` sweep:
+  `dnf install epel-release && dnf install checksec` gives checksec 2.5.0 on Rocky 9, and
+  `fettle -H` then reports 147 real deviations across 35 packages including a Critical on
+  `grub2-tools-minimal`. The rocky9/alma9 targets now install it, so this is real coverage
+  rather than a permanent SKIP. The EL10 statement stands on its own.
