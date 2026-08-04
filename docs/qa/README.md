@@ -109,7 +109,7 @@ Status of each feature's QA pass. `—` = not started.
 | aur-ioc-scan | `-I` | [aur-ioc-scan.md](aur-ioc-scan.md) | **swept — 5 findings, all fixed** |
 | pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 1 fixed, 1 open** |
 | hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** |
-| container-update | `-C` | — | — |
+| container-update | `-C` | [container-update.md](container-update.md) | **swept — 5 fixed, 2 of them in the audit half too** |
 | sys-audit | `-S` | — | — |
 | upgrade-check | `-U` | — | — |
 | aur-precheck | `-p` | — | — |

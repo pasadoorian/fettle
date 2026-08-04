@@ -725,9 +725,25 @@ always_update = ["python"]
 ```
 
 First match wins: `auto_update` → `never_update` → `always_update` → otherwise **ask**.
+An `auto_update` value that is none of the three is reported rather than ignored —
+`auto_update = false` reads as "never" but silently meant "ask".
 Under `--yes` (cron, `fettle remote`) the "ask" case is **skipped, not auto-approved** —
 an image you never explicitly opted into is never pulled without a human seeing the
 question. `--dry-run` prints the decision for every image and pulls nothing.
+
+Two things are never offered:
+
+- **Images built here.** A locally-built image has no registry to refresh from —
+  `docker pull cvetool:latest` resolves to *Docker Hub*, which never served it. It is
+  identified by having no `RepoDigest` (every pulled image has one) and reported as
+  `built here, not from a registry`.
+- **Nothing, silently.** If a runtime's daemon cannot be queried, the images behind it
+  are not counted as considered, and the summary says which runtime went unread.
+
+**Both runtimes are used, not just the first.** docker and podman keep separate image
+stores; when both are installed each image is labelled with the runtime it came from.
+The same is true of the audit half — a host with both used to have one of them audited
+while the report read as though it covered the machine.
 
 `fettle aur-precheck <pkg>…` is the install-time helper: it prints machine-readable
 `CRIT`/`WARN` lines for the named packages and always exits 0. **With no package

@@ -25,23 +25,44 @@ def _images(*refs):
     return "\n".join(json.dumps(i) for i in out)
 
 
-def _run(refs, ctx, *, answers=None, list_rc=0, pull_rc=0):
-    """Drive containers.run; returns the commands actually executed."""
+def _inspect(refs, local):
+    """`<runtime> image inspect --format '{{.RepoDigests}}#{{.RepoTags}}'` output.
+
+    A locally-built image has no RepoDigest; a pulled one has at least one.
+    """
+    return "\n".join(f"{'[]' if r in local else '[x@sha256:d]'}#[{r}]" for r in refs)
+
+
+def _run(refs, ctx, *, answers=None, list_rc=0, pull_rc=0, local=(),
+         runtimes=("docker",), by_runtime=None, list_rc_for=None):
+    """Drive containers.run; returns the pull commands actually executed.
+
+    ``by_runtime``/``list_rc_for`` map a runtime name to its own image list / list
+    exit code, for hosts running both docker and podman.
+    """
     calls = []
     replies = list(answers or [])
+
+    def images_for(rt):
+        return (by_runtime or {}).get(rt, refs)
 
     def fake_run(cmd, *, as_user=None, capture=False):
         c = list(cmd)
         calls.append(c)
+        rt = c[0]
         if c[1:2] == ["images"]:
-            return command.Proc(list_rc, _images(*refs), "denied" if list_rc else "")
+            rc = (list_rc_for or {}).get(rt, list_rc)
+            return command.Proc(rc, "" if rc else _images(*images_for(rt)),
+                                "denied" if rc else "")
+        if c[1:3] == ["image", "inspect"]:
+            return command.Proc(0, _inspect(images_for(rt), local), "")
         return command.Proc(pull_rc, "", "")
 
     def fake_input(_prompt=""):
         return replies.pop(0) if replies else "n"
 
     with patch("fettle.command.run", side_effect=fake_run), \
-         patch("fettle.command.which", side_effect=lambda n: n == "docker"), \
+         patch("fettle.command.which", side_effect=lambda n: n in runtimes), \
          patch("builtins.input", side_effect=fake_input):
         containers.run(ctx)
     return [c for c in calls if c[1:2] == ["pull"]]
@@ -150,3 +171,53 @@ def test_dangling_images_are_not_pull_targets():
     with patch("fettle.command.run", side_effect=fake_run), \
          patch("fettle.command.which", side_effect=lambda n: n == "docker"):
         containers.run(_ctx(auto_update="always"))   # would pull everything if listed
+
+
+# -- every runtime, not just the first ---------------------------------------
+def test_both_runtimes_are_considered():
+    """A host with docker AND podman keeps two separate image stores.
+
+    Reading only the first made a partial inventory render as a complete one: on the
+    QA host, 11 of 14 images were reported as the total.
+    """
+    ctx = _ctx(auto_update="always")
+    pulls = _run([], ctx, runtimes=("docker", "podman"),
+                 by_runtime={"docker": ["a:latest"], "podman": ["b:latest"]})
+    assert [(c[0], c[2]) for c in pulls] == [("docker", "a:latest"),
+                                             ("podman", "b:latest")]
+
+
+def test_unreadable_runtime_does_not_pass_as_complete(capsys):
+    """docker's daemon down, podman fine — the summary must not imply full coverage."""
+    ctx = _ctx(auto_update="always")
+    _run([], ctx, runtimes=("docker", "podman"),
+         by_runtime={"podman": ["b:latest"]}, list_rc_for={"docker": 1})
+    ctx.output.print_summary()
+    text = capsys.readouterr().out
+    assert "could NOT be read" in text and "docker" in text
+
+
+# -- locally-built images ----------------------------------------------------
+def test_local_build_is_never_pulled(capsys):
+    """`docker pull cvetool:latest` resolves to Docker Hub, which never served it."""
+    ctx = _ctx(auto_update="always")
+    pulls = _run(["cvetool:latest", "python:3.12-slim"], ctx, local={"cvetool:latest"})
+    assert [c[2] for c in pulls] == ["python:3.12-slim"]
+    ctx.output.print_summary()
+    assert "built here" in capsys.readouterr().out
+
+
+# -- the summary tells the truth about what happened -------------------------
+def test_failed_pull_is_not_a_tick(capsys):
+    ctx = _ctx(auto_update="always")
+    _run(["a:latest"], ctx, pull_rc=1)
+    assert ctx.output.had_failures
+    ctx.output.print_summary()
+    assert "NOT updated" in capsys.readouterr().out
+
+
+def test_unparseable_auto_update_value_warns(capsys):
+    """`auto_update = false` reads as "never" and silently meant "ask"."""
+    ctx = _ctx(auto_update=False)
+    _run(["a:latest"], ctx, answers=["n"])
+    assert "auto_update" in capsys.readouterr().err

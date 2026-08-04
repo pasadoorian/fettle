@@ -90,7 +90,7 @@ ACTION_HELP = {
     "aur_ioc_scan": ("scan installed AUR pkgs vs known-compromise feeds; says so "
                      "if coverage was incomplete -> ~/.fettle/reports/"),
     "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
-    "container_update": "pull container images (asks per image; see [containers] config)",
+    "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
 }
 

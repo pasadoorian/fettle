@@ -160,9 +160,21 @@ class ContainerSource(SourceProvider):
         return any(command.which(r) for r in RUNTIMES)
 
     def findings(self, ctx) -> list[Finding]:
-        runtime = next((r for r in RUNTIMES if command.which(r)), None)
-        if runtime is None:
-            return []
+        # Every installed runtime, not just the first. docker and podman keep separate
+        # image stores, and a host with both had one of them audited while the report
+        # read as though it covered the machine.
+        runtimes = [r for r in RUNTIMES if command.which(r)]
+        out: list[Finding] = []
+        for runtime in runtimes:
+            out.extend(self._runtime_findings(ctx, runtime, tagged=len(runtimes) > 1))
+        return out
+
+    def _runtime_findings(self, ctx, runtime: str, *, tagged: bool) -> list[Finding]:
+        def label(ref: str) -> str:
+            """Name the runtime only when two are installed — otherwise every finding
+            on an ordinary single-runtime host would grow noise for no information."""
+            return f"{runtime}:{ref}" if tagged else ref
+
         proc = command.run(images_argv(runtime), capture=True)
         if proc.returncode != 0:
             # The daemon is down, or the user is not in the `docker` group. Reporting
@@ -186,7 +198,7 @@ class ContainerSource(SourceProvider):
 
             if repo == _NONE or tag == _NONE:
                 out.append(Finding(
-                    Severity.INFO, self.source, str(img.get("ID", "") or ref),
+                    Severity.INFO, self.source, label(str(img.get("ID", "") or ref)),
                     STALE_OR_ABANDONED,
                     f"dangling image, {img.get('Size', 'unknown size')} — "
                     f"reclaim with `{runtime} image prune`"))
@@ -194,9 +206,12 @@ class ContainerSource(SourceProvider):
 
             if tag == "latest":
                 out.append(Finding(
-                    Severity.WARN, self.source, ref, MUTABLE_REFERENCE,
-                    "pulled by the mutable tag ':latest' — the bits behind this name "
-                    "change without the name changing, so nothing records what ran"))
+                    Severity.WARN, self.source, label(ref), MUTABLE_REFERENCE,
+                    # Not "pulled by": QA found this text on locally-built images,
+                    # which were never pulled at all. The tag is mutable either way —
+                    # a re-pull or a rebuild both move it — so say that instead.
+                    "':latest' is a mutable tag — the bits behind this name change "
+                    "without the name changing, so nothing records what ran"))
 
             created = _created(img.get("CreatedAt", ""))
             if created is not None:
@@ -206,14 +221,14 @@ class ContainerSource(SourceProvider):
                     # still gets distro updates, whereas an image is frozen at build
                     # time and carries every CVE published since.
                     out.append(Finding(
-                        Severity.WARN, self.source, ref, STALE_OR_ABANDONED,
+                        Severity.WARN, self.source, label(ref), STALE_OR_ABANDONED,
                         f"built {age} days ago (over {max_age}); an image is frozen at "
                         "build time, so everything published since is still inside it"))
 
             registry = _registry(repo)
             if registry and registry not in _KNOWN_REGISTRIES:
                 out.append(Finding(
-                    Severity.LOW, self.source, ref, UNOFFICIAL_SOURCE,
+                    Severity.LOW, self.source, label(ref), UNOFFICIAL_SOURCE,
                     f"from registry '{registry}', which is not one of the "
                     "well-known operators"))
         return out

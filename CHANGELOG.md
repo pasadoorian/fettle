@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.69.0] — half the machine was invisible
+
+QA pass on `container-update`, on a host that turned out to be the ideal target: **docker
+and podman both installed, with different image sets**, and 6 of 11 docker images built
+locally.
+
+**Only the first runtime was ever read.** `-C` reported `11 image(s) considered` on a host
+with 14; podman's `alpine`, `fedora` and `ubuntu` were never considered, and nothing said
+so. The same line, with the same effect, was in the **audit** provider — `pkg-audit`
+audited docker and produced a report that read as though it covered the machine. Both now
+use every installed runtime and label each image with where it came from, which matters
+immediately: this host has `almalinux:10` in both stores.
+
+**It offered to pull images that were built here.** `docker pull cvetool:latest` resolves
+to Docker Hub, a registry that never served it. Today that fails (*denied /
+unauthorized*), so the cost is guaranteed failures rather than danger — but the names are
+unclaimed rather than reserved, so the design was one publication away from replacing a
+local build with a stranger's image. The discriminator is exact and local: a pulled image
+has a `RepoDigest`, a built one has none. Bare-name library images (`python:3.12-slim`,
+`almalinux:10`) are pulled, and correctly stay eligible.
+
+**A dead daemon produced an empty summary** — the inline warning was right, the digest said
+`nothing to report`, exit 0. This is the dead-fwupd bug (v0.61.0) in a different action; it
+survived because the half that was correct made it look unlike the bug it was.
+
+**Failures and outstanding decisions wore a green tick.** A failed pull is now `✗`,
+outstanding decisions `!`, and `✓` means asked and answered.
+
+**`auto_update = false` silently meant "ask".** `[containers]` is a passthrough dict, so
+the loader that warns about unknown *keys* never inspected the *value*. Now reported.
+
+Also: the listing error was truncated mid-word at 120 characters, exactly where the useful
+part starts; and the audit's `:latest` finding said *"pulled by the mutable tag"* on images
+that were never pulled — the tag is mutable either way, so it now says so plainly.
+
 ## [0.68.0] — a green tick over a Critical band, and a gap that was not there
 
 QA pass on `hardening-audit` — the action the VM lab caught first, when it reported "no
