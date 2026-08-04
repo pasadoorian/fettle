@@ -44,7 +44,7 @@ sys-audit sweep) Debian 13, Rocky 9, AlmaLinux 9.
 | QA-PI-06 | No silent truncation | fixed in v0.71.0 — counts come from the whole output |
 | QA-PI-07 | Owns its summary and exit status | PASS — `✗` on differences, `!` on gaps |
 | QA-PI-08 | Writes its own report | PASS — `~/.fettle/reports/<host>/pkg-integrity-*` |
-| QA-PI-09 | Elevates (it must, to read what it hashes) | PASS — read-only but not rootless |
+| QA-PI-09 | Elevates (it must, to read what it hashes) | **FAIL → fixed** (I-02) |
 | QA-PI-10 | Not in the default set | PASS — 35.6s measured; opt-in |
 | QA-PI-11 | Gone from `sys-audit` | PASS — not in `--list`, not in `-S --all` |
 
@@ -89,6 +89,22 @@ also consults the regenerated-file list, so all three backends triage the same w
 Content hashing is the only mode that answers the question, and 35s is cheap enough that
 a "quick mode" would be a knob nobody should reach for. `--file-properties` is the reason
 mtime-based verification is not used: 414 lines of noise.
+
+### I-02 — it was shipped in the no-root set, so it never elevated. FIXED v0.72.1
+Caught by Paul on first use: *"how do we run pkg-integrity as root?"* — the answer was
+`sudo fettle -V`, because `fettle -V` never asked.
+
+`NO_ROOT_ACTIONS` was derived as `READ_ONLY_ACTIONS | {"container_update"}`, encoding
+**read-only ⟹ needs no root**. A test asserted it. But the two questions come apart in
+*both* directions, and `pkg-integrity` is the second direction: it changes nothing and
+still needs root, because it must hash every installed file and cannot read ~65 of them
+unprivileged. Adding it to the read-only set — which is true — silently put it in the
+no-root set, which is not.
+
+The set is now built from two explicitly-listed exception sets rather than derived, and
+the test asserts that every difference between the two is one of them. The changelog claim
+that it "elevates, because unprivileged it cannot read a large share of the files it must
+hash" described the intent and not the code; it does now.
 
 ## Open
 

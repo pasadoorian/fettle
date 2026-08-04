@@ -941,13 +941,21 @@ were depmod output. The three that remained were the ones worth looking at:
     networkmanager: '/usr/lib/NetworkManager/conf.d/20-connectivity.conf' …
     vscodium-bin: '/opt/vscodium-bin/resources/app/product.json' …
   Expected differences: 14 file(s) regenerated after install
-! Not verified: 65 file(s) could not be read (run as root to check them)
+! Not verified: 65 file(s) could not be read — re-run as root (`sudo fettle -V`)
 ```
 
-**Run it as root.** Unprivileged it cannot read a large share of the files it must hash —
-65 of them above — and says so rather than quietly verifying less. It is **read-only**
-and **not in the default set**: a full-content hash of every installed file takes ~35s on
-a desktop and longer on a server, and it is a check you run for a reason, not on a timer.
+**It elevates itself.** `fettle -V` prompts for sudo and re-runs, because unprivileged it
+cannot read a large share of the files it must hash — 65 of them above — and would
+otherwise print a confident answer about less of the system. The report still lands in
+*your* home, not root's. Under `--dry-run` it stays passwordless and tells you what it
+could not reach.
+
+This makes it the mirror image of `container-update`, and the reason fettle tracks
+"read-only" and "needs no root" as two separate questions: **reading can need privilege
+too.** It is read-only — it changes nothing — and it still needs root.
+
+**Not in the default set**: a full-content hash of every installed file takes ~35s on a
+desktop and longer on a server, and it is a check you run for a reason, not on a timer.
 
 *Before v0.72.0 this lived inside `sys-audit` as its `packages` category. It was a
 package question inside the firmware/boot scanner, and it made every `-S` run pay for the

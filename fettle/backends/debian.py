@@ -129,7 +129,8 @@ class DebianBackend(PackageBackend):
             if unverifiable:
                 scan.status("Not verified",
                             f"{len(unverifiable)} package(s) ship no checksums, so "
-                            "their files could not be verified", "warn")
+                            "their files could not be verified (not a root problem — "
+                            "dpkg has nothing to compare against)", "warn")
                 if scan.verbose:
                     scan.result(sample_lines(unverifiable))
         else:

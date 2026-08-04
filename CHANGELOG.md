@@ -10,6 +10,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.72.1] — `fettle -V` now actually elevates
+
+**Correction to 0.72.0.** Its notes said pkg-integrity "elevates, because unprivileged it
+cannot read a large share of the files it must hash". That described the intent; the code
+did the opposite. Reported on first use: `fettle -V` never asked for sudo and reported 65
+files it could not read.
+
+`NO_ROOT_ACTIONS` was derived as `READ_ONLY_ACTIONS | {"container_update"}` — encoding
+**read-only ⟹ needs no root**, with a test asserting it. But the two questions come apart
+in *both* directions, and pkg-integrity is the second direction: it changes nothing and
+still needs root. Adding it to the read-only set (true) silently added it to the no-root
+set (false).
+
+The set is now built from two explicitly-listed exception sets instead of derived, and the
+test asserts every difference between them is one of those exceptions:
+
+- `container-update` — **mutates, needs no root** (docker socket, as the invoking user).
+- `pkg-integrity` — **read-only, needs root**. Reading can need privilege too.
+
+`--dry-run` still stays passwordless, and the report still lands in your home rather than
+root's.
+
 ## [0.72.0] — package integrity is its own action: `pkg-integrity` (`-V`)
 
 Installed-file verification lived inside `sys-audit` as its `packages` category. That put

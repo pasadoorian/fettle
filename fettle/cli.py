@@ -71,16 +71,26 @@ SHORTCUT_HELP = [
 # (both alias -u/update): `fettle upgrade` == `fettle update` (install upgrades).
 WORD_ALIASES = {"upgrade": "update"}
 
-# Read-only actions never mutate the system, so they don't need root elevation.
+# Actions that never MUTATE the system.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
                      "auto_updates", "hardening_audit", "pkg_integrity"}
 
-# Actions that need no root. That is *not* the same question as "read-only":
-# container-update changes the system, but it talks to the docker/podman socket as
-# the invoking user, so elevating would only add a needless password prompt (and run
-# the pull under root's environment). Elevation keys off this set; the read-only set
-# above keeps its literal meaning.
-NO_ROOT_ACTIONS = READ_ONLY_ACTIONS | {"container_update"}
+# "Read-only" and "needs no root" are different questions, and they come apart in
+# BOTH directions. Each exception is listed rather than derived, because assuming
+# either implies the other has now been wrong once in each direction:
+#
+#   mutates, needs no root  -> container-update talks to the docker/podman socket as
+#       the invoking user; elevating would only add a password prompt and run the
+#       pull under root's environment.
+#   read-only, needs root   -> pkg-integrity must hash EVERY installed file, and
+#       unprivileged it cannot read ~65 of them on a stock desktop. It would still
+#       run, and still print an answer — just a quieter one about less of the system.
+#       Reading can need privilege too.
+_MUTATES_BUT_NO_ROOT = {"container_update"}
+_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity"}
+
+# Elevation keys off this set; READ_ONLY_ACTIONS above keeps its literal meaning.
+NO_ROOT_ACTIONS = (READ_ONLY_ACTIONS - _READ_ONLY_BUT_NEEDS_ROOT) | _MUTATES_BUT_NO_ROOT
 
 # The safe set `fettle remote <host>` / `-a` runs. Destructive/interactive actions
 # (orphan removal, kernel management) are NOT here — they must be named explicitly.

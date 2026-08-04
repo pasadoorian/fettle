@@ -158,8 +158,8 @@ class ArchBackend(PackageBackend):
                     scan.result(sample_lines(expected))
             if unreadable:
                 scan.status("Not verified",
-                            f"{len(unreadable)} file(s) could not be read "
-                            "(run as root to check them)", "warn")
+                            f"{len(unreadable)} file(s) could not be read — "
+                            "re-run as root (`sudo fettle -V`) to verify them", "warn")
                 if scan.verbose:
                     scan.result(sample_lines(unreadable))
         elif scan.which("pacman"):

@@ -321,13 +321,24 @@ def test_help_documents_report_subcommand(capsys):
     assert "fettle report" in capsys.readouterr().out
 
 
-def test_container_update_needs_no_root():
-    """It changes state, but talks to the docker socket as the invoking user —
-    elevating would only add a password prompt and run the pull under root."""
-    from fettle.cli import NO_ROOT_ACTIONS, READ_ONLY_ACTIONS
+def test_read_only_and_no_root_come_apart_in_both_directions():
+    """They are different questions, and each direction has been got wrong once.
+
+    container-update MUTATES but needs no root (docker socket, as the invoking user).
+    pkg-integrity is READ-ONLY but needs root: it hashes every installed file, and
+    unprivileged it silently verifies ~65 fewer of them. The old invariant here was
+    "read-only implies no-root", which put pkg-integrity in the no-root set and left
+    `fettle -V` permanently unable to read a large share of what it checks.
+    """
+    from fettle.cli import (NO_ROOT_ACTIONS, READ_ONLY_ACTIONS,
+                            _MUTATES_BUT_NO_ROOT, _READ_ONLY_BUT_NEEDS_ROOT)
     assert "container_update" in NO_ROOT_ACTIONS
-    assert "container_update" not in READ_ONLY_ACTIONS   # it is not read-only
-    assert READ_ONLY_ACTIONS < NO_ROOT_ACTIONS           # read-only implies no-root
+    assert "container_update" not in READ_ONLY_ACTIONS      # it is not read-only
+    assert "pkg_integrity" in READ_ONLY_ACTIONS             # it changes nothing
+    assert "pkg_integrity" not in NO_ROOT_ACTIONS           # ...but it must elevate
+    # Every difference between the two sets is one of the listed exceptions.
+    assert READ_ONLY_ACTIONS - NO_ROOT_ACTIONS == _READ_ONLY_BUT_NEEDS_ROOT
+    assert NO_ROOT_ACTIONS - READ_ONLY_ACTIONS == _MUTATES_BUT_NO_ROOT
 
 
 def test_default_run_says_which_actions_the_backend_cannot_do(capsys):
