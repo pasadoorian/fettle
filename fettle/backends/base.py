@@ -22,8 +22,42 @@ if TYPE_CHECKING:  # imported only for type hints — keeps runtime import-free
 ALL_ACTIONS = (
     "clean", "orphans", "update", "rebuild_check", "python_rebuild_check",
     "config_drift", "firmware_check", "kernel", "aur_audit", "aur_ioc_scan",
-    "pkg_audit", "auto_updates", "hardening_audit",
+    "pkg_audit", "auto_updates", "hardening_audit", "pkg_integrity",
 )
+
+
+# Files the system rewrites *after* the package manager put them there, so they can
+# never match what the package shipped. Reporting them as integrity findings is not
+# wrong so much as useless: on the QA workstation they were 14 of 17 "differences",
+# and a check that is red on every machine gets ignored. Deliberately short and
+# justified — each entry names a tool that regenerates the file, not merely a path
+# that happened to be noisy.
+_REGENERATED = (
+    # depmod rebuilds the whole modules.* index whenever a kernel or module package
+    # lands, so every one of these differs on every machine, per installed kernel.
+    "*/modules.dep", "*/modules.dep.bin",
+    "*/modules.alias", "*/modules.alias.bin",
+    "*/modules.symbols", "*/modules.symbols.bin",
+    "*/modules.devname", "*/modules.softdep",
+    "*/modules.builtin.bin", "*/modules.builtin.alias.bin",
+    # caches built by post-install hooks from whatever is installed at the time
+    "*/vlc/plugins/plugins.dat",          # vlc-cache-gen
+    "*/immodules.cache", "*/loaders.cache",  # gtk-query-immodules, gdk-pixbuf-query-loaders
+    "/etc/ld.so.cache",                   # ldconfig
+    # mirror lists, owned at runtime by the tool that manages them
+    "/var/lib/pacman-mirrors/mirrors.json",
+    "/etc/pacman.d/mirrorlist",
+)
+
+
+def is_regenerated(path: str) -> bool:
+    """Whether *path* is rewritten after install by a tool rather than by a person.
+
+    Not "safe to ignore" — a real attacker could hide in one of these. It means the
+    difference carries no information, because it is present on every machine.
+    """
+    import fnmatch
+    return any(fnmatch.fnmatch(path, pat) for pat in _REGENERATED)
 
 
 def sample_lines(lines: list[str], limit: int = 50) -> str:

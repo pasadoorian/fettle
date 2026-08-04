@@ -38,7 +38,8 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem
+from .base import (Context, PackageBackend, Result, Transaction, TxItem,
+                   is_regenerated)
 
 _SYSTEM_UPDATERS = {"dnf", "none"}
 _FLATPAK_UPDATERS = {"flatpak", "none"}
@@ -316,7 +317,7 @@ class RhelBackend(PackageBackend):
     # the module docstring; a later phase adds the maintenance actions.
     supported = {
         "pkg_audit",         # via the distro-agnostic providers on the base class
-        "hardening_audit",   # checksec-driven; distro-neutral apart from the baseline
+        "hardening_audit", "pkg_integrity",   # checksec-driven; distro-neutral apart from the baseline
         "container_update",  # podman/docker, backend-independent
         "only_update",       # dnf makecache + report upgradable (no upgrade)
         "update",            # dnf upgrade --refresh (+ flatpak/snap when present)
@@ -1230,7 +1231,10 @@ class RhelBackend(PackageBackend):
             m = _VA_RE.match(line.rstrip())
             if not m:
                 continue
-            (altered if m.group(2) is None else expected).append(line.rstrip())
+            if m.group(2) is not None or is_regenerated(m.group(3)):
+                expected.append(line.rstrip())
+            else:
+                altered.append(line.rstrip())
 
         if altered:
             scan.status("Package Integrity",
@@ -1243,8 +1247,8 @@ class RhelBackend(PackageBackend):
         if expected:
             # Reported, not hidden — but as context, so it cannot drown the signal.
             scan.status("Expected differences",
-                        f"{len(expected)} config/ghost/doc file(s) differ "
-                        "(normal: you edited them, or they are created at runtime)",
-                        "info")
+                        f"{len(expected)} config/ghost/doc or machine-regenerated "
+                        "file(s) differ (normal: you edited them, or a tool rewrote "
+                        "them after install)", "info")
             if scan.verbose:
                 scan.result("\n".join(expected[:50]))

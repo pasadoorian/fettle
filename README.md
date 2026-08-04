@@ -47,6 +47,7 @@ real unit-test coverage the bash originals never had.
 - [Reading the output](#reading-the-output)
 - [Maintenance actions](#maintenance-actions)
   - [Audit & security actions](#audit--security-actions)
+  - [Package file integrity — `-V` / `pkg-integrity`](#package-file-integrity---v--pkg-integrity)
   - [Cache cleaning (-c)](#cache-cleaning--c)
   - [Three AUR checks, and which to reach for](#three-aur-checks-and-which-to-reach-for)
   - [Did an upgrade change your config? (-d)](#did-an-upgrade-change-your-config--d)
@@ -86,14 +87,13 @@ fettle has four feature families:
    rebuilds/service-restarts, review config-file drift, report whether automatic
    updates are enabled, apply firmware updates, and manage kernels.
 2. **Package Supply Chain** — *where software came from and whether it's tampered*:
-   third-party repos/PPAs, publishers, staleness, sandbox permissions, installed-
-   file integrity, and (for the AUR) live malware-IOC feeds. Exposed as
-   `pkg-audit`, plus the Arch-specific `aur-audit` / `aur-ioc-scan` and the
-   install-time yay hook.
+   third-party repos/PPAs, publishers, staleness, sandbox permissions, and (for
+   the AUR) live malware-IOC feeds. Exposed as `pkg-audit`, plus `pkg-integrity`
+   (do the installed *files* still match the package?), the Arch-specific
+   `aur-audit` / `aur-ioc-scan`, and the install-time yay hook.
 3. **System Supply Chain** — *the machine's firmware/boot/hardware posture*:
-   Secure Boot, BIOS/UEFI, TPM, Intel ME, CPU microcode, package integrity,
-   hardware and storage firmware. Exposed as `sys-audit`, runnable locally or over
-   SSH.
+   Secure Boot, BIOS/UEFI, TPM, Intel ME, CPU microcode, hardware and storage
+   firmware. Exposed as `sys-audit`, runnable locally or over SSH.
 4. **Security advisories** — *is what you have installed known-vulnerable?*
    Per-package CVEs from your distro's own tracker, including the ones you're
    vulnerable to with **no fix released yet**, plus the Python/Node/Rust packages
@@ -154,7 +154,7 @@ generations are handled: 3.x (Arch) and 2.x (Fedora, Debian, Ubuntu), which shar
 command line.
 
 **Distro-independent features** work the same everywhere: the `sys-audit` firmware/boot
-scan (`-S`, only its package-integrity check is per-distro), `fettle remote` over ssh, the
+scan (`-S` — every one of its checks is distro-neutral), `fettle remote` over ssh, the
 AI upgrade checker (`-U`), the HTML report and the web UI. `advisory-check` has native CVE
 feeds for **Arch, Debian, Ubuntu and RHEL**, plus language dependencies via OSV. And
 `pkg-audit` covers the **same seven ecosystems on every distro** — the native one
@@ -383,6 +383,7 @@ rather than packages, and elevates itself.
 |---|---|---|---|---|
 | `-S` | [`sys-audit`](#system-supply-chain--sys-audit) | firmware/boot/hardware security scan — Secure Boot, TPM, microcode, IOMMU, SPI/BIOS, storage firmware; **self-elevates** | same | same |
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
+| `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — | — |
 | `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
@@ -894,6 +895,64 @@ weights            = { canary = 3, relro = 3, pie = 2, fortify_source = 2 }
 A deviation means the binary was built *differently from the distro norm* — the
 score tells you *where to look*, not that anything is exploitable.
 
+### Package file integrity — `-V` / `pkg-integrity`
+
+`pkg-audit` asks **where** your software came from. `pkg-integrity` asks a different
+question: **has anything changed since it was installed?** It re-reads every installed
+file and compares it against the manifest the package manager recorded at install time.
+
+```bash
+fettle -V                    # or --pkg-integrity, or `fettle pkg-integrity`
+```
+
+**What it compares against, per distro.** All three read a manifest that the package
+manager wrote into its own local database when the package was installed:
+
+| | source of truth | what is compared | fallback |
+|---|---|---|---|
+| **Arch/Manjaro** | pacman's **MTREE**, `/var/lib/pacman/local/<pkg>/mtree` | `paccheck --sha256sum` — full content hash | `pacman -Qkk` (file presence + properties only) |
+| **Debian/Ubuntu** | the **`.md5sums`** dpkg installed, `/var/lib/dpkg/info/<pkg>.md5sums` | `debsums` — MD5 content hash | `dpkg --verify` |
+| **RHEL family** | the **file digests in the rpmdb** | `rpm -Va` — size, mode, mtime, digest, owner, group, capabilities | *(none needed — `rpm` is always present)* |
+
+**What that is worth, stated plainly.** The manifest came from the same package, and
+anything able to rewrite a system file as root can usually rewrite the manifest too. So
+this is a **tripwire, not a proof of authenticity** — valuable because most intruders,
+and every botched upgrade, do not think to update the manifest. It is not a substitute
+for signature verification at install time, which is what `pkg-audit` covers.
+
+**Three outcomes, deliberately not summed together:**
+
+- **`differ`** — a packaged file whose contents no longer match. *The finding.*
+- **`Expected differences`** — files a tool rewrites after install, never a person:
+  depmod's `modules.dep`/`modules.alias` index (once per installed kernel), plugin
+  caches, `ld.so.cache`, mirror lists. These differ on **every** machine, so they carry
+  no information. Counted, listed with `-v`. On RHEL this also covers rpm's own
+  `c`/`g`/`d` markers — config files you edited, ghost files, documentation.
+- **`Not verified`** — files that could not be read, or (Debian) packages that ship no
+  checksums at all. *A gap in coverage, not a finding.*
+
+Keeping them apart is the whole point. Measured on the author's workstation, the old
+combined output reported **82 "issues"** — of which 65 were permission errors and 14
+were depmod output. The three that remained were the ones worth looking at:
+
+```
+✗ Package Integrity: 3 file(s) differ from their package
+    grub: '/etc/grub.d/30_os-prober' sha256sum mismatch
+    networkmanager: '/usr/lib/NetworkManager/conf.d/20-connectivity.conf' …
+    vscodium-bin: '/opt/vscodium-bin/resources/app/product.json' …
+  Expected differences: 14 file(s) regenerated after install
+! Not verified: 65 file(s) could not be read (run as root to check them)
+```
+
+**Run it as root.** Unprivileged it cannot read a large share of the files it must hash —
+65 of them above — and says so rather than quietly verifying less. It is **read-only**
+and **not in the default set**: a full-content hash of every installed file takes ~35s on
+a desktop and longer on a server, and it is a check you run for a reason, not on a timer.
+
+*Before v0.72.0 this lived inside `sys-audit` as its `packages` category. It was a
+package question inside the firmware/boot scanner, and it made every `-S` run pay for the
+hashing pass.*
+
 ## System supply-chain — `sys-audit`
 
 A port of the Eclypsium firmware/boot-chain cheat-sheet. Most checks need root, so
@@ -933,7 +992,6 @@ sudo/`--all` for the fullest results — many checks only produce real output as
 | `intel-me` | MEI device, ME firmware version, ME PCI controller |
 | `microcode` | CPU microcode revision + `/sys` vulnerability mitigations |
 | `tpm` | TPM device, version, DMI info, TPM2 capabilities |
-| `packages` | installed-file integrity (`paccheck`/`pacman -Qkk`, or `debsums`/`dpkg --verify`) |
 | `hardware` | inxi/lspci hardware inventory, memory modules |
 | `storage` | per-device model / firmware / serial via `smartctl` |
 
@@ -1469,7 +1527,7 @@ curated command set.
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
 | **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
-| **Package-file integrity verification** | ❌ | ✅ via `sys-audit` (paccheck / debsums) |
+| **Package-file integrity verification** | ❌ | ✅ via `pkg-integrity` (paccheck / debsums / rpm -Va) |
 | **Security advisories / CVE tracking** (incl. *vulnerable, no fix released yet*) | ❌ | ✅ `advisory-check` (distro feeds + OSV for Python/Node/Rust) |
 | **AI pre-upgrade advisor** | ❌ | ✅ `upgrade-check` (local **and** remote) |
 

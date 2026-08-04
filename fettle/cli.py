@@ -44,6 +44,7 @@ MAINTENANCE_ACTIONS = [
 ]
 AUDIT_ACTIONS = [
     (("-P", "--pkg-audit"), "pkg_audit"),
+    (("-V", "--pkg-integrity"), "pkg_integrity"),
     (("-A", "--aur-audit"), "aur_audit"),
     (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
     (("-H", "--hardening-audit"), "hardening_audit"),
@@ -72,7 +73,7 @@ WORD_ALIASES = {"upgrade": "update"}
 
 # Read-only actions never mutate the system, so they don't need root elevation.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
-                     "auto_updates", "hardening_audit"}
+                     "auto_updates", "hardening_audit", "pkg_integrity"}
 
 # Actions that need no root. That is *not* the same question as "read-only":
 # container-update changes the system, but it talks to the docker/podman socket as
@@ -113,6 +114,7 @@ ACTION_HELP = {
     "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
+    "pkg_integrity": "do installed files still match what the package shipped? (paccheck/debsums/rpm -Va) -> ~/.fettle/reports/",
 }
 
 _EPILOG = """
@@ -132,9 +134,13 @@ other commands:
   fettle web [--port N]                   serve the web UI (localhost; needs
                                           the 'web' extra: pip install fettle[web])
 
-which package audit? (-S is separate: it scans firmware/boot/hardware, not packages)
-  -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap/containers/extensions).
-                    INCLUDES everything -I checks; the only one in the default set.
+which package check? (-S is separate: it scans firmware/boot/hardware, not packages)
+  -P  pkg-audit     WHERE your packages came from, across ALL ecosystems (AUR/APT/
+                    Flatpak/Snap/containers/extensions). INCLUDES everything -I
+                    checks; the only one in the default set.
+  -V  pkg-integrity WHETHER the installed FILES still match what the package shipped
+                    (paccheck / debsums / rpm -Va). Detects change after install;
+                    it is a tripwire, not proof the package was authentic.
   -A  aur-audit     AUR census: age, votes, maintainer + what nothing depends on
                     any more (only -A tells you what is safe to remove)
   -I  aur-ioc-scan  AUR threat scan only — the same IoC checks -P runs, on their

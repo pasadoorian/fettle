@@ -1,4 +1,7 @@
-"""sys-audit `packages` integrity — backend.verify_integrity on Arch + Debian."""
+"""`fettle pkg-integrity` (-V) — backend.verify_integrity on Arch + Debian.
+
+Split out of sys-audit's `packages` category in v0.72.0.
+"""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -6,8 +9,9 @@ from unittest.mock import patch
 from fettle import command
 from fettle.backends.arch import ArchBackend
 from fettle.backends.debian import DebianBackend
+from fettle.config import Config
+from fettle import config
 from fettle.output import Output
-from fettle.secure import audit
 from fettle.secure.base import Scan
 
 
@@ -33,7 +37,7 @@ def _emit(backend, tools, responses, capsys):
 def test_arch_paccheck_clean(capsys):
     out = _emit(ArchBackend(), {"paccheck", "pacman"},
                 {("paccheck", "--sha256sum", "--quiet"): ""}, capsys)
-    assert "Package Integrity: All readable files verified" in out
+    assert "Package Integrity: no unexplained differences" in out
 
 
 def test_arch_paccheck_finds_issues(capsys):
@@ -56,7 +60,7 @@ def test_arch_falls_back_to_pacman_qkk(capsys):
 def test_debian_debsums_clean(capsys):
     resp = {("debsums",): "/usr/bin/x OK\n/usr/bin/y OK\n"}
     out = _emit(DebianBackend(), {"debsums"}, resp, capsys)
-    assert "Package Integrity: All checksummed files verified" in out
+    assert "Package Integrity: no unexplained differences" in out
 
 
 def test_debian_debsums_finds_issues(capsys):
@@ -74,24 +78,6 @@ def test_debian_falls_back_to_dpkg_verify(capsys):
 
 
 # -- category dispatch -------------------------------------------------------
-def test_packages_category_delegates_to_backend(capsys):
-    class FakeBackend:
-        name = "arch"
-        def verify_integrity(self, scan):
-            scan.status("Package Integrity", "delegated!", "ok")
-
-    scan = Scan(output=Output(color=False), root=Path("/"))
-    with patch("fettle.distro.detect", return_value=FakeBackend()):
-        audit._packages_check(scan)
-    out = capsys.readouterr().out
-    assert "Detected Distribution: arch" in out and "delegated!" in out
-
-
-def test_packages_category_in_registry_and_list():
-    assert "packages" in audit.CATEGORIES
-    assert audit._registry()["packages"] is audit._packages_check
-
-
 # -- "could not read" is not "found a problem" -------------------------------
 def test_arch_unreadable_files_are_not_counted_as_integrity_issues(capsys):
     """Unprivileged, paccheck emits a `read error` line per file it cannot open —
@@ -113,3 +99,51 @@ def test_debian_packages_without_checksums_are_a_gap_not_a_finding(capsys):
     out = _emit(DebianBackend(), {"debsums"}, resp, capsys)
     assert "Package Integrity: 1 file(s) differ" in out
     assert "Not verified: 1 package(s) ship no checksums" in out
+
+
+# -- the standalone action (v0.72.0: moved out of sys-audit) -----------------
+def test_pkg_integrity_is_its_own_action_not_a_sys_audit_category():
+    from fettle import actions, cli
+    from fettle.secure import audit
+    assert "packages" not in audit.CATEGORIES        # a package question, not firmware
+    assert "pkg_integrity" in actions.HANDLERS
+    assert (("-V", "--pkg-integrity"), "pkg_integrity") in cli.AUDIT_ACTIONS
+    assert "pkg_integrity" not in config.DEFAULT_ACTIONS   # 35s+; opt-in
+
+
+def test_regenerated_files_are_not_findings():
+    """depmod rewrites the whole modules.* index after any kernel package lands, so
+    these differ on every machine — 14 of 17 "differences" on the QA workstation."""
+    from fettle.backends.base import is_regenerated
+    assert is_regenerated("/usr/lib/modules/6.12.96-1-MANJARO/modules.dep")
+    assert is_regenerated("/usr/lib/vlc/plugins/plugins.dat")
+    assert is_regenerated("/var/lib/pacman-mirrors/mirrors.json")
+    assert not is_regenerated("/usr/bin/sshd")
+    assert not is_regenerated("/opt/vscodium-bin/resources/app/product.json")
+
+
+def test_arch_splits_regenerated_from_unexplained(capsys):
+    resp = {("paccheck", "--sha256sum", "--quiet"):
+            "linux612: '/usr/lib/modules/6.12.96-1/modules.dep' sha256sum mismatch\n"
+            "openssh: '/usr/bin/sshd' sha256sum mismatch\n"}
+    out = _emit(ArchBackend(), {"paccheck", "pacman"}, resp, capsys)
+    assert "Package Integrity: 1 file(s) differ" in out   # sshd only
+    assert "Expected differences: 1 file(s) regenerated" in out
+
+
+def test_clean_integrity_reports_a_verdict(capsys):
+    """The action owns its summary — it is no longer folded into sys-audit's."""
+    from fettle import integrity
+    from fettle.backends.base import Context
+    from fettle.output import Output
+
+    class _B:
+        name = "arch"
+
+        def verify_integrity(self, scan):
+            scan.status("Package Integrity", "no unexplained differences", "ok")
+
+    ctx = Context(output=Output(color=False), config=Config())
+    integrity.run(_B(), ctx)
+    ctx.output.print_summary()
+    assert "installed files match their packages" in capsys.readouterr().out

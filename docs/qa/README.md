@@ -110,6 +110,7 @@ Status of each feature's QA pass. `—` = not started.
 | pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 1 fixed, 1 open** |
 | hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** |
 | container-update | `-C` | [container-update.md](container-update.md) | **swept — 5 fixed, 2 of them in the audit half too** |
+| pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **new in v0.72.0 — split out of sys-audit, swept on 4 targets** |
 | sys-audit | `-S` | [sys-audit.md](sys-audit.md) | **swept — 7 fixed, incl. one affecting every `fettle remote` run** |
 | upgrade-check | `-U` | — | — |
 | aur-precheck | `-p` | — | — |

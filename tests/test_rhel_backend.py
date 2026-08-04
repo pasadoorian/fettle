@@ -58,7 +58,7 @@ def test_only_unmarked_rows_count_as_altered(capsys):
     # plus the tampered /usr/bin/gzip. The other 4 carry c/g markers.
     assert "3 packaged file(s) differ" in out
     assert "/usr/bin/gzip" in out
-    assert "4 config/ghost/doc file(s) differ" in out
+    assert "4 config/ghost/doc or machine-regenerated file(s) differ" in out
 
 
 def test_config_only_drift_reports_no_altered_packages(capsys):
@@ -66,7 +66,7 @@ def test_config_only_drift_reports_no_altered_packages(capsys):
     _run(va=va)
     out = capsys.readouterr().out
     assert "No packaged files altered" in out
-    assert "2 config/ghost/doc file(s) differ" in out
+    assert "2 config/ghost/doc or machine-regenerated file(s) differ" in out
 
 
 def test_clean_system_reports_verified(capsys):

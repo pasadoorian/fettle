@@ -20,7 +20,8 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem, sample_lines
+from .base import (Context, PackageBackend, Result, Transaction, TxItem,
+                   is_regenerated, sample_lines)
 
 _SYSTEM_UPDATERS = {"apt", "nala", "none"}
 _FLATPAK_UPDATERS = {"flatpak", "none"}
@@ -81,7 +82,7 @@ class DebianBackend(PackageBackend):
     supported = {
         "clean", "orphans", "update", "only_update", "rebuild_check",
         "config_drift", "auto_updates", "firmware_check", "kernel", "pkg_audit",
-        "hardening_audit", "container_update",
+        "hardening_audit", "container_update", "pkg_integrity",
         # No python_rebuild_check / aur_* (Arch-only). Integrity lives in sys-audit.
     }
 
@@ -102,18 +103,29 @@ class DebianBackend(PackageBackend):
         scan.sub("Dpkg Package Verification")
         if scan.which("debsums"):
             scan.dim("Running debsums (this may take a while)...")
-            altered, unverifiable = [], []
+            altered, unverifiable, expected = [], [], []
             for line in scan.run_text(["debsums"]).splitlines():
                 line = line.rstrip()
                 if not line.strip() or line.endswith("OK"):
                     continue
-                (unverifiable if "no md5sums" in line else altered).append(line)
+                if "no md5sums" in line:
+                    unverifiable.append(line)
+                elif is_regenerated(line.split()[0] if line.split() else ""):
+                    expected.append(line)
+                else:
+                    altered.append(line)
             if altered:
                 scan.status("Package Integrity",
                             f"{len(altered)} file(s) differ from their package", "warn")
                 scan.result(sample_lines(altered))
             else:
-                scan.status("Package Integrity", "All checksummed files verified", "ok")
+                scan.status("Package Integrity", "no unexplained differences", "ok")
+            if expected:
+                scan.status("Expected differences",
+                            f"{len(expected)} file(s) regenerated after install "
+                            "(depmod output, plugin caches)", "info")
+                if scan.verbose:
+                    scan.result(sample_lines(expected))
             if unverifiable:
                 scan.status("Not verified",
                             f"{len(unverifiable)} package(s) ship no checksums, so "

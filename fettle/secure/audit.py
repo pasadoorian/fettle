@@ -1,8 +1,11 @@
 """sys-audit orchestration + CLI — the System Supply Chain scanner front end.
 
-``fettle sys-audit [CATEGORIES...] [--all] [--list]`` mirrors the bash scanner's
-UX. Distro-neutral checks live here (M9); ``packages`` (integrity via the backend)
-lands in M10 and ``remote`` execution in M11.
+``fettle sys-audit [CATEGORIES...] [--all] [--list]`` mirrors the bash scanner's UX.
+
+Every check here is **distro-neutral**: firmware, boot chain and hardware. Package
+file verification used to be a category (``packages``) and moved out in v0.72.0 to
+``fettle pkg-integrity`` — it asked a package question inside the firmware scanner,
+and it made every ``-S`` run pay for a multi-second hashing pass.
 """
 
 from __future__ import annotations
@@ -24,26 +27,9 @@ CATEGORIES: dict[str, str] = {
     "intel-me": "Intel Management Engine status",
     "microcode": "CPU microcode version and vulnerabilities",
     "tpm": "TPM device validation",
-    "packages": "Package integrity verification",
     "hardware": "Hardware inventory and details",
     "storage": "Storage device firmware",
 }
-
-
-def _packages_check(scan) -> None:
-    """The one distro-specific check: delegate to the backend's verify_integrity."""
-    from ..distro import UnknownDistro, detect
-    try:
-        backend = detect()
-    except UnknownDistro as exc:
-        scan.status("Package Verification", str(exc), "warn")
-        return
-    scan.status("Detected Distribution", backend.name, "info")
-    try:
-        backend.verify_integrity(scan)
-    except NotImplementedError:
-        scan.status("Package Verification",
-                    f"not implemented for the {backend.name} backend", "warn")
 
 
 def _registry() -> dict:
@@ -57,7 +43,6 @@ def _registry() -> dict:
         "intel-me": checks.intel_me,
         "microcode": checks.microcode,
         "tpm": checks.tpm,
-        "packages": _packages_check,
         "hardware": checks.hardware,
         "storage": checks.storage,
     }

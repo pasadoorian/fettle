@@ -13,7 +13,8 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem, sample_lines
+from .base import (Context, PackageBackend, Result, Transaction, TxItem,
+                   is_regenerated, sample_lines)
 
 _PACMAN_CACHE = Path("/var/cache/pacman/pkg")
 # Versions of each *installed* package kept in the cache by `clean`. Two means one
@@ -87,12 +88,18 @@ def _parse_sup_lines(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def _paccheck_path(line: str) -> str:
+    """The file path out of a paccheck line: ``<pkg>: '<path>' <what> mismatch``."""
+    m = re.search(r"'([^']+)'", line)
+    return m.group(1) if m else ""
+
+
 class ArchBackend(PackageBackend):
     name = "arch"
     supported = {
         "clean", "orphans", "update", "only_update", "rebuild_check",
         "python_rebuild_check", "config_drift", "auto_updates", "firmware_check",
-        "kernel", "aur_audit", "aur_ioc_scan", "pkg_audit", "hardening_audit",
+        "kernel", "aur_audit", "aur_ioc_scan", "pkg_audit", "hardening_audit", "pkg_integrity",
         "container_update",
     }
 
@@ -125,18 +132,30 @@ class ArchBackend(PackageBackend):
         if scan.which("paccheck"):
             scan.dim("Running paccheck --sha256sum (this may take a while)...")
             out = scan.run_text(["paccheck", "--sha256sum", "--quiet"])
-            altered, unreadable = [], []
+            altered, unreadable, expected = [], [], []
             for line in out.splitlines():
                 if not line.strip():
                     continue
-                (unreadable if "read error" in line else altered).append(line.rstrip())
+                line = line.rstrip()
+                if "read error" in line:
+                    unreadable.append(line)
+                elif is_regenerated(_paccheck_path(line)):
+                    expected.append(line)
+                else:
+                    altered.append(line)
             if altered:
                 scan.status("Package Integrity",
                             f"{len(altered)} file(s) differ from their package",
                             "error")
                 scan.result(sample_lines(altered))
             else:
-                scan.status("Package Integrity", "All readable files verified", "ok")
+                scan.status("Package Integrity", "no unexplained differences", "ok")
+            if expected:
+                scan.status("Expected differences",
+                            f"{len(expected)} file(s) regenerated after install "
+                            "(depmod output, plugin caches, mirror lists)", "info")
+                if scan.verbose:
+                    scan.result(sample_lines(expected))
             if unreadable:
                 scan.status("Not verified",
                             f"{len(unreadable)} file(s) could not be read "

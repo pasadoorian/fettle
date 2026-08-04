@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.72.0] — package integrity is its own action: `pkg-integrity` (`-V`)
+
+Installed-file verification lived inside `sys-audit` as its `packages` category. That put
+a **package** question inside the **firmware and boot chain** scanner, and made every `-S`
+run pay for a 35-second content-hashing pass. It is now its own audit action:
+
+```
+fettle -V            # or --pkg-integrity, or `fettle pkg-integrity`
+```
+
+Read-only, in the *audit & security* group of `fettle -h`, and **not** in the default set:
+it is a check you run for a reason, not on a timer. It elevates, because unprivileged it
+cannot read a large share of the files it must hash.
+
+**What it compares against is now documented per distro** — pacman's MTREE, dpkg's
+`.md5sums`, the rpmdb's file digests — along with what that is actually worth: the
+manifest came from the same package and root can rewrite both, so this is a **tripwire,
+not proof of authenticity**. It catches what does not think to cover its tracks, which is
+most intruders and every interrupted upgrade.
+
+**The signal was 3 files in 82 lines.** On the QA workstation `paccheck --sha256sum`
+reports 17 differences, of which **14 are rewritten after install by a tool rather than a
+person**: depmod's `modules.*` index for each of three kernels, VLC's plugin cache,
+`pacman-mirrors`' `mirrors.json`. They differ on every machine that has those packages, so
+they carry no information — and a check that is red everywhere is a check nobody reads.
+Counted separately now, listed under `-v`, leaving three files that are genuinely worth a
+look. The list is short and every entry names the tool that regenerates the file; the
+three survivors were deliberately *not* added to it, because inventing a justification to
+quiet an unexplained difference is the exact failure this check exists to prevent.
+
+RHEL already triaged via rpm's `c`/`g`/`d` markers and now consults the same list, so all
+three backends behave alike.
+
+`sys-audit` loses the `packages` category, and every check it has left is distro-neutral.
+
 ## [0.71.0] — the security scan had no verdict, and neither did any remote run
 
 QA pass on `sys-audit`, on a workstation and all six lab guests.
