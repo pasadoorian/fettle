@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import __version__, actions
 from .backends.base import Context
-from .config import Config
+from .config import DEFAULT_ACTIONS, Config
 from .config import load as load_config
 from .distro import UnknownDistro, detect
 from .output import Output
@@ -26,7 +26,10 @@ DEFAULT_CONFIG = Path.home() / ".config/fettle/config.toml"
 # (option-strings, action-name). Pipeline actions selectable as flags or bare words.
 # Dispatch-only shortcuts (-S sys-audit, -U upgrade-check, -p aur-precheck) are NOT
 # here — they route to their own runners (see main()).
-FLAG_ACTIONS = [
+# Grouped by *purpose*, because that is how the help is read. Grouping by mechanism
+# (flags here, subcommands in the epilog) is what buried `sys-audit` — the most
+# security-relevant thing in the tool — in a block titled "shortcut flags".
+MAINTENANCE_ACTIONS = [
     (("-c", "--clean"), "clean"),
     (("-o", "--orphans"), "orphans"),
     (("-u", "--update", "--upgrade"), "update"),
@@ -37,13 +40,31 @@ FLAG_ACTIONS = [
     (("-x", "--auto-updates"), "auto_updates"),
     (("-f", "--firmware"), "firmware_check"),
     (("-k", "--kernel"), "kernel"),
-    (("-A", "--aur-audit"), "aur_audit"),
-    (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
-    (("-P", "--pkg-audit"), "pkg_audit"),
-    (("-H", "--hardening-audit"), "hardening_audit"),
     (("-C", "--container-update"), "container_update"),
 ]
+AUDIT_ACTIONS = [
+    (("-P", "--pkg-audit"), "pkg_audit"),
+    (("-A", "--aur-audit"), "aur_audit"),
+    (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
+    (("-H", "--hardening-audit"), "hardening_audit"),
+]
+FLAG_ACTIONS = MAINTENANCE_ACTIONS + AUDIT_ACTIONS
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
+
+# Rendered in the audit group so they are findable, but never parsed here: main()
+# intercepts them before argparse runs (see DISPATCH_SHORTCUTS / the routing table
+# below). Each is a flag whose subcommand form takes further options.
+SHORTCUT_HELP = [
+    (("-S", "--sys-audit"), "sys_audit",
+     "firmware/boot/hardware security scan — the deepest one fettle has; "
+     "self-elevates (`fettle sys-audit --list` for categories)"),
+    (("-p", "--aur-precheck"), "aur_precheck",
+     "pre-install check for AUR packages (RPC + IoC); bare = every installed one "
+     "(`fettle aur-precheck PKG …`)"),
+    (("-U", "--upgrade-check"), "upgrade_check",
+     "[experimental] AI pre-upgrade safety check; needs ANTHROPIC_API_KEY "
+     "(`fettle upgrade-check --effort high`)"),
+]
 
 # Bare-word synonyms -> canonical action. `upgrade` mirrors the --upgrade flag
 # (both alias -u/update): `fettle upgrade` == `fettle update` (install upgrades).
@@ -94,25 +115,24 @@ ACTION_HELP = {
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
 }
 
-_EPILOG = """\
-shortcut flags & their fuller subcommand forms (use the subcommand for options):
-  -S  ==  fettle sys-audit [CATS] [--all|--list]   firmware/boot/hardware security
-                                                   scan (-S runs --all; self-elevates)
-  -U  ==  fettle upgrade-check [--effort ...]      [experimental] AI pre-upgrade
-                                                   safety check; needs ANTHROPIC_API_KEY
-  -p  ==  fettle aur-precheck [PKG ...]            AUR pre-flight; bare = scan every
-                                                   installed AUR pkg (also the yay hook) [arch]
-  fettle remote HOST|GROUP [actions]               run maintenance on a remote host/group
-                                                   over ssh (safe set by default; 'remote -h')
-  fettle report [--open]                           build ~/.fettle/report.html from all
-                                                   stored reports/logs (every host)
-  fettle web [--port N]                            serve the web UI (localhost; needs
-                                                   the 'web' extra: pip install fettle[web])
-  fettle advisory-check                            installed pkgs with known CVEs (fix
-                                                   available, or no fix yet)
-  fettle advisory-update                           refresh the advisory cache
+_EPILOG = """
+audit & security (continued) — subcommands, for the ones that take options:
+  fettle sys-audit [CATS] [--all|--list]  == -S, but lets you pick categories
+  fettle aur-precheck [PKG ...]           == -p, for named packages [arch]
+  fettle upgrade-check [--effort ...]     == -U, with model/effort options
+  fettle advisory-check                   installed pkgs with known CVEs (fix
+                                          available, or no fix yet)
+  fettle advisory-update                  refresh the advisory cache
 
-which package audit? (all read-only; the three -A/-I/-p are AUR-only [arch])
+other commands:
+  fettle remote HOST|GROUP [actions]      run maintenance on a remote host/group
+                                          over ssh (safe set by default; 'remote -h')
+  fettle report [--open]                  build ~/.fettle/report.html from all
+                                          stored reports/logs (every host)
+  fettle web [--port N]                   serve the web UI (localhost; needs
+                                          the 'web' extra: pip install fettle[web])
+
+which package audit? (-S is separate: it scans firmware/boot/hardware, not packages)
   -P  pkg-audit     ALL ecosystems (AUR/APT/Flatpak/Snap/containers/extensions).
                     INCLUDES everything -I checks; the only one in the default set.
   -A  aur-audit     AUR census: age, votes, maintainer + what nothing depends on
@@ -132,6 +152,7 @@ examples:
   fettle -a --dry-run          preview the whole default set; change nothing
   fettle -O                    refresh metadata + show what's upgradable (no upgrade)
   fettle -S                    full security scan (sys-audit --all; self-elevates)
+  fettle sys-audit --list      the security categories -S would run
   fettle -U                    AI pre-upgrade safety check
 """
 
@@ -153,6 +174,26 @@ def _distro_tags() -> dict[str, str]:
     return tags
 
 
+def _reorder_help_groups(p: argparse.ArgumentParser) -> None:
+    """Show what fettle *does* before how to tune it.
+
+    argparse renders groups in list order and puts its two built-in groups first, so
+    ~25 lines of --no-color/--config/--distro stood between the description and the
+    first action. Reordering the list is the documented-by-practice way to change
+    that; it is presentation only — parsing is unaffected — and it degrades to the
+    stock order if argparse ever renames the built-ins.
+    """
+    groups = list(p._action_groups)
+    front = [g for want in ("maintenance actions", "audit & security")
+             for g in groups if (g.title or "").startswith(want)]
+    if not front:  # titles changed; leave argparse's own ordering alone
+        return
+    for g in groups:  # "options" alone does not say these apply to every action
+        if (g.title or "") == "options":
+            g.title = "options (apply to any action)"
+    p._action_groups = front + [g for g in groups if g not in front]
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle",
@@ -162,15 +203,34 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
     )
     tags = _distro_tags()
+
+    def _add(group, opts, action, help_text):
+        # "·" marks membership of the default set, so `-a` is answerable from the
+        # help itself rather than from the README.
+        mark = "· " if action in DEFAULT_ACTIONS else "  "
+        group.add_argument(*opts, dest=f"do_{action}", action="store_true",
+                           help=f"{mark}{help_text}{tags.get(action, '')}")
+
     maint = p.add_argument_group(
-        "maintenance actions",
+        "maintenance actions  (· = runs under -a, the default set)",
         "every action takes three interchangeable forms — short flag, long flag, or "
         "bare word: `fettle -c` == `fettle --clean` == `fettle clean`. They combine: "
         "`fettle -c -u` == `fettle clean update`. (`upgrade` is a synonym for "
         "`update`.)")
-    for opts, action in FLAG_ACTIONS:
-        maint.add_argument(*opts, dest=f"do_{action}", action="store_true",
-                           help=f"{ACTION_HELP.get(action, action)}{tags[action]}")
+    for opts, action in MAINTENANCE_ACTIONS:
+        _add(maint, opts, action, ACTION_HELP.get(action, action))
+
+    audit = p.add_argument_group(
+        "audit & security actions  (all read-only; · = runs under -a)",
+        "these only look — none of them changes the system. -S/-p/-U also have "
+        "subcommand forms that take further options; see below.")
+    for opts, action in AUDIT_ACTIONS:
+        _add(audit, opts, action, ACTION_HELP.get(action, action))
+    for opts, action, help_text in SHORTCUT_HELP:
+        # Declared for the help only — main() routes these to their own runners
+        # before argparse ever sees them.
+        audit.add_argument(*opts, dest=f"do_{action}", action="store_true",
+                           help=f"  {help_text}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("-R", "--auto-rebuild", action="store_true",
                    help="offer to rebuild (with -r / -y) instead of only listing")
@@ -199,6 +259,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
     p.add_argument("--print-config", action="store_true", help="print effective config and exit")
     p.add_argument("--version", action="version", version=f"fettle {__version__}")
+    _reorder_help_groups(p)
     return p
 
 

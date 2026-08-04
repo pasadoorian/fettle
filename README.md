@@ -46,6 +46,7 @@ real unit-test coverage the bash originals never had.
 - [Quick start](#quick-start)
 - [Reading the output](#reading-the-output)
 - [Maintenance actions](#maintenance-actions)
+  - [Audit & security actions](#audit--security-actions)
   - [Cache cleaning (-c)](#cache-cleaning--c)
   - [Three AUR checks, and which to reach for](#three-aur-checks-and-which-to-reach-for)
   - [Did an upgrade change your config? (-d)](#did-an-upgrade-change-your-config--d)
@@ -346,7 +347,11 @@ fettle clean update  # identical to the line above
 ```
 
 The table below lists the short flag and the word; the long flag is the word with `--` in
-front of it (`--clean`, `--orphans`, `--config-drift`). `fettle -h` lists all three.
+front of it (`--clean`, `--orphans`, `--config-drift`). `fettle -h` lists all three, in
+these same two groups.
+
+**`·` marks the default set** — what `fettle` runs with no arguments (and `fettle -a`).
+Everything else is opt-in.
 
 Anything a distro's backend doesn't support is skipped with a note.
 
@@ -355,21 +360,35 @@ just Debian — each revision confirmed individually.
 
 | Flag | Action | Arch | Debian | RHEL family |
 |---|---|---|---|---|
-| `-c` | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
-| `-o` | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) — **the package manager confirms the full transaction**, which may exceed what you picked | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove`, same confirmation | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
-| `-u` / `--upgrade` | `update` | mirrorlist refresh (Manjaro; `[updaters.arch] refresh_mirrors`), then pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
+| `-c` · | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
+| `-o` · | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) — **the package manager confirms the full transaction**, which may exceed what you picked | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove`, same confirmation | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
+| `-u` / `--upgrade` · | `update` | mirrorlist refresh (Manjaro; `[updaters.arch] refresh_mirrors`), then pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
-| `-r` | `rebuild-check` | `checkrebuild` (rebuild with `-R`) + **reboot check**: warns if the running kernel's modules were replaced | `needrestart` — services **and** the kernel state (`KSTA`), so a pending reboot is reported | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
-| `-y` | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
-| `-d` | `config-drift` | `.pacnew` (yours still live) vs `.pacorig` (**yours displaced**) and `.pacsave` | `.dpkg-dist`/`.ucf-dist` (yours live) vs `.dpkg-old`/`.ucf-old` (**yours displaced**) + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
-| `-x` | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
+| `-r` · | `rebuild-check` | `checkrebuild` (rebuild with `-R`) + **reboot check**: warns if the running kernel's modules were replaced | `needrestart` — services **and** the kernel state (`KSTA`), so a pending reboot is reported | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |
+| `-y` · | `python-rebuild-check` *(arch)* | rebuild pkgs stranded on an old `/usr/lib/python3.X` (skips Python interpreters themselves; flags orphaned dirs) | — (apt handles transitions) | — (dnf handles transitions) |
+| `-d` · | `config-drift` | `.pacnew` (yours still live) vs `.pacorig` (**yours displaced**) and `.pacsave` | `.dpkg-dist`/`.ucf-dist` (yours live) vs `.dpkg-old`/`.ucf-old` (**yours displaced**) + `dpkg --audit` | `.rpmnew` (yours still live) vs `.rpmsave`/`.rpmorig` (**yours displaced**) + `dnf check` |
+| `-x` · | `auto-updates` | report enabled auto-update timers (known units) | report `unattended-upgrades` state (`apt-config` + `apt-daily-upgrade.timer`) | `dnf-automatic` — **all four timers**, since `-install` applies updates even with `apply_updates = no`; warns if the host reboots itself |
 | | | **all three also check the timer is actually succeeding** — enabled but failing every night is reported, not counted as ON | | |
-| `-f` | `firmware` | `fwupdmgr` (shared) — verdict from fwupd's **exit code**, so a dead daemon reads as UNKNOWN, not "up to date" | same | same |
+| `-f` · | `firmware` | `fwupdmgr` (shared) — verdict from fwupd's **exit code**, so a dead daemon reads as UNKNOWN, not "up to date" | same | same |
 | `-k` | `kernel` | `mhwd-kernel` (running series protected; removal is user-named) | `dpkg -l 'linux-image-*'`, purge old (**running AND newest** protected; apt confirms its own transaction; nudges to reboot) | **informational only** — dnf enforces `installonly_limit` itself, so nothing is offered for removal; flags a pending reboot |
+| `-C` | `container-update` | pull container images — **every installed runtime** (docker *and* podman), asking per image; images built here are never offered ([`[containers]`](#package-supply-chain)) | same | same |
+
+### Audit & security actions
+
+**All read-only** — none of these changes the system. Only `-P` runs under `-a`; the rest
+are opt-in. `-S` is the odd one out and the deepest: it scans firmware, boot and hardware
+rather than packages, and elevates itself.
+
+| Flag | Action | Arch | Debian | RHEL family |
+|---|---|---|---|---|
+| `-S` | [`sys-audit`](#system-supply-chain--sys-audit) | firmware/boot/hardware security scan — Secure Boot, TPM, microcode, IOMMU, SPI/BIOS, storage firmware; **self-elevates** | same | same |
+| `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
 | `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — | — |
-| `-P` | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
+| `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
+| — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
 
 `update` **asks before upgrading** (the package manager shows its plan and
 prompts); pass `--yes` to skip the confirmation and run non-interactively.

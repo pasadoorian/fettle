@@ -363,3 +363,46 @@ def test_backend_supporting_everything_says_nothing(capsys):
          patch("fettle.actions.run"):
         cli_main(["-a", "--dry-run"])
     assert "not implemented by" not in capsys.readouterr().out
+
+
+# -- help layout -------------------------------------------------------------
+def _help_text():
+    return cli.build_parser().format_help()
+
+
+def test_sys_audit_is_findable_in_the_help():
+    """QA: -S appeared only under "shortcut flags", so the deepest security scan in
+    the tool read as a footnote. It belongs with the other audits."""
+    text = _help_text()
+    audit = text[text.index("audit & security actions"):]
+    assert "-S, --sys-audit" in audit.split("positional arguments")[0]
+
+
+def test_every_flag_action_is_in_exactly_one_purpose_group():
+    """A new action must land in maintenance or audit — not silently in neither."""
+    assert set(cli.MAINTENANCE_ACTIONS) | set(cli.AUDIT_ACTIONS) == set(cli.FLAG_ACTIONS)
+    assert not set(cli.MAINTENANCE_ACTIONS) & set(cli.AUDIT_ACTIONS)
+
+
+def test_default_set_membership_is_visible():
+    """"What does -a run?" must be answerable from the help itself."""
+    text = _help_text()
+    assert "· = runs under -a" in text
+    # Only the option rows, not the prose (the group description names --clean too).
+    rows = [ln for ln in text.splitlines() if ln.startswith("  -")]
+    assert any(ln.startswith("  -c, --clean") and "·" in ln for ln in rows)
+    assert any(ln.startswith("  -O, --only-update") and "·" not in ln for ln in rows)
+
+
+def test_actions_are_shown_before_global_options():
+    text = _help_text()
+    assert text.index("maintenance actions") < text.index("options (apply to any action)")
+
+
+def test_dispatch_shortcuts_are_documented_but_not_parsed():
+    """They are declared for the help only; main() routes them first. If argparse
+    ever started owning them, `fettle -S --list` would break."""
+    text = _help_text()
+    for opts, _, _ in cli.SHORTCUT_HELP:
+        assert opts[0] in text
+    assert set(cli.DISPATCH_SHORTCUTS) >= {"-S", "-U", "-p"}

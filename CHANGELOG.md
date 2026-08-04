@@ -10,6 +10,31 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.70.0] — the help now groups by what things are for
+
+`sys-audit` — the deepest security scan in the tool — appeared only in a block titled
+*"shortcut flags & their fuller subcommand forms"*, so the one action that looks at
+firmware, boot and hardware read as a footnote. The cause was grouping by **mechanism**
+(flags in one list, subcommands in the epilog) when people read by **purpose**.
+
+- **Two action groups.** *maintenance actions* (`-c -o -u -O -r -y -d -x -f -k -C`) and
+  *audit & security actions* (`-S -P -A -I -H -p -U`). `-S`, `-p` and `-U` are flags whose
+  fuller forms are subcommands; they are now listed with the other audits and their
+  subcommand forms noted below, rather than being findable only as subcommands.
+- **`·` marks the default set.** The help said `-a  run the default action set` and never
+  said what was in it — 9 of the 15 actions, and you had to read the README to learn
+  which. Now visible per action, in `fettle -h` and in the README table.
+- **Actions come before global options.** ~25 lines of `--no-color` / `--config` /
+  `--distro` stood between the description and the first thing fettle can do.
+- `container-update` and `sys-audit` were missing from the README action table entirely;
+  the table also mixed audits into a section titled "Maintenance actions" and is now
+  split the same way as the help.
+
+Behaviour is unchanged: `-S`/`-p`/`-U` are still routed before argparse sees them, so
+`fettle -S --list` and the "can't be combined with other action flags" error work exactly
+as before. Five tests cover the layout, including that a new action must land in one of
+the two groups rather than silently in neither.
+
 ## [0.69.0] — half the machine was invisible
 
 QA pass on `container-update`, on a host that turned out to be the ideal target: **docker
