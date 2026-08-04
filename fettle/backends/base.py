@@ -26,6 +26,20 @@ ALL_ACTIONS = (
 )
 
 
+def sample_lines(lines: list[str], limit: int = 50) -> str:
+    """First *limit* lines, saying so when there are more.
+
+    A silent slice reads as the whole list — the count in the status line above is
+    the truth, and this makes the body agree with it. Not "see the report": the
+    report is built from these same lines, so the rest is genuinely not recorded
+    anywhere, and sending the reader somewhere it isn't would be its own small lie.
+    """
+    body = "\n".join(lines[:limit])
+    if len(lines) > limit:
+        body += f"\n… and {len(lines) - limit} more, not shown"
+    return body
+
+
 def dir_bytes(path: Path) -> int:
     """Total size of a directory tree; unreadable entries are skipped, not fatal.
 

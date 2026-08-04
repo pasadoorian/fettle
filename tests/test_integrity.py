@@ -33,13 +33,13 @@ def _emit(backend, tools, responses, capsys):
 def test_arch_paccheck_clean(capsys):
     out = _emit(ArchBackend(), {"paccheck", "pacman"},
                 {("paccheck", "--sha256sum", "--quiet"): ""}, capsys)
-    assert "Package Integrity: All packages verified" in out
+    assert "Package Integrity: All readable files verified" in out
 
 
 def test_arch_paccheck_finds_issues(capsys):
     resp = {("paccheck", "--sha256sum", "--quiet"): "foo: /usr/bin/foo sha256 mismatch\n"}
     out = _emit(ArchBackend(), {"paccheck", "pacman"}, resp, capsys)
-    assert "Package Integrity: Issues found" in out
+    assert "Package Integrity: 1 file(s) differ" in out
     assert "sha256 mismatch" in out
 
 
@@ -47,7 +47,7 @@ def test_arch_falls_back_to_pacman_qkk(capsys):
     resp = {("pacman", "-Qkk"): ("bash: 1234 total files, 0 altered files\n"
                                  "warning: coreutils: /usr/bin/ls (Modification time mismatch)\n")}
     out = _emit(ArchBackend(), {"pacman"}, resp, capsys)  # no paccheck
-    assert "Package Files: Modified files found" in out
+    assert "Package Files: 1 package(s) with modified files" in out
     assert "Modification time mismatch" in out
     assert "0 altered files" not in out  # clean summary lines filtered out
 
@@ -56,14 +56,14 @@ def test_arch_falls_back_to_pacman_qkk(capsys):
 def test_debian_debsums_clean(capsys):
     resp = {("debsums",): "/usr/bin/x OK\n/usr/bin/y OK\n"}
     out = _emit(DebianBackend(), {"debsums"}, resp, capsys)
-    assert "Package Integrity: All packages verified" in out
+    assert "Package Integrity: All checksummed files verified" in out
 
 
 def test_debian_debsums_finds_issues(capsys):
     resp = {("debsums",): "/usr/bin/x OK\n/usr/bin/tampered FAILED\n"}
     out = _emit(DebianBackend(), {"debsums"}, resp, capsys)
-    assert "Package Integrity: Issues found" in out
-    assert "FAILED" in out and "OK" not in out.split("Issues found")[1]
+    assert "Package Integrity: 1 file(s) differ" in out
+    assert "FAILED" in out and "OK" not in out.split("differ from")[1]
 
 
 def test_debian_falls_back_to_dpkg_verify(capsys):
@@ -90,3 +90,26 @@ def test_packages_category_delegates_to_backend(capsys):
 def test_packages_category_in_registry_and_list():
     assert "packages" in audit.CATEGORIES
     assert audit._registry()["packages"] is audit._packages_check
+
+
+# -- "could not read" is not "found a problem" -------------------------------
+def test_arch_unreadable_files_are_not_counted_as_integrity_issues(capsys):
+    """Unprivileged, paccheck emits a `read error` line per file it cannot open —
+    ~30 on a stock desktop. They were reported as integrity issues."""
+    resp = {("paccheck", "--sha256sum", "--quiet"):
+            "foo: '/usr/bin/foo' sha256sum mismatch\n"
+            "warning: cups: '/usr/bin/cupsd' read error (Permission denied)\n"
+            "warning: dbus: '/usr/lib/helper' read error (Permission denied)\n"}
+    out = _emit(ArchBackend(), {"paccheck", "pacman"}, resp, capsys)
+    assert "Package Integrity: 1 file(s) differ" in out
+    assert "Not verified: 2 file(s) could not be read" in out
+
+
+def test_debian_packages_without_checksums_are_a_gap_not_a_finding(capsys):
+    """debsums logs `no md5sums for <pkg>` to stderr, which run_text merges in, so
+    a package that simply ships no checksums counted as an integrity issue."""
+    resp = {("debsums",): "/usr/bin/x OK\n/usr/bin/tampered FAILED\n"
+                          "debsums: no md5sums for somepkg\n"}
+    out = _emit(DebianBackend(), {"debsums"}, resp, capsys)
+    assert "Package Integrity: 1 file(s) differ" in out
+    assert "Not verified: 1 package(s) ship no checksums" in out

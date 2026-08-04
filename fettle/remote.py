@@ -69,6 +69,21 @@ def remote_groups(cfg) -> dict[str, RemoteGroup]:
     return out
 
 
+# zipapp's own `main="pkg:fn"` template generates `import pkg; pkg.fn()` — it CALLS
+# the entry point and discards what it returns, so the interpreter always exits 0.
+# Every remote run therefore reported success no matter what happened on the host:
+# a failed `fettle remote host -u`, a sys-audit that found problems, an unsupported
+# distro. Found during the sys-audit QA sweep, when a scan that correctly exited 1
+# on the guest arrived back as 0. We write the entry point ourselves instead.
+_ZIPAPP_MAIN = """\
+import sys
+
+import fettle.cli
+
+sys.exit(fettle.cli.main())
+"""
+
+
 def build_zipapp(dest: Path) -> None:
     """Package the fettle module into a runnable ``dest`` (.pyz), stdlib-only."""
     import fettle
@@ -79,7 +94,8 @@ def build_zipapp(dest: Path) -> None:
         stage.mkdir()
         shutil.copytree(pkg, stage / "fettle",
                         ignore=shutil.ignore_patterns("__pycache__", "*.py[co]"))
-        zipapp.create_archive(stage, dest, main="fettle.cli:main")
+        (stage / "__main__.py").write_text(_ZIPAPP_MAIN)
+        zipapp.create_archive(stage, dest)
 
 
 def _valid_host(host: str) -> bool:

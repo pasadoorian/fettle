@@ -57,7 +57,7 @@ ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 SHORTCUT_HELP = [
     (("-S", "--sys-audit"), "sys_audit",
      "firmware/boot/hardware security scan — the deepest one fettle has; "
-     "self-elevates (`fettle sys-audit --list` for categories)"),
+     "self-elevates; exits 1 on findings (`fettle sys-audit --list`)"),
     (("-p", "--aur-precheck"), "aur_precheck",
      "pre-install check for AUR packages (RPC + IoC); bare = every installed one "
      "(`fettle aur-precheck PKG …`)"),

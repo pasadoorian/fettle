@@ -539,3 +539,19 @@ def test_valid_host_still_runs():
     rec = _Rec()
     assert remote.run("server1", ["clean"], runner=rec) == 0
     assert any(c[0] == "ssh" for c in rec.calls)
+
+
+def test_zipapp_propagates_the_exit_code(tmp_path):
+    """zipapp's own `main="pkg:fn"` template calls the entry point and discards its
+    return, so the interpreter always exits 0 — every `fettle remote` run reported
+    success regardless of what happened on the host. Uses the -S/-A clash (exit 2),
+    which needs no system access.
+    """
+    import subprocess
+    import sys
+
+    pyz = tmp_path / "fettle.pyz"
+    remote.build_zipapp(pyz)
+    proc = subprocess.run([sys.executable, str(pyz), "-A", "-S"],
+                          capture_output=True, text=True)
+    assert proc.returncode == 2, proc.stdout + proc.stderr

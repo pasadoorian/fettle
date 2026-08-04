@@ -56,7 +56,7 @@ def bios(scan) -> None:
             scan.sub("Full BIOS Details (dmidecode -t 0)")
             scan.result(scan.run_text(["dmidecode", "-t", "0"]))
     else:
-        scan.status("dmidecode", "Not installed", "error")
+        scan.status("dmidecode", "not installed — BIOS/DMI was NOT read", "warn")
 
     scan.sub("Machine/Motherboard Info")
     if scan.which("inxi"):
@@ -113,7 +113,8 @@ def firmware(scan) -> None:
 # ---------------------------------------------------------------------------
 def fwupd(scan) -> None:
     if not scan.which("fwupdmgr"):
-        scan.status("fwupd", "Not installed", "error")
+        scan.status("fwupd", "not installed — firmware updates were NOT checked",
+                    "warn")
         return
     scan.sub("Devices with Firmware")
     devices = scan.run_text(["fwupdmgr", "get-devices", "--no-unreported-check"])
@@ -126,14 +127,19 @@ def fwupd(scan) -> None:
                 print(f"    {ln}")
 
     scan.sub("Available Updates")
-    # fwupdmgr exits non-zero when there is nothing to do as well as when it
-    # fails, so "no updates" is checked first and the exit code only decides the
-    # remaining case (otherwise an up-to-date system would report as an error).
+    # Keyed on the exit code, not on the prose — the same fix the maintenance-side
+    # firmware check got in v0.61.0, which this copy never received. fwupdmgr
+    # documents 2 as "no actions but successfully executed", and the guard here
+    # matched the English string "no updates" while fwupd actually prints "Devices
+    # with no available firmware updates:" — so a fully up-to-date machine was
+    # reported as an ERROR by the security scan. Measured on the QA host.
     updates, rc = scan.run_text_rc(["fwupdmgr", "get-updates", "--no-unreported-check"])
-    if "no updates" in updates.lower():
+    if rc == 2 or "no updates" in updates.lower():
         scan.status("Firmware Updates", "System is up to date", "ok")
     elif rc != 0:
-        scan.status("Firmware Updates", f"UNKNOWN — fwupdmgr failed (exit {rc})", "error")
+        scan.status("Firmware Updates",
+                    f"UNKNOWN — fwupdmgr exited {rc}; firmware was NOT assessed",
+                    "error")
         scan.result(updates)
     else:
         scan.status("Firmware Updates", "Updates available", "warn")
@@ -224,7 +230,13 @@ def tpm(scan) -> None:
             scan.status("TPM Version", f"{ver.strip()}.x", "info")
 
     scan.sub("TPM DMI Information")
-    if scan.which("dmidecode") and scan.is_root():
+    if not scan.which("dmidecode"):
+        scan.status("TPM DMI", "not checked — dmidecode is not installed", "warn")
+    elif not scan.is_root():
+        # Printing nothing here left the subsection header above an empty space,
+        # which reads as "checked, found nothing".
+        scan.status("TPM DMI", "not checked — needs root (re-run with sudo)", "warn")
+    else:
         dmi = scan.run_text(["dmidecode", "-t", "43"])
         if dmi and "not present" not in dmi.lower():
             scan.result(dmi)
@@ -270,19 +282,25 @@ def hardware(scan) -> None:
 # ---------------------------------------------------------------------------
 def storage(scan) -> None:
     if not scan.which("smartctl"):
-        scan.status("smartctl", "Not installed (smartmontools package)", "error")
+        scan.status("smartctl", "not installed (smartmontools) — storage firmware "
+                    "was NOT checked", "warn")
         return
     scan.sub("Storage Devices")
     for dev in _storage_devices(scan):
         print()
         print(f"  {scan.output.B}{dev}{scan.output.NC}")
-        info = scan.run_text(["smartctl", "-i", str(dev)])
-        if not info:
-            scan.dim("Could not query device")
-            continue
+        info, rc = scan.run_text_rc(["smartctl", "-i", str(dev)])
         model = _smart_field(info, ("Model", "Device Model"), ci=False)
         fw = _smart_field(info, ("firmware",), ci=True)
         serial = _smart_field(info, ("serial",), ci=True)
+        if not info or (rc != 0 and not model):
+            # smartctl merges its error onto stdout, so "Permission denied" is a
+            # non-empty string: the old emptiness test passed, no field matched, and
+            # the device printed nothing at all — indistinguishable from a healthy
+            # one. Unprivileged runs hit this for every disk on the machine.
+            why = (info.splitlines() or ["no output"])[-1].strip()
+            scan.status(str(dev), f"could NOT be queried — {why}", "warn")
+            continue
         if model:
             scan.status("Model", model, "info")
         if fw:

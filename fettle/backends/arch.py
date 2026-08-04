@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem
+from .base import Context, PackageBackend, Result, Transaction, TxItem, sample_lines
 
 _PACMAN_CACHE = Path("/var/cache/pacman/pkg")
 # Versions of each *installed* package kept in the cache by `clean`. Two means one
@@ -106,24 +106,53 @@ class ArchBackend(PackageBackend):
 
     # -- sys-audit `packages` integrity (M10) --------------------------------
     def verify_integrity(self, scan) -> None:
+        """sys-audit's ``packages`` check, following the RHEL implementation.
+
+        Two things the naive version got wrong, both measured on the QA host:
+
+        **"Could not read" is not "found a problem".** Unprivileged, paccheck emits
+        ``warning: <pkg>: '<path>' read error (Permission denied)`` for every file it
+        cannot open — 30-odd on a stock desktop. Those were printed under a single
+        ``Package Integrity: Issues found`` error, so most of the "issues" were
+        actually the scan admitting it could not look. That is the governing
+        invariant inverted, and it cries wolf just as badly as the reverse.
+
+        **A cap that says nothing is a lie about coverage.** The output was sliced to
+        the first 50 lines with no indication that anything followed. The count now
+        comes from the whole output and the sample is explicitly a sample.
+        """
         scan.sub("Pacman Package Verification")
         if scan.which("paccheck"):
             scan.dim("Running paccheck --sha256sum (this may take a while)...")
-            issues = scan.run_text(["paccheck", "--sha256sum", "--quiet"]).splitlines()[:50]
-            if not any(ln.strip() for ln in issues):
-                scan.status("Package Integrity", "All packages verified", "ok")
+            out = scan.run_text(["paccheck", "--sha256sum", "--quiet"])
+            altered, unreadable = [], []
+            for line in out.splitlines():
+                if not line.strip():
+                    continue
+                (unreadable if "read error" in line else altered).append(line.rstrip())
+            if altered:
+                scan.status("Package Integrity",
+                            f"{len(altered)} file(s) differ from their package",
+                            "error")
+                scan.result(sample_lines(altered))
             else:
-                scan.status("Package Integrity", "Issues found", "error")
-                scan.result("\n".join(issues))
+                scan.status("Package Integrity", "All readable files verified", "ok")
+            if unreadable:
+                scan.status("Not verified",
+                            f"{len(unreadable)} file(s) could not be read "
+                            "(run as root to check them)", "warn")
+                if scan.verbose:
+                    scan.result(sample_lines(unreadable))
         elif scan.which("pacman"):
             scan.dim("Running pacman -Qkk (checking file presence)...")
             altered = [ln for ln in scan.run_text(["pacman", "-Qkk"]).splitlines()
-                       if "0 altered files" not in ln][:20]
+                       if ln.strip() and "0 altered files" not in ln]
             if not altered:
                 scan.status("Package Files", "No alterations detected", "ok")
             else:
-                scan.status("Package Files", "Modified files found", "warn")
-                scan.result("\n".join(altered))
+                scan.status("Package Files",
+                            f"{len(altered)} package(s) with modified files", "warn")
+                scan.result(sample_lines(altered))
         else:
             scan.status("pacman", "Not found", "error")
 

@@ -10,6 +10,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.71.0] — the security scan had no verdict, and neither did any remote run
+
+QA pass on `sys-audit`, on a workstation and all six lab guests.
+
+**The scan produced no verdict and always exited 0.** Every check reported through
+`scan.status(...)`; nothing in `fettle/secure/` ever reached the summary channels. Measured
+on a machine with Secure Boot disabled, 17 files failing integrity verification and a
+firmware check reading as dead: 8 warnings and 2 errors in the body, and `nothing to
+report` underneath. `error` now sets the exit status; `warn` does not, because a missing
+TPM is a fact about the machine its operator may have chosen.
+
+**Every `fettle remote` run reported success, whatever happened** — not just sys-audit.
+`zipapp`'s generated entry point is `import fettle.cli; fettle.cli.main()`: it *calls* the
+entry point and discards what it returns, so the interpreter always exits 0. A failed
+remote upgrade, an unsupported distro, an audit full of findings — all arrived back as
+success. Found only because the fix above finally gave the remote something non-zero to
+return: the bug had been hiding behind another bug.
+
+**fwupd: the v0.61.0 fix never reached this copy.** sys-audit has its own fwupd check,
+still matching the English string `"no updates"` — fwupd prints *"Devices with no available
+firmware updates:"* and exits 2, so a fully patched machine was reported as
+`✗ UNKNOWN — fwupdmgr failed`.
+
+**"Could not look" rendered as "found a problem", at scale.** 65 of the 82 lines under
+`Package Integrity: Issues found` were paccheck saying *permission denied*. Now 17 differ
+and 65 could not be read. Debian had its own version, counting packages that ship no
+checksums as integrity failures. The RHEL implementation already did all of this
+correctly — the pattern was learned in one backend and never carried back.
+
+**A disk that could not be read printed nothing at all.** smartctl merges its error onto
+stdout, so the emptiness guard passed, no field matched, and the device rendered exactly
+like a healthy one — every disk on the machine, unprivileged.
+
+**And two things that would have made the new exit code noise**: `mokutil` exiting 255 with
+*"This system doesn't support Secure Boot"* is a definite negative, not a failure; and a
+missing optional tool (`smartctl`, `dmidecode`, `fwupd`) is a coverage gap, not a finding —
+otherwise every minimal server would exit 1 for lacking smartmontools.
+
+Also: the certificate check told **root** to "try as root", and the TPM DMI subsection
+printed nothing at all beneath its own header when unprivileged.
+
 ## [0.70.0] — the help now groups by what things are for
 
 `sys-audit` — the deepest security scan in the tool — appeared only in a block titled

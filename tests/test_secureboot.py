@@ -123,7 +123,7 @@ def test_failed_cert_read_skips_instead_of_greening_every_row(capsys):
         },
         capsys=capsys,
     )
-    assert "Could not read UEFI variables" in out
+    assert "could not read the UEFI variables" in out
     assert "Not present" not in out          # nothing may be asserted absent
     assert "Migration Status" not in out     # and no verdict derived from nothing
 
@@ -140,7 +140,7 @@ def test_partial_cert_read_skips_rather_than_half_reporting(capsys):
         },
         capsys=capsys,
     )
-    assert "Could not read UEFI variables" in out
+    assert "could not read the UEFI variables" in out
     assert "UEFI CA 2011 (db)" not in out
 
 
@@ -156,7 +156,7 @@ def test_successful_read_still_reports_normally(capsys):
         },
         capsys=capsys,
     )
-    assert "Could not read UEFI variables" not in out
+    assert "could not read the UEFI variables" not in out
     assert "Migration Status" in out
 
 
@@ -169,3 +169,19 @@ def test_mokutil_sb_state_failure_is_loud(capsys):
         capsys=capsys,
     )
     assert "UNKNOWN — mokutil failed (exit 1)" in out
+
+
+def test_firmware_without_secure_boot_is_an_answer_not_a_failure(capsys):
+    """`mokutil --sb-state` exits 255 saying "This system doesn't support Secure
+    Boot" — a definite negative, reported as "UNKNOWN — mokutil failed". Measured on
+    the lab guests, which boot EDK II without SB support. Distinct from "EFI
+    variables are not supported", which genuinely cannot answer (see above)."""
+    out = _run(
+        tools={"mokutil"},
+        cmd_out={("mokutil", "--sb-state"): ("This system doesn't support Secure Boot", 255),
+                 ("mokutil", "--kek"): "Microsoft Corporation KEK CA 2023\n",
+                 ("mokutil", "--db"): "Microsoft UEFI CA 2023\n"},
+        capsys=capsys,
+    )
+    assert "not supported by this firmware" in out
+    assert "UNKNOWN" not in out

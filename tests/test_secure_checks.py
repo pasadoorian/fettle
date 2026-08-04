@@ -95,7 +95,7 @@ def test_storage_lists_devices_skipping_partitions(tmp_path, capsys):
 def test_storage_without_smartctl(tmp_path, capsys):
     with _scan(tmp_path) as scan:
         checks.storage(scan)
-    assert "smartctl: Not installed" in capsys.readouterr().err
+    assert "smartctl: not installed" in capsys.readouterr().err
 
 
 # -- bios / fwupd absent-tool paths ------------------------------------------
@@ -103,7 +103,7 @@ def test_bios_without_tools(tmp_path, capsys):
     with _scan(tmp_path) as scan:
         checks.bios(scan)
     cap = capsys.readouterr()
-    assert "dmidecode: Not installed" in cap.err   # error -> stderr
+    assert "dmidecode: not installed" in cap.err   # warn -> stderr
     assert "inxi: Not installed" in cap.err
 
 
@@ -119,7 +119,7 @@ def test_fwupd_up_to_date(tmp_path, capsys):
 def test_fwupd_absent(tmp_path, capsys):
     with _scan(tmp_path) as scan:
         checks.fwupd(scan)
-    assert "fwupd: Not installed" in capsys.readouterr().err
+    assert "fwupd: not installed" in capsys.readouterr().err
 
 
 # -- a security check that could not run must say so ------------------------
@@ -198,5 +198,62 @@ def test_fwupd_real_failure_is_not_reported_as_updates_available(tmp_path, capsy
         checks.fwupd(scan)
     cap = capsys.readouterr()
     out = cap.out + cap.err
-    assert "UNKNOWN — fwupdmgr failed (exit 1)" in out
+    assert "UNKNOWN — fwupdmgr exited 1" in out
     assert "Updates available" not in out
+
+
+def test_fwupd_exit_2_is_up_to_date_not_an_error(tmp_path, capsys):
+    """fwupd documents 2 as "no actions but successfully executed", and prints
+    "Devices with no available firmware updates:" — which the old English-string
+    guard ("no updates") did not match, so a fully patched machine was an ERROR."""
+    responses = {("fwupdmgr", "get-updates", "--no-unreported-check"):
+                 ("Devices with no available firmware updates:\n • SSD 850 EVO", 2),
+                 ("fwupdmgr", "get-devices", "--no-unreported-check"): "",
+                 ("fwupdmgr", "security", "--force"): ""}
+    with _scan(tmp_path, tools={"fwupdmgr"}, responses=responses) as scan:
+        checks.fwupd(scan)
+    cap = capsys.readouterr()
+    assert "System is up to date" in cap.out + cap.err
+    assert "UNKNOWN" not in cap.out + cap.err
+
+
+# -- the scan must end in a verdict ------------------------------------------
+def _summary_of(records):
+    from fettle.output import Output
+    from fettle.secure import audit
+    from fettle.secure.base import Scan
+    scan = Scan(output=Output(color=False), records=list(records))
+    audit._summarize(scan)
+    scan.output.print_summary()
+    return scan.output
+
+
+def test_findings_reach_the_summary(capsys):
+    """Ten categories reported through status() and nothing reached the summary, so
+    a workstation with Secure Boot off and failing integrity ended with
+    "nothing to report"."""
+    out = _summary_of([
+        {"category": "c", "sub": "", "label": "Secure Boot", "value": "Disabled",
+         "level": "warn"},
+        {"category": "c", "sub": "", "label": "Package Integrity",
+         "value": "3 file(s) differ", "level": "error"},
+    ])
+    text = capsys.readouterr().out
+    assert "nothing to report" not in text
+    assert "Secure Boot" in text and "Package Integrity" in text
+    assert out.had_failures          # error sets the exit status
+
+
+def test_warnings_alone_do_not_fail_the_run(capsys):
+    """A missing TPM is a fact about the machine the operator may have chosen; it
+    must not make every scan exit non-zero."""
+    out = _summary_of([{"category": "c", "sub": "", "label": "TPM Device",
+                        "value": "Not found", "level": "warn"}])
+    assert "!" in capsys.readouterr().out
+    assert not out.had_failures
+
+
+def test_clean_scan_says_so(capsys):
+    _summary_of([{"category": "c", "sub": "", "label": "Secure Boot",
+                  "value": "Enabled", "level": "ok"}])
+    assert "nothing flagged" in capsys.readouterr().out

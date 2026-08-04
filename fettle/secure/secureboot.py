@@ -80,6 +80,14 @@ def check(scan, *, now: datetime | None = None) -> None:
             scan.status("Secure Boot", "Enabled", "ok")
         elif "disabled" in low:
             scan.status("Secure Boot", "Disabled", "warn")
+        elif "support secure boot" in low and "n't" in low or \
+                "does not support secure boot" in low:
+            # A definite answer, not a failure. mokutil exits 255 here, so this was
+            # reported as "UNKNOWN — mokutil failed" — crying wolf about a firmware
+            # that simply has no Secure Boot to enable. Measured on the lab guests,
+            # which boot EDK II without SB support.
+            scan.status("Secure Boot",
+                        "not supported by this firmware — nothing to enable", "warn")
         elif rc != 0:
             scan.status("Secure Boot", f"UNKNOWN — mokutil failed (exit {rc})", "error")
         else:
@@ -118,7 +126,13 @@ def _cert_expiry(scan, now: datetime) -> None:
     # present" — which _report_cert_row renders green for the 2011 certs. Skipping
     # is the honest answer; a partial read can't tell absent from unreadable.
     if not kek_data or not db_data:
-        scan.status("Skipped", "Could not read UEFI variables (try as root)", "warn")
+        # Don't tell root to try as root. Measured on the guests: running under sudo,
+        # with /sys/firmware/efi/efivars readable and populated, the advice was still
+        # "try as root" — so the one hint the message gave was the one thing already
+        # done, and the real reason (this firmware ships no KEK/db) went unsaid.
+        why = ("this firmware has no KEK/db store to read" if scan.is_root()
+               else "could not read the UEFI variables — try as root")
+        scan.status("Certificate check", f"skipped: {why}", "warn")
         return
 
     kek_days = _days_until(_KEK_EXPIRY, now)

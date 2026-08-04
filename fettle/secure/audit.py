@@ -70,6 +70,42 @@ def list_checks(out: Output) -> None:
     print()
 
 
+def _summarize(scan: Scan) -> None:
+    """Turn ten categories of findings into a verdict.
+
+    Every check reported through ``scan.status(...)`` and nothing ever reached the
+    summary channels, so ``print_summary()`` ended the deepest security scan in the
+    tool with *"nothing to report"* — measured on a workstation with Secure Boot
+    disabled and failing package integrity — and ``main()`` returned a hardcoded 0.
+    A scan that cannot say what it found is not a scan.
+
+    ``error`` sets the exit status; ``warn`` does not. A missing TPM or a disabled
+    Secure Boot is a fact about the machine that the operator may have chosen, so it
+    must not make every run fail; a check that could not run, or integrity that does
+    not verify, is a different thing.
+    """
+    def _names(rows, limit=3):
+        seen = list(dict.fromkeys(f"{r['label']}: {r['value']}".split(" — ")[0]
+                                  for r in rows))
+        head = "; ".join(seen[:limit])
+        return head + (f" (+{len(seen) - limit} more)" if len(seen) > limit else "")
+
+    out = scan.output
+    errors = [r for r in scan.records if r["level"] == "error"]
+    warns = [r for r in scan.records if r["level"] == "warn"]
+    checked = len({(r["category"], r["label"]) for r in scan.records})
+    if errors:
+        out.summary_fail(f"sys-audit: {len(errors)} finding(s) needing attention — "
+                         f"{_names(errors)}")
+    if warns:
+        out.summary_warn(f"sys-audit: {len(warns)} warning(s) — {_names(warns)}")
+    if not errors and not warns:
+        out.summary_add(f"sys-audit: {checked} check(s), nothing flagged")
+    if errors or warns:
+        out.next_step("full detail is in the saved report; re-run with -v for raw "
+                      "tool output.")
+
+
 def run(categories: list[str], scan: Scan) -> None:
     reg = _registry()
     scan.output.step_total = len(categories)
@@ -79,6 +115,7 @@ def run(categories: list[str], scan: Scan) -> None:
     for cat in categories:
         scan.section(CATEGORIES.get(cat, cat))
         reg[cat](scan)
+    _summarize(scan)
     scan.output.print_summary()
 
 
@@ -196,7 +233,8 @@ def main(argv: list[str]) -> int:
     scan = Scan(output=out, root=Path("/"), verbose=args.verbose)
     run(chosen, scan)
     _write_report(scan, out)
-    return 0
+    # A security scan that always exits 0 cannot be used in automation.
+    return 1 if out.had_failures else 0
 
 
 def _write_report(scan: Scan, out: Output) -> None:

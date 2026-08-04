@@ -897,6 +897,11 @@ score tells you *where to look*, not that anything is exploitable.
 ## System supply-chain — `sys-audit`
 
 A port of the Eclypsium firmware/boot-chain cheat-sheet. Most checks need root, so
+**Exit status:** `1` when the scan found something needing attention, `0` otherwise —
+so it is usable in cron and CI. A *warning* (Secure Boot disabled, no TPM, an optional
+tool absent) does **not** fail the run: those are facts about the machine you may have
+chosen. A check that ran and failed, or integrity that does not verify, does.
+
 `sys-audit` **elevates itself** (prompting for sudo) — just run `fettle sys-audit`,
 **no `sudo` prefix needed**. Pass `--user` to stay unprivileged (partial results).
 

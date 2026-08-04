@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
-from .base import Context, PackageBackend, Result, Transaction, TxItem
+from .base import Context, PackageBackend, Result, Transaction, TxItem, sample_lines
 
 _SYSTEM_UPDATERS = {"apt", "nala", "none"}
 _FLATPAK_UPDATERS = {"flatpak", "none"}
@@ -91,24 +91,45 @@ class DebianBackend(PackageBackend):
 
     # -- sys-audit `packages` integrity (M10) --------------------------------
     def verify_integrity(self, scan) -> None:
+        """sys-audit's ``packages`` check — see the RHEL implementation for the shape.
+
+        ``debsums`` writes ``<path> OK`` / ``<path> FAILED`` to stdout but
+        ``debsums: no md5sums for <pkg>`` to **stderr**, which ``run_text`` merges in.
+        Filtering on "does not end in OK" therefore counted every package that ships
+        no checksums — a normal and common thing — as an integrity issue. Those are a
+        gap in coverage, not a finding, and the two are now reported separately.
+        """
         scan.sub("Dpkg Package Verification")
         if scan.which("debsums"):
             scan.dim("Running debsums (this may take a while)...")
-            issues = [ln for ln in scan.run_text(["debsums"]).splitlines()
-                      if not ln.rstrip().endswith("OK")][:50]
-            if not issues:
-                scan.status("Package Integrity", "All packages verified", "ok")
+            altered, unverifiable = [], []
+            for line in scan.run_text(["debsums"]).splitlines():
+                line = line.rstrip()
+                if not line.strip() or line.endswith("OK"):
+                    continue
+                (unverifiable if "no md5sums" in line else altered).append(line)
+            if altered:
+                scan.status("Package Integrity",
+                            f"{len(altered)} file(s) differ from their package", "warn")
+                scan.result(sample_lines(altered))
             else:
-                scan.status("Package Integrity", "Issues found", "warn")
-                scan.result("\n".join(issues))
+                scan.status("Package Integrity", "All checksummed files verified", "ok")
+            if unverifiable:
+                scan.status("Not verified",
+                            f"{len(unverifiable)} package(s) ship no checksums, so "
+                            "their files could not be verified", "warn")
+                if scan.verbose:
+                    scan.result(sample_lines(unverifiable))
         else:
             scan.status("debsums", "Not installed (apt install debsums)", "warn")
             scan.dim("Running dpkg --verify...")
-            out = scan.run_text(["dpkg", "--verify"]).splitlines()[:30]
-            if not any(ln.strip() for ln in out):
+            out = [ln for ln in scan.run_text(["dpkg", "--verify"]).splitlines()
+                   if ln.strip()]
+            if not out:
                 scan.status("Package Files", "No issues detected", "ok")
             else:
-                scan.result("\n".join(out))
+                scan.status("Package Files", f"{len(out)} discrepancy line(s)", "warn")
+                scan.result(sample_lines(out))
 
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str, str]:
