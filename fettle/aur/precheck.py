@@ -38,6 +38,31 @@ def _env_bool(name: str, default: bool) -> bool:
     return val.strip().lower() not in ("false", "0", "no", "off")
 
 
+def _allowlist_unsafe(path: Path) -> str:
+    """Why this allowlist must not be trusted, or ``""``.
+
+    An entry here **suppresses a CRITICAL malware warning** for a package about to be
+    built, so the file is a trust boundary. fettle's TOML config has refused
+    world-writable or foreign-owned files since day one; this one had no check at all,
+    which made it the softer way to silence the same alarm. Checked inline rather than
+    via ``config._is_safe`` so this stays the self-contained, no-TOML helper the yay
+    hook invokes once per package.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return ""                                    # absent -> nothing to distrust
+    if st.st_mode & 0o002:
+        return "world-writable"
+    allowed = {0, os.getuid()}
+    sudo_uid = os.environ.get("SUDO_UID")
+    if sudo_uid and sudo_uid.isdigit():
+        allowed.add(int(sudo_uid))
+    if st.st_uid not in allowed:
+        return f"owned by uid {st.st_uid}, not you or root"
+    return ""
+
+
 def _load_allowlist(path: Path) -> list[str]:
     try:
         lines = path.read_text().splitlines()
@@ -69,7 +94,13 @@ def check(pkgs, *, home: Path | None = None, emit=print,
 
     allow_file = Path(os.environ.get("YAY_ALLOWLIST_FILE")
                       or home / ".config/yay/allowlist.txt")
-    allow = _load_allowlist(allow_file)
+    unsafe = _allowlist_unsafe(allow_file)
+    if unsafe:
+        # Fail CLOSED: ignore the suppressions rather than honour them from a file
+        # anyone could have written.
+        emit(f"WARN allowlist {allow_file} is {unsafe} — IGNORING it; "
+             "every package will be checked")
+    allow = [] if unsafe else _load_allowlist(allow_file)
     targets = [p for p in pkgs if p and not matches_any(p, allow)]
     if not targets:
         return
@@ -85,6 +116,16 @@ def check(pkgs, *, home: Path | None = None, emit=print,
     # whole batch, so a bulk upgrade doesn't refetch per package.
     bad_pkgs = ioc.bad_packages()
     bad_accounts = ioc.bad_accounts()
+    # The IoC lists are the whole point of this gate, and an unreachable feed yields an
+    # EMPTY set — so a compromised package sailed through in silence. The RPC half
+    # already distinguished offline from not-found (below); this half did not, and it
+    # is the more consequential of the two: it runs before a build, not after.
+    # Measured with a cold cache and an unreachable feed host: `bad_packages()` -> set(),
+    # `degraded` -> True, and nothing was emitted.
+    if ioc.degraded:
+        what = ", ".join(sorted(set(ioc.unavailable))[:3]) or "cached copies are stale"
+        emit(f"WARN IoC malware feeds are NOT current ({what}) — these packages were "
+             "NOT checked against the known-compromise lists")
     results = aur_meta.fetch_info(targets)  # None => RPC unreachable (offline)
     by_name = ({r.get("Name"): r for r in results if r.get("Name")}
                if results is not None else {})
@@ -137,6 +178,20 @@ def scan(pkgs, *, home: Path | None = None,
     return crit, warn
 
 
+def _emit_and_count(pkgs) -> int:
+    """Print the findings and return how many were CRIT."""
+    crit = 0
+
+    def _emit(line: str) -> None:
+        nonlocal crit
+        if line.startswith("CRIT "):
+            crit += 1
+        print(line)
+
+    check(pkgs, emit=_emit)
+    return crit
+
+
 def _installed_foreign() -> list[str]:
     """Installed foreign (AUR / manually-built) package names via `pacman -Qmq`."""
     from .. import command
@@ -153,6 +208,11 @@ def main(argv) -> int:
     With package names (the yay hook path) it checks exactly those and stays
     silent when clean, byte-for-byte as before. With NO arguments it scans every
     installed AUR/foreign package and prints a friendly summary.
+
+    **Exit status:** 1 if anything was CRITICAL, else 0. It used to be 0 always — the
+    yay hook reads stdout and discards the status (verified in its source), so a real
+    status costs the hook nothing and makes `fettle aur-precheck foo && yay -S foo`
+    mean what a reader would assume it means.
     """
     # Split package names from any stray forwarded flags. Everything after a
     # literal `--` is taken as a package name verbatim (standard convention),
@@ -163,9 +223,19 @@ def main(argv) -> int:
         pkgs = [a for a in argv[:sep] if not a.startswith("-")] + argv[sep + 1:]
     else:
         pkgs = [a for a in argv if not a.startswith("-")]
-    if pkgs:
-        check(pkgs)
+    if not _env_bool("AUR_PRECHECK", True):
+        # The hook path stays silent — the env var is an explicit opt-out and the hook
+        # fires per package. A human who typed the command deserves to know it did
+        # nothing at all.
+        print("AUR_PRECHECK is off — no checks were run.")
         return 0
+
+    if pkgs:
+        crit = _emit_and_count(pkgs)
+        # The yay hook reads stdout and discards the exit code (verified in
+        # ~/.config/yay/init.lua), so a real status here breaks nothing and makes
+        # `fettle aur-precheck foo && yay -S foo` mean what it looks like it means.
+        return 1 if crit else 0
 
     installed = _installed_foreign()
     if not installed:
@@ -193,4 +263,4 @@ def main(argv) -> int:
     check(installed, emit=_emit)
     if not findings:
         print("no issues found.")
-    return 0
+    return 1 if any(f.startswith("CRIT ") for f in findings) else 0

@@ -10,6 +10,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.77.0] — the install-time malware gate passed in silence when its lists were blind
+
+QA pass on `aur-precheck` — the highest-consequence read-only check in the tool. Every
+other audit reports on what is already installed; this one runs *before* a package is
+built, once per package, from the yay hook, so its silence is taken as permission.
+
+**It never checked whether the IoC feeds loaded.** `bad_packages()` and `bad_accounts()`
+were consulted; `degraded` / `unavailable` / `stale` were not. An unreachable feed returns
+an **empty set**, so every package compared clean against a list that was never read.
+Measured with a cold cache against an unreachable feed host: `bad_packages()` → `set()`,
+`degraded` → True, and nothing was emitted at all.
+
+Three things make this the sharpest instance of the pattern this QA pass keeps finding:
+it runs *before* the build rather than after; **the same file already got it right for
+the other data source** (the AUR RPC half distinguishes offline from not-found); and the
+IoC layer already tracked coverage — `aur-ioc-scan`'s sweep added it and `pkg-audit`
+inherited it when `-I` was retired, so every consumer had the guard except the one where
+it matters most. `bad_npm()` even carries a seed fallback commented *"never go blind"*.
+
+**The allowlist was an unguarded trust boundary.** An entry in
+`~/.config/yay/allowlist.txt` suppresses a CRITICAL malware warning for the package it
+names, and the file was read with no ownership or permission check — while fettle's TOML
+config has refused world-writable or foreign-owned files since day one. It now fails
+**closed**: an unsafe allowlist is announced and ignored, and every package is checked.
+
+**It always exited 0, including on KNOWN-COMPROMISED.** Documented as deliberate —
+"advisory; never blocks an install" — but that reasoning comes from the hook, and the
+hook does not read the exit code (`io.popen`, reads stdout, discards `p:close()`;
+verified in its source before changing anything). So the status cost the hook nothing and
+misled everyone else: `fettle aur-precheck foo && yay -S foo` proceeded on a known-
+malicious package. Now 1 on any CRITICAL. The `CRIT `/`WARN ` line contract is unchanged.
+
+**`AUR_PRECHECK=false` disabled the check in total silence** — no output, exit 0,
+indistinguishable from "checked, all clear". The standalone path says so now; the hook
+path stays quiet, because the env var is an explicit opt-out and the hook fires per
+package.
+
+`precheck.scan()` — the same code path, used by `-u`'s pre-upgrade gate — inherits all
+four fixes.
+
 ## [0.76.0] — upgrade-check: a verdict you can act on, and commands attributed to their author
 
 Code review of `upgrade-check` (no live run — it costs money per invocation, and it is

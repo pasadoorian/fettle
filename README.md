@@ -779,7 +779,23 @@ while the report read as though it covered the machine.
 `CRIT`/`WARN` lines for the named packages and always exits 0. **With no package
 named** (`fettle aur-precheck` or `fettle -p`) it scans *every* installed AUR
 package instead — a quick safety sweep. Tunable via env vars (`AUR_PRECHECK=false`
-to disable, `AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …). The bundled yay
+to disable, `AUR_PRECHECK_MAX_AGE_DAYS`, `YAY_ALLOWLIST_FILE`, …).
+
+**Exit status:** `1` if anything was `CRITICAL`, else `0` — so
+`fettle aur-precheck foo && yay -S foo` means what it looks like it means. (The yay
+hook reads stdout and ignores the status, so this changes nothing for it.)
+
+**The allowlist is a trust boundary.** An entry in `~/.config/yay/allowlist.txt`
+suppresses a CRITICAL malware warning for the package it names, so fettle refuses a
+world-writable or foreign-owned allowlist — it says so and checks every package anyway,
+rather than honouring suppressions from a file anyone could have written.
+
+**If the IoC feeds cannot be read, it says so.** An unreachable feed yields an empty
+malware list, which would otherwise mean a compromised package passes the gate in
+silence. That warning is emitted as a `WARN` line, so it reaches the yay hook at build
+time too.
+
+The bundled yay
 hook (`~/.config/yay/init.lua`) calls it per package before a build — point its
 helper at `fettle aur-precheck` (it prefers `fettle` on `PATH`, falling back to the
 legacy `aur-precheck.sh`).

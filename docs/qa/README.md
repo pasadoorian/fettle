@@ -113,7 +113,7 @@ Status of each feature's QA pass. `—` = not started.
 | pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **new in v0.72.0 — split out of sys-audit, swept on 4 targets** |
 | sys-audit | `-S` | [sys-audit.md](sys-audit.md) | **swept — 7 fixed, incl. one affecting every `fettle remote` run** |
 | upgrade-check | `-U` | [upgrade-check.md](upgrade-check.md) | **reviewed (no live run, by decision) — 2 fixed, 1 recorded** |
-| aur-precheck | `-p` | — | — |
+| aur-precheck | `-p` | [aur-precheck.md](aur-precheck.md) | **swept — 4 fixed, incl. the malware gate passing on blind feeds** |
 | advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight); pre-update gate redesigned** |
 | advisory-update | — | — | — |
 | report | — | — | — |

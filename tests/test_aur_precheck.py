@@ -125,10 +125,14 @@ def test_compromised_list_from_cache_when_offline(env):
     assert any("CRIT evil-pkg is on the KNOWN-COMPROMISED package list" in ln for ln in out)
 
 
-def test_main_always_returns_zero(env):
+def test_main_exit_status_reflects_a_critical(env):
+    """It returned 0 unconditionally. The yay hook reads stdout and discards the
+    status (verified in its source), so a real one costs the hook nothing and makes
+    `fettle aur-precheck foo && yay -S foo` mean what it looks like it means."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
-        assert precheck.main(["evil-pkg"]) == 0
+        assert precheck.main(["evil-pkg"]) == 1        # KNOWN-COMPROMISED
+        assert precheck.main(["good-pkg"]) == 0
 
 
 def test_bare_main_scans_all_installed_foreign(env, capsys):
@@ -139,7 +143,7 @@ def test_bare_main_scans_all_installed_foreign(env, capsys):
         mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
         rc = precheck.main([])
     out = capsys.readouterr().out
-    assert rc == 0
+    assert rc == 1                                    # evil-pkg is KNOWN-COMPROMISED
     assert "scanning 2 installed" in out
     assert "KNOWN-COMPROMISED" in out          # evil-pkg flagged in the batch
 
@@ -177,3 +181,62 @@ def test_main_double_dash_takes_literal_package_names(env):
         mp.setattr("fettle.aur.precheck.check", lambda pkgs, **kw: seen.extend(pkgs))
         precheck.main(["--no-color", "--", "good-pkg"])
     assert seen == ["good-pkg"]
+
+
+# -- the malware gate must not pass silently when its lists are blind ---------
+class _BlindIOC:
+    """IoC feeds unreachable: the lists come back EMPTY."""
+    stale: list = []
+    unavailable = ["aur-infected/packages.txt"]
+    degraded = True
+
+    def __init__(self, **_kw):
+        pass
+
+    def bad_packages(self):
+        return set()
+
+    def bad_accounts(self):
+        return set()
+
+
+def test_unreadable_ioc_feeds_are_announced(env):
+    """Measured before the fix: with a cold cache and an unreachable feed host,
+    `bad_packages()` returned set(), `degraded` was True, and the precheck emitted
+    nothing — so a compromised package would have been built in silence. This is the
+    install-time gate, so it matters more here than anywhere else."""
+    lines = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("fettle.aur.precheck.aur_ioc.IOC", _BlindIOC)
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        precheck.check(["good-pkg"], emit=lines.append)
+    assert any("NOT checked against the known-compromise lists" in ln for ln in lines)
+    assert any(ln.startswith("WARN ") for ln in lines)   # the hook parses WARN lines
+
+
+def test_world_writable_allowlist_is_ignored(env, tmp_path):
+    """An allowlist entry suppresses a CRITICAL malware warning, so the file is a
+    trust boundary — fettle's TOML config has refused world-writable files since day
+    one, and this was the softer way to silence the same alarm."""
+    allow = tmp_path / "allowlist.txt"
+    allow.write_text("evil-pkg\n")
+    allow.chmod(0o666)
+    lines = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("YAY_ALLOWLIST_FILE", str(allow))
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        precheck.check(["evil-pkg"], emit=lines.append)
+    assert any("world-writable" in ln and "IGNORING" in ln for ln in lines)
+    assert any("KNOWN-COMPROMISED" in ln for ln in lines)   # not suppressed
+
+
+def test_safe_allowlist_still_suppresses(env, tmp_path):
+    allow = tmp_path / "allowlist.txt"
+    allow.write_text("evil-pkg\n")
+    allow.chmod(0o644)
+    lines = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("YAY_ALLOWLIST_FILE", str(allow))
+        mp.setattr("fettle.aur.meta.fetch_info", lambda pkgs, **kw: _records())
+        precheck.check(["evil-pkg"], emit=lines.append)
+    assert lines == []
