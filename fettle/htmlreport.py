@@ -164,6 +164,8 @@ main{padding:1.3rem 1.1rem;max-width:1180px;margin:0 auto}
 .b-Low{color:var(--green);border-color:var(--green)}
 .b-Info{color:var(--dim);border-color:var(--dim)}
 .b-ok{color:var(--green);border-color:var(--green)}
+.d-new{color:var(--amber)}.d-gone{color:var(--green)}
+.delta{font-size:.72rem;margin-left:.4rem;cursor:help}
 section.host{background:var(--panel);border:1px solid var(--border);border-radius:6px;margin:1rem 0;overflow:hidden}
 section.host>h2{margin:0;padding:.6rem .9rem;background:var(--panel2);font-size:1.02rem;
   border-bottom:1px solid var(--border);color:var(--green)}
@@ -184,6 +186,8 @@ summary:hover::before{text-shadow:0 0 8px currentColor}
 .badge::before,.pill::before{content:"["}.badge::after,.pill::after{content:"]"}
 .badge{color:var(--fg)}
 .badge.b-ok{color:var(--green);border-color:var(--green)}
+.d-new{color:var(--amber)}.d-gone{color:var(--green)}
+.delta{font-size:.72rem;margin-left:.4rem;cursor:help}
 .badge.b-bad{color:var(--red);border-color:var(--red)}
 .grow{display:flex;gap:.6rem;align-items:baseline;padding:.15rem .2rem;font-size:.82rem}
 .cmdtag{font-family:var(--mono);font-size:.72rem;color:var(--cyan)}
@@ -221,24 +225,34 @@ h4.cat::before{content:"» ";color:var(--dim)}
 
 _SCRIPT = """
 const q=document.getElementById('q'),hf=document.getElementById('hostf'),
-      tf=document.getElementById('typef');
+      tf=document.getElementById('typef'),sf=document.getElementById('sevf');
 function apply(){
-  const s=(q.value||'').toLowerCase(),h=hf.value,t=tf.value;
+  const s=(q.value||'').toLowerCase(),h=hf.value,t=tf.value,
+        sev=sf.value?parseInt(sf.value,10):null;
   document.querySelectorAll('section.host').forEach(sec=>{
     const host=sec.dataset.host; let anyH=false;
     sec.querySelectorAll('.group').forEach(g=>{
       const type=g.dataset.type; let anyG=false;
       g.querySelectorAll('details').forEach(d=>{
+        // data-sev is -1 for entries that carry no findings at all (run-logs,
+        // package lists). Those are hidden by a severity filter rather than shown
+        // regardless: asking for "High and above" and getting a run-log back is not
+        // an answer to the question.
+        const r=parseInt(d.dataset.sev||'-1',10);
         const hit=(!s||d.textContent.toLowerCase().includes(s))&&
-                  (!h||host===h)&&(!t||type===t);
+                  (!h||host===h)&&(!t||type===t)&&(sev===null||r>=sev);
         d.classList.toggle('hidden',!hit); if(hit)anyG=true;
       });
       g.classList.toggle('hidden',!anyG); if(anyG)anyH=true;
     });
     sec.classList.toggle('hidden',!anyH);
   });
+  document.querySelectorAll('.card').forEach(c=>{
+    const r=parseInt(c.dataset.sev||'0',10);
+    c.classList.toggle('hidden',(h&&c.dataset.host!==h)||(sev!==null&&r<sev));
+  });
 }
-[q,hf,tf].forEach(el=>el.addEventListener('input',apply));
+[q,hf,tf,sf].forEach(el=>el.addEventListener('input',apply));
 """
 
 
@@ -604,6 +618,97 @@ def _worst(entries) -> tuple[int, str]:
     return max(entries, default=(0, ""))
 
 
+def _entry_rank(entry: dict) -> int:
+    """Worst severity in one report, for the severity filter. -1 = not a finding
+    report (run-logs, package lists), which the filter treats as "always show"."""
+    data = entry.get("data") or {}
+    ranks = [_SEV_RANK.get(_sev(f.get("severity")), 1)
+             for f in (data.get("findings") or [])]
+    ranks += [_SEV_RANK.get(_sev(b), 1) for b, n in (data.get("band_tally") or {}).items()
+              if n]
+    counts = data.get("level_counts") or {}
+    if counts.get("error"):
+        ranks.append(3)
+    elif counts.get("warn"):
+        ranks.append(2)
+    return max(ranks, default=-1)
+
+
+def _item_keys(entry: dict) -> tuple[str, set]:
+    """``(what the items are, identity set)`` for diffing two snapshots.
+
+    Three shapes exist and they are not interchangeable. Findings and packages carry
+    an identity that survives between runs; `sys-audit` and `pkg-integrity` record
+    only counts and a transcript, so those can honestly report "3 -> 1" and nothing
+    finer. Saying which is which beats inventing an identity that would silently
+    mismatch every run.
+    """
+    data = entry.get("data") or {}
+    if isinstance(data.get("findings"), list):
+        return "finding", {
+            (str(f.get("source", "")), str(f.get("package", "")),
+             str(f.get("question") or ",".join(map(str, f.get("cves") or []))))
+            for f in data["findings"]}
+    if isinstance(data.get("packages"), list):
+        out = set()
+        for pkg in data["packages"]:
+            out.add(pkg if isinstance(pkg, str)
+                    else str(pkg.get("package") or pkg.get("name") or pkg))
+        return "package", out
+    counts = data.get("level_counts") or {}
+    n = sum(v for k, v in counts.items() if k in ("error", "warn"))
+    return "count", {f"__count__{n}"} if n else set()
+
+
+def _delta(entries: list) -> dict | None:
+    """Newest snapshot vs the newest one from an EARLIER DAY, or None.
+
+    Day-based on purpose: three runs in an hour would otherwise reset the baseline and
+    show an empty delta right after you fixed something. "What changed since I last
+    looked" is the question; "since I last pressed enter" is not.
+    """
+    dated = sorted((e for e in entries if e.get("timestamp")),
+                   key=lambda e: e["timestamp"])
+    if len(dated) < 2:
+        return None
+    newest = dated[-1]
+    day = newest["timestamp"][:8]
+    prior = [e for e in dated[:-1] if e["timestamp"][:8] < day]
+    if not prior:
+        return None
+    before = prior[-1]
+    kind, now_keys = _item_keys(newest)
+    _kind2, old_keys = _item_keys(before)
+    if kind == "count":
+        n_now = len(now_keys) and int(next(iter(now_keys)).removeprefix("__count__"))
+        n_old = len(old_keys) and int(next(iter(old_keys)).removeprefix("__count__"))
+        if n_now == n_old:
+            return None
+        return {"kind": kind, "since": before["timestamp"], "added": [], "gone": [],
+                "n_added": max(0, n_now - n_old), "n_gone": max(0, n_old - n_now)}
+    added = sorted(now_keys - old_keys)
+    gone = sorted(old_keys - now_keys)
+    if not added and not gone:
+        return None
+    return {"kind": kind, "since": before["timestamp"],
+            "added": [k[1] if isinstance(k, tuple) else k for k in added],
+            "gone": [k[1] if isinstance(k, tuple) else k for k in gone],
+            "n_added": len(added), "n_gone": len(gone)}
+
+
+def _host_deltas(host: dict) -> dict:
+    """``{tool: delta}`` for every type with a comparable earlier day."""
+    by_tool: dict[str, list] = {}
+    for e in host["reports"]:
+        by_tool.setdefault(e.get("tool", ""), []).append(e)
+    out = {}
+    for tool, entries in by_tool.items():
+        d = _delta(entries)
+        if d:
+            out[tool] = d
+    return out
+
+
 def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, str]]:
     """``(rank, one-line problem)`` for a host, worst first.
 
@@ -689,6 +794,47 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
     return sorted(out, reverse=True)
 
 
+def _delta_line(deltas: dict) -> str:
+    """`+2 new, -7 resolved since 2026-08-01` — the direction of travel, which is the
+    most useful single fact about a host you have seen before."""
+    if not deltas:
+        return ""
+    added = sum(d["n_added"] for d in deltas.values())
+    gone = sum(d["n_gone"] for d in deltas.values())
+    since = _fmt_ts(min(d["since"] for d in deltas.values())).split()[0]
+    bits = []
+    if added:
+        bits.append(f'<span class="d-new">+{added} new</span>')
+    if gone:
+        # Showing what went away matters as much as what arrived: "you fixed it" must
+        # not render the same as "it was never there".
+        bits.append(f'<span class="d-gone">-{gone} resolved</span>')
+    return f'<div class="count">{", ".join(bits)} since {_esc(since)}</div>'
+
+
+def _delta_badge(delta: dict | None) -> str:
+    """`+2 / -7` on the newest entry of a type, with the changed names in the tooltip
+    — the delta next to the evidence it came from."""
+    if not delta:
+        return ""
+    tip = "; ".join(filter(None, [
+        ("new: " + ", ".join(delta["added"][:12])) if delta["added"] else "",
+        ("gone: " + ", ".join(delta["gone"][:12])) if delta["gone"] else ""]))
+    if not tip:
+        # A count-only type (sys-audit, pkg-integrity) records no identities, so the
+        # honest tooltip is the count change rather than an empty string.
+        n = delta["n_added"] or delta["n_gone"]
+        tip = f"{n} {'more' if delta['n_added'] else 'fewer'} finding(s) than"
+    bits = []
+    if delta["n_added"]:
+        bits.append(f'<span class="d-new">+{delta["n_added"]}</span>')
+    if delta["n_gone"]:
+        bits.append(f'<span class="d-gone">-{delta["n_gone"]}</span>')
+    since = _fmt_ts(delta["since"]).split()[0]
+    return (f'<span class="delta" title="{_esc(tip)} (since {_esc(since)})">'
+            f'{" ".join(bits)}</span>')
+
+
 def _host_summary(host: dict, *, stale_days: int = 7, now=None) -> str:
     """The dashboard card body: a verdict across ALL audits, then what drove it."""
     problems = _host_problems(host, stale_days=stale_days, now=now)
@@ -707,6 +853,7 @@ def _host_summary(host: dict, *, stale_days: int = 7, now=None) -> str:
     latest = max((e.get("timestamp", "") for e in host["reports"] + host["logs"]),
                  default="")
     return (f'<div class="chips">{badge}</div>{lines}{more}'
+            f'{_delta_line(_host_deltas(host))}'
             f'<div class="count muted" style="margin-top:.3rem">{counts or "no reports"}</div>'
             f'<div class="count muted">latest: {_esc(_fmt_ts(latest)) or "—"}</div>')
 
@@ -738,7 +885,9 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
     type_opts = "".join(f'<option value="{_esc(t)}">{_esc(t)}</option>' for t in all_types)
 
     cards = "".join(
-        f'<div class="card"><h3>{_esc(h)}</h3>'
+        f'<div class="card" data-host="{_esc(h)}" '
+        f'data-sev="{_worst(_host_problems(hostmap[h], stale_days=stale_days, now=now))[0]}">'
+        f'<h3>{_esc(h)}</h3>'
         f'{_host_summary(hostmap[h], stale_days=stale_days, now=now)}</div>'
         for h in hosts)
 
@@ -749,15 +898,20 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
         by_tool: dict[str, list[dict]] = {}
         for e in hostmap[h]["reports"]:
             by_tool.setdefault(e.get("tool", "?"), []).append(e)
+        deltas = _host_deltas(hostmap[h])
         for tool in sorted(by_tool):
             entries = [e for e in by_tool[tool] if not _is_empty(e)]
             hidden += len(by_tool[tool]) - len(entries)
             if not entries:                         # whole group is empty — skip it
                 continue
+            newest_ts = max(e.get("timestamp", "") for e in entries)
             items = "".join(
-                f'<details data-host="{_esc(h)}" data-type="{_esc(tool)}">'
+                f'<details data-host="{_esc(h)}" data-type="{_esc(tool)}" '
+                f'data-sev="{_entry_rank(e)}">'
                 f'<summary><span class="when">{_esc(_fmt_ts(e.get("timestamp","")))}</span>'
-                f'{_entry_badge(e)}{_cmd_tag(e)}</summary>'
+                f'{_entry_badge(e)}'
+                f'{_delta_badge(deltas.get(tool)) if e.get("timestamp") == newest_ts else ""}'
+                f'{_cmd_tag(e)}</summary>'
                 f'<div class="body">{_render_entry_body(e)}</div></details>'
                 for e in entries)
             blocks.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'
@@ -829,6 +983,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
 <input id="q" type="search" placeholder="grep…">
 <select id="hostf"><option value="">all hosts</option>{host_opts}</select>
 <select id="typef"><option value="">all types</option>{type_opts}</select>
+<select id="sevf"><option value="">any severity</option><option value="4">Critical</option><option value="3">High and above</option><option value="2">Medium and above</option><option value="1">Low and above</option></select>
 </div>
 </header>
 <main>

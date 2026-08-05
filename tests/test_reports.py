@@ -64,27 +64,29 @@ def test_same_second_writes_do_not_clobber(tmp_path):
 
 # -- rotation ----------------------------------------------------------------
 def test_keeps_newest_n_per_type(tmp_path):
-    ctx = _ctx(tmp_path)  # default keep = 5
-    for i in range(8):
+    ctx = _ctx(tmp_path)  # default keep = 10 (raised in v0.81.0 for the delta window)
+    for i in range(13):
         reports.write_report("hardening-audit", f"run{i}", ctx, now=_at(mi=i))
     d = tmp_path / ".fettle/reports/local"
     kept = sorted(d.glob("hardening-audit-*.txt"))
-    assert len(kept) == 5                      # newest 5 of 8
-    assert kept[-1].read_text() == "run7\n"    # most recent retained
+    assert len(kept) == reports.DEFAULT_KEEP   # newest 10 of 13
+    assert kept[-1].read_text() == "run12\n"   # most recent retained
     assert not any("run0" in f.read_text() for f in kept)  # oldest gone
 
 
 def test_rotation_is_per_type_and_per_host(tmp_path):
     ctx = _ctx(tmp_path)
-    for i in range(6):
+    n = reports.DEFAULT_KEEP + 1
+    for i in range(n):
         reports.write_report("hardening-audit", f"h{i}", ctx, now=_at(mi=i))
         reports.write_report("pkg-audit", f"p{i}", ctx, now=_at(mi=i))
         reports.write_report("hardening-audit", f"r{i}", ctx, host="foo", now=_at(mi=i))
     loc = tmp_path / ".fettle/reports/local"
     foo = tmp_path / ".fettle/reports/foo"
-    assert len(list(loc.glob("hardening-audit-*.txt"))) == 5   # local hardening
-    assert len(list(loc.glob("pkg-audit-*.txt"))) == 5         # local pkg (untouched)
-    assert len(list(foo.glob("hardening-audit-*.txt"))) == 5   # foo hardening (separate)
+    k = reports.DEFAULT_KEEP
+    assert len(list(loc.glob("hardening-audit-*.txt"))) == k   # local hardening
+    assert len(list(loc.glob("pkg-audit-*.txt"))) == k         # local pkg (untouched)
+    assert len(list(foo.glob("hardening-audit-*.txt"))) == k   # foo hardening (separate)
 
 
 def test_prune_returns_removed_and_survives_missing():
@@ -114,10 +116,11 @@ def test_malformed_config_falls_back_to_defaults(tmp_path):
     cfg = Config()
     cfg.reports = {"keep": "lots"}          # not an int
     ctx = _ctx(tmp_path, cfg)
-    for i in range(7):
+    for i in range(13):
         reports.write_report("aur-audit", f"{i}", ctx, now=_at(mi=i))
-    # default keep = 5
-    assert len(list((tmp_path / ".fettle/reports/local").glob("aur-audit-*.txt"))) == 5
+    # falls back to the default keep
+    assert len(list((tmp_path / ".fettle/reports/local").glob("aur-audit-*.txt"))) \
+        == reports.DEFAULT_KEEP
     cfg.reports = "garbage"                  # not even a dict
     p = reports.write_report("aur-audit", "ok", ctx, now=_at(mi=59))
     assert p.exists()

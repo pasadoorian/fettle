@@ -1321,6 +1321,25 @@ fettle-arch    [High]    · 2 firmware/boot finding(s) needing attention
 ec3            [Medium]  · has not reported in 13 days
 ```
 
+**What changed since you last looked.** Each card carries `+11 new, -47 resolved since
+2026-07-24`, and the newest report of each type gets a `+4 / -2` badge whose tooltip names
+the packages. The baseline is the newest report from an **earlier calendar day**, not the
+previous report — three runs in an hour would otherwise reset it and show an empty delta
+right after you fixed something. `sys-audit` and `pkg-integrity` record no per-finding
+identity, so those honestly report only a count change.
+
+Resolved findings are shown as prominently as new ones: *"you fixed it"* must not render
+the same as *"it was never there"*.
+
+**A severity filter** sits beside the host/type/grep filters — *Critical*, *High and
+above*, and so on — hiding host cards below the threshold along with report entries whose
+worst finding is below it. Entries carrying no findings at all (run-logs, package lists)
+are hidden by it too: asking for "High and above" and getting a run-log back is not an
+answer to the question.
+
+`[reports] keep` defaults to **10** (raised from 5 in v0.81.0) because retention is also
+the depth of this history — five rotated out of a single busy afternoon.
+
 `hardening-audit` is deliberately capped at **Medium** on the card, for the same reason
 `-H` does not fail the run: its "Critical" is the worst band of a scoring scheme that
 every real desktop lands in, and letting it dominate the fleet view teaches you to ignore

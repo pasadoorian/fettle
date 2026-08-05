@@ -20,7 +20,11 @@ from pathlib import Path
 
 from .util import chown_to_user
 
-DEFAULT_KEEP = 5
+# 10, not 5: retention is also the length of the dashboard's history, and the
+# delta compares against the newest report from an EARLIER DAY. Five rotates
+# out of a single busy afternoon -- measured, during the QA pass that added the
+# delta. These are small text/JSON pairs; a 14-host tree was 690 KB at keep=5.
+DEFAULT_KEEP = 10
 _BASE = ".fettle"
 _TS_FMT = "%Y%m%d-%H%M%S"
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]")

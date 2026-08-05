@@ -387,7 +387,7 @@ def test_pkg_integrity_has_a_renderer(tmp_path):
 def _card(tmp_path):
     import re
     text = htmlreport.build(_ctx(tmp_path)).read_text()
-    m = re.search(r'<div class="card"><h3>(.*?)</h3>(.*?)</div></div>', text, re.S)
+    m = re.search(r'<div class="card"[^>]*><h3>(.*?)</h3>(.*?)</div></div>', text, re.S)
     return re.sub(r"<[^>]*>", " ", m.group(2)) if m else ""
 
 
@@ -438,3 +438,62 @@ def test_a_clean_host_says_OK(tmp_path):
                         "text": "[ok] Secure Boot: Enabled"})
     body = _card(tmp_path)
     assert "OK" in body
+
+
+# -- delta: what changed since the last day you looked ------------------------
+def _two_days(tmp_path, tool, old_data, new_data):
+    _write_report_json(tmp_path, "h1", tool, "20260801-120000", old_data)
+    _write_report_json(tmp_path, "h1", tool, "20260805-120000", new_data)
+    return htmlreport.build(_ctx(tmp_path)).read_text()
+
+
+def _find(pkg, sev="High"):
+    return {"severity": sev, "source": "arch", "package": pkg,
+            "question": "KNOWN_BAD", "detail": "d"}
+
+
+def test_delta_reports_new_and_resolved(tmp_path):
+    """Showing what went away matters as much as what arrived — "you fixed it" must
+    not render the same as "it was never there"."""
+    text = _two_days(tmp_path, "pkg-audit",
+                     {"findings": [_find("gone1"), _find("gone2"), _find("stays")]},
+                     {"findings": [_find("stays"), _find("brand-new")]})
+    assert "+1 new" in text and "-2 resolved" in text
+    assert "brand-new" in text and "gone1" in text        # named in the badge tooltip
+
+
+def test_delta_baseline_is_a_previous_DAY_not_the_previous_report(tmp_path):
+    """Three runs in an hour would otherwise reset the baseline and show an empty
+    delta right after you fixed something."""
+    for hh in ("090000", "100000", "110000"):
+        _write_report_json(tmp_path, "h1", "pkg-audit", f"20260805-{hh}",
+                           {"findings": [_find(f"p{hh}")]})
+    # all same-day -> no earlier day to compare against -> no delta claimed
+    assert "new</span>" not in htmlreport.build(_ctx(tmp_path)).read_text()
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260801-120000",
+                       {"findings": [_find("old")]})
+    assert "+1 new" in htmlreport.build(_ctx(tmp_path)).read_text()
+
+
+def test_count_only_types_report_a_count_delta_with_an_honest_tooltip(tmp_path):
+    """sys-audit and pkg-integrity store no per-finding identity, so "3 -> 1" is all
+    they can honestly say."""
+    text = _two_days(tmp_path, "sys-audit",
+                     {"categories": ["c"], "level_counts": {"error": 1}, "text": "t"},
+                     {"categories": ["c"], "level_counts": {"error": 4}, "text": "t"})
+    assert "more finding(s) than" in text
+    assert 'title=" (since' not in text                   # never an empty tooltip
+
+
+def test_dates_in_the_delta_are_formatted(tmp_path):
+    text = _two_days(tmp_path, "pkg-audit", {"findings": [_find("a")]},
+                     {"findings": [_find("b")]})
+    assert "since 2026-08-01" in text and "since 20260801" not in text
+
+
+def test_severity_filter_is_offered(tmp_path):
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260805-120000",
+                       {"findings": [_find("a")]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert 'id="sevf"' in text and "High and above" in text
+    assert 'data-sev="3"' in text                          # entry tagged for the filter

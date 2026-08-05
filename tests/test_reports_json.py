@@ -74,12 +74,13 @@ def test_json_toggle_accepts_string_falsey(tmp_path):
 
 # -- rotation keeps txt+json together ----------------------------------------
 def test_rotation_removes_json_siblings_too(tmp_path):
-    ctx = _ctx(tmp_path)  # keep=5
-    for i in range(8):
+    ctx = _ctx(tmp_path)  # default keep
+    for i in range(reports.DEFAULT_KEEP + 3):
         reports.write_report("hardening-audit", f"run{i}", ctx, now=_at(mi=i))
     d = tmp_path / ".fettle/reports/local"
-    assert len(list(d.glob("hardening-audit-*.txt"))) == 5
-    assert len(list(d.glob("hardening-audit-*.json"))) == 5   # no orphaned json
+    k = reports.DEFAULT_KEEP
+    assert len(list(d.glob("hardening-audit-*.txt"))) == k
+    assert len(list(d.glob("hardening-audit-*.json"))) == k   # no orphaned json
     # every surviving txt has its json, and vice-versa
     stems_txt = {p.stem for p in d.glob("hardening-audit-*.txt")}
     stems_json = {p.stem for p in d.glob("hardening-audit-*.json")}

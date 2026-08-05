@@ -10,6 +10,35 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.81.0] — what changed since you last looked, and a severity filter
+
+**The delta.** Each host card now carries `+11 new, -47 resolved since 2026-07-24`, and
+the newest report of each type gets a `+4 / -2` badge whose tooltip names the packages
+that appeared or went away.
+
+The baseline is the newest report from an **earlier calendar day**, deliberately not the
+previous report: three runs in an hour would reset it and show an empty delta right after
+you fixed something. Measured during the QA pass that prompted this — the whole of
+`local`'s advisory history had been pushed into a single afternoon.
+
+Resolved findings are as prominent as new ones, because *"you fixed it"* must not render
+the same as *"it was never there"* — this project's own invariant, applied to its own
+dashboard. `sys-audit` and `pkg-integrity` store no per-finding identity, so those report
+a count change and say so rather than inventing an identity that would mismatch every run.
+
+**A severity filter** beside the existing host/type/grep controls: *Critical*, *High and
+above*, and so on. It hides host cards below the threshold and report entries whose worst
+finding is below it. Entries with no findings at all — run-logs, package lists — are hidden
+by it too: asking for "High and above" and getting a run-log back is not an answer.
+
+**`[reports] keep` now defaults to 10**, up from 5. Retention is also the depth of the
+change history, and five rotated out of one busy afternoon. These are small text/JSON
+pairs — a 14-host tree was 690 KB at the old default.
+
+Two rendering bugs caught by building against the real tree rather than a fixture: the
+card printed a raw `20260730` instead of a date, and a count-only delta rendered an empty
+tooltip reading `" (since 2026-08-04)"`.
+
 ## [0.80.0] — the dashboard card now says what is actually wrong
 
 UX pass on `fettle report` (and therefore on `fettle web`, which serves the same page).
