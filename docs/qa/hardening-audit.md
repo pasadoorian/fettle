@@ -30,7 +30,7 @@ binaries) and Rocky 9 (checksec 2.5.0 from EPEL).
 | ID | Test | Verdict |
 |---|---|---|
 | QA-HA-01 | Deviations found and banded | PASS — 816 across 233 packages on manjaro-local |
-| QA-HA-02 | checksec 2.x understood | PASS — 147 deviations on EL9 with 2.5.0 |
+| QA-HA-02 | checksec 2.x understood | PASS — 147 deviations on EL9 with 2.5.0, but checksec was installed **by hand** for the run and did not survive the reset; see "a fix that was not a fix" |
 | QA-HA-03 | checksec 3.x understood | PASS |
 | QA-HA-04 | Analysed-zero guard | PASS *(by construction, v0.48.1)* |
 | QA-HA-05 | **Summary mark matches what was found** | **FAIL → fixed** (H-01) |
@@ -79,8 +79,34 @@ packages**, including a Critical on `grub2-tools-minimal`.
 
 The original observation was made on the **EL10** box, where checksec genuinely is absent
 from every repository, and was generalised to "EL" without retesting on EL9 — which is 53%
-of the EL fleet. `rocky9` and `alma9` now install `epel-release` + `checksec`, converting two
-permanent SKIPs into real coverage.
+of the EL fleet.
 
 The lesson is the one this plan keeps relearning in a new costume: **a measurement is true of
 the thing measured.** EL10 is not EL.
+
+### …and a fix that was not a fix
+The paragraph above used to end *"`rocky9` and `alma9` now install `epel-release` +
+`checksec`, converting two permanent SKIPs into real coverage."* **That was false when it
+was written, and it stayed false for a release.** The two targets still SKIP.
+
+Two independent reasons, both found on 2026-08-05 when the skips were finally checked:
+
+1. The guests are **snapshot-pinned**. Editing a target's `packages` list changes what a
+   *future* `build` installs; it does nothing to a snapshot that already exists. This is
+   the exact mirror of the trap the lab notes already record in the other direction —
+   installing something by hand after the snapshot means the next `reset` loses it. Which
+   is also how the sweep above got its Rocky 9 evidence: checksec was installed by hand
+   for that run, so **QA-HA-02's measurement is real, but it did not persist.**
+2. Even a rebuild would have failed. Measured on the guest:
+   `dnf -y install epel-release checksec` → **`No match for argument: checksec`**.
+   checksec is unresolvable until EPEL is installed *and enabled*, and cloud-init runs
+   `packages:` as a single transaction whose failure takes every other package with it.
+
+Fixed in the spec by splitting the stages — `epel-release` in `packages`, `checksec` in
+`runcmd` — verified two-stage on the live guest (checksec 2.5.0). **The SKIPs stand until
+those two VMs are rebuilt**, which re-baselines their pinned snapshots and is therefore the
+operator's call, not a thing to do quietly in the middle of a QA sweep.
+
+The lesson, which cost a release: **a change is not a fix until it has been run.** Claiming
+coverage is exactly as harmful as the blind spots this whole plan exists to find — it is a
+`✓` over a check that never happened.
