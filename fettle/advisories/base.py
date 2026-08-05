@@ -43,6 +43,10 @@ class AdvisoryFinding:
     # environment). Empty for the OS providers, whose packages are installed once.
     # Reporting collapses findings that differ ONLY by this — see check._group.
     environment: str = ""
+    # Language registry for OSV findings (PyPI / npm / crates.io); "" for the OS
+    # providers. Without it the report cannot tell a Python `certifi` from a node one,
+    # so it cannot link either anywhere precise.
+    ecosystem: str = ""
 
 
 def advisory_to_dict(f: AdvisoryFinding) -> dict:
@@ -54,6 +58,7 @@ def advisory_to_dict(f: AdvisoryFinding) -> dict:
         "fixed_version": f.fixed_version, "group_id": f.group_id,
         "advisory_id": f.advisory_id, "distro_class": f.distro_class, "url": f.url,
         "cvss": f.cvss, "environment": f.environment,
+        "ecosystem": f.ecosystem,
     }
 
 

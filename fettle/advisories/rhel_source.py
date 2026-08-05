@@ -299,7 +299,7 @@ class RhelAdvisorySource(base.AdvisoryProvider):
     def findings(self, ctx, conn) -> list[base.AdvisoryFinding]:
         out = []
         for (gid, pkg, _status, sev, installed, fixed, cves_json, adv, url,
-             dclass, _cvss) in db.all_rows(conn, self.source):
+             dclass, _cvss, _eco) in db.all_rows(conn, self.source):
             out.append(base.AdvisoryFinding(
                 source=self.source, package=pkg, installed_version=installed,
                 status=base.FIXED_AVAILABLE, severity=sev,

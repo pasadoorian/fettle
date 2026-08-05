@@ -142,9 +142,14 @@ class OsvLanguageSource(base.AdvisoryProvider):
                 # The environment is part of the package identity here: the same
                 # vulnerable package in three venvs is three things to fix, and
                 # dedup keys on this name, so it must not collapse them.
+                # `eco` used to ride in the `dclass` slot, which is the distro class
+                # tag that `[advisories] exclude_classes` filters on — so
+                # `exclude_classes = ["PyPI"]` would have silently dropped every
+                # Python finding. It has its own column now; OSV has no distro class.
                 rows.append((self.source, v.get("id"), f"{env}:{name}", status, band,
                              ver, fixed, json.dumps(osv.cve_ids(rec)), None,
-                             f"https://osv.dev/vulnerability/{v.get('id')}", eco, cvss))
+                             f"https://osv.dev/vulnerability/{v.get('id')}", "", cvss,
+                             eco))
         db.replace_source(conn, self.source, osv.dedup_rows(rows))
         conn.commit()                            # persist osv_vulns cached during record()
         return len(rows)
@@ -152,7 +157,7 @@ class OsvLanguageSource(base.AdvisoryProvider):
     def findings(self, ctx, conn) -> list[base.AdvisoryFinding]:
         out = []
         for (gid, pkg, status, sev, installed, fixed, cves_json, _adv, url,
-             dclass, cvss) in db.all_rows(conn, self.source):
+             dclass, cvss, eco) in db.all_rows(conn, self.source):
             # Stored env-qualified ("SploitScan:requests") so the row stays unique
             # per environment; split it back out so reporting can group on the
             # package and list the environments.
@@ -165,7 +170,7 @@ class OsvLanguageSource(base.AdvisoryProvider):
                 status=(base.PENDING_FIX if status == "pending" else base.FIXED_AVAILABLE),
                 severity=sev, cves=json.loads(cves_json) if cves_json else [],
                 fixed_version=fixed or None, group_id=gid, distro_class=dclass,
-                url=url, cvss=cvss))
+                url=url, cvss=cvss, ecosystem=eco or ""))
         return out
 
     def uncovered(self, ctx) -> list[str]:

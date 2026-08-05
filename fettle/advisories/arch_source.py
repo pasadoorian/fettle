@@ -59,7 +59,7 @@ class ArchAdvisorySource(base.AdvisoryProvider):
             return []
         out: list[base.AdvisoryFinding] = []
         for (group_id, pkg, status, severity, _affected, fixed, cves_json,
-             advisory_id, url, dclass, cvss) in db.all_rows(conn, self.source):
+             advisory_id, url, dclass, cvss, _eco) in db.all_rows(conn, self.source):
             iv = installed.get(pkg)
             if iv is None:
                 continue

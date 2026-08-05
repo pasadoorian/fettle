@@ -525,3 +525,53 @@ def test_wide_report_content_can_be_reached(tmp_path):
     for cell in ("cryptography", "41.0.7", "42.0.0", "CVE-2023-50782",
                  "/home/p/src/x/venv"):
         assert cell in text
+
+
+# -- hyperlinks: every name and identifier goes to its own authority -----------
+def test_advisory_identifiers_link_to_the_right_authority():
+    """Three schemes appear in the CVE column. GHSA advisories frequently have no NVD
+    entry, so sending them to NVD would dead-end."""
+    assert "nvd.nist.gov/vuln/detail/CVE-2023-50782" in \
+        htmlreport._advisory_link("CVE-2023-50782")
+    assert "github.com/advisories/GHSA-3ww4-gg4f-jr7f" in \
+        htmlreport._advisory_link("GHSA-3ww4-gg4f-jr7f")
+    # Ubuntu's own page carries the per-release fix status, which NVD does not.
+    assert "ubuntu.com/security/CVE-2024-57857" in \
+        htmlreport._advisory_link("UBUNTU-CVE-2024-57857")
+    assert "security.archlinux.org/AVG-2313" in htmlreport._advisory_link("AVG-2313")
+    assert "<a" not in htmlreport._advisory_link("SOMETHING-ELSE-1")   # no guessing
+
+
+def test_arch_advisory_packages_link_to_the_REPO_not_the_aur():
+    """advisory-check's `arch` rows come from security.archlinux.org, which tracks
+    core/extra. An AUR link on `arch/apr` would 404; the AUR packages are the ones in
+    the tracker's own "not covered" list."""
+    assert "archlinux.org/packages/?name=apr" in htmlreport._pkg_link("apr", source="arch")
+    assert "aur.archlinux.org" not in htmlreport._pkg_link("apr", source="arch")
+    assert "aur.archlinux.org/packages/brave-bin" in \
+        htmlreport._pkg_link("brave-bin", source="aur")
+
+
+def test_language_packages_link_by_ecosystem():
+    assert "pypi.org/project/certifi" in \
+        htmlreport._pkg_link("certifi", source="osv", ecosystem="PyPI")
+    assert "npmjs.com/package/left-pad" in \
+        htmlreport._pkg_link("left-pad", source="osv", ecosystem="npm")
+    # No ecosystem recorded (a pre-v0.82.0 report) -> plain text, never a guess.
+    assert "<a" not in htmlreport._pkg_link("certifi", source="osv")
+
+
+def test_uncovered_packages_link_to_the_aur_and_advise_a_live_flag(tmp_path):
+    _write_report_json(tmp_path, "h1", "advisory-check", "20260805-120000",
+                       {"findings": [], "uncovered": {"arch": ["brave-bin"]}})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "aur.archlinux.org/packages/brave-bin" in text
+    assert "-I</code>" not in text            # retired in v0.73.0
+
+
+def test_pkg_audit_links_every_source_not_just_the_aur(tmp_path):
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260805-120000",
+                       {"findings": [{"severity": "Medium", "source": "apt",
+                                      "package": "curl", "question": "STALE",
+                                      "detail": "d"}]})
+    assert "packages.debian.org/curl" in htmlreport.build(_ctx(tmp_path)).read_text()

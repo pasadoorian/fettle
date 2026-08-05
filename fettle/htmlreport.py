@@ -25,6 +25,75 @@ _esc = html.escape
 _AUR_PKG_BASE = "https://aur.archlinux.org/packages/"
 
 
+# Where a package name can be looked up, per source. `arch` is the OFFICIAL repo:
+# advisory-check's arch rows come from security.archlinux.org, which tracks core/extra
+# — the AUR packages are the ones in its "not covered" list, which link to the AUR.
+_PKG_BASE = {
+    "arch": "https://archlinux.org/packages/?name={}",
+    "aur": "https://aur.archlinux.org/packages/{}",
+    "apt": "https://packages.debian.org/{}",
+    "debian": "https://packages.debian.org/{}",
+    "ubuntu": "https://packages.ubuntu.com/{}",
+    "dnf": "https://packages.fedoraproject.org/pkgs/{}/",
+    "rhel": "https://packages.fedoraproject.org/pkgs/{}/",
+    "flatpak": "https://flathub.org/apps/{}",
+    "snap": "https://snapcraft.io/{}",
+}
+# Language registries, for OSV findings that record their ecosystem.
+_ECO_BASE = {
+    "PyPI": "https://pypi.org/project/{}/",
+    "npm": "https://www.npmjs.com/package/{}",
+    "crates.io": "https://crates.io/crates/{}",
+    "Packagist": "https://packagist.org/packages/{}",
+    "RubyGems": "https://rubygems.org/gems/{}",
+    "Go": "https://pkg.go.dev/{}",
+}
+# Each advisory identifier to the authority that actually holds it. GHSA advisories
+# frequently have no NVD entry at all, so sending them to NVD would dead-end.
+_ADVISORY_BASE = (
+    ("CVE-", "https://nvd.nist.gov/vuln/detail/{}"),
+    ("GHSA-", "https://github.com/advisories/{}"),
+    ("PYSEC-", "https://osv.dev/vulnerability/{}"),
+    ("RUSTSEC-", "https://rustsec.org/advisories/{}.html"),
+    ("AVG-", "https://security.archlinux.org/{}"),
+    ("ASA-", "https://security.archlinux.org/{}"),
+    ("DSA-", "https://security-tracker.debian.org/tracker/{}"),
+    ("DLA-", "https://security-tracker.debian.org/tracker/{}"),
+    ("USN-", "https://ubuntu.com/security/notices/{}"),
+)
+
+
+def _pkg_link(name: str, *, source: str = "", ecosystem: str = "") -> str:
+    """A package name as a link to wherever that package actually lives, or plain
+    text when nothing sensible can be derived. Deterministic from the name."""
+    base = _ECO_BASE.get(ecosystem) or _PKG_BASE.get(str(source).lower())
+    if not base or not name:
+        return _esc(name)
+    href = base.format(urllib.parse.quote(str(name), safe=""))
+    return (f'<a href="{_esc(href)}" target="_blank" rel="noopener">'
+            f'{_esc(name)}</a>')
+
+
+def _advisory_link(ident: str) -> str:
+    """One advisory/CVE identifier as a link to its own authority."""
+    ident = str(ident or "")
+    # Ubuntu mirrors CVEs under its own prefix. Its own page carries the per-release
+    # fix status, which is the useful part for an Ubuntu finding -- NVD would give the
+    # CVE without saying whether Ubuntu has shipped anything.
+    if ident.startswith("UBUNTU-CVE-"):
+        cve = urllib.parse.quote(ident[len("UBUNTU-"):], safe="")
+        href = f"https://ubuntu.com/security/{cve}"
+        return (f'<a href="{_esc(href)}" target="_blank" rel="noopener">'
+                f'{_esc(ident)}</a>')
+    lookup = ident
+    for prefix, base in _ADVISORY_BASE:
+        if lookup.startswith(prefix):
+            href = base.format(urllib.parse.quote(lookup, safe=""))
+            return (f'<a href="{_esc(href)}" target="_blank" rel="noopener">'
+                    f'{_esc(ident)}</a>')
+    return _esc(ident)
+
+
 def _aur_pkg_link(name: str) -> str:
     """A package name as a link to its AUR page (deterministic from the name)."""
     href = _AUR_PKG_BASE + urllib.parse.quote(name, safe="")
@@ -272,6 +341,17 @@ def _fmt_ts(ts: str) -> str:
 
 
 # -- per-type renderers (each returns escaped HTML; never trusts input) ------
+def _hardening_distro(data: dict) -> str:
+    """Which distro's package pages to link to.
+
+    The hardening report records no distro field, but its baseline names the toolchain
+    it was derived from -- "debian (dpkg-buildflags)", "arch (makepkg.conf + gcc -v)".
+    Read from there rather than adding a field that every existing report lacks.
+    """
+    name = str(((data.get("baseline") or {}).get("name") or "")).split()[:1]
+    return name[0] if name else ""
+
+
 def _render_hardening(data: dict) -> str:
     tally = data.get("band_tally") or {}
     chips = "".join(f'<span class="chip b-{b}">{tally.get(b,0)} {b}</span>'
@@ -290,7 +370,7 @@ def _render_hardening(data: dict) -> str:
                  f'{_esc(str(p.get("band")))}</span></td>'
                  f'<td class=num>{_esc(str(p.get("score")))}</td>'
                  f'<td>{"!" if p.get("has_privileged") else ""}</td>'
-                 f'<td>{_esc(str(p.get("package")))}</td>'
+                 f'<td>{_pkg_link(str(p.get("package")), source=_hardening_distro(data))}</td>'
                  f'<td class=num>{_esc(str(p.get("binaries")))}</td>'
                  f'<td>{_esc(miss)}</td></tr>')
     table = ""
@@ -303,10 +383,13 @@ def _render_hardening(data: dict) -> str:
 
 
 def _pkg_cell(f: dict) -> str:
-    """A finding's package name — linked to its AUR page when it's an AUR package,
-    plain otherwise (apt/flatpak/snap have no AUR entry)."""
-    name = str(f.get("package", ""))
-    return _aur_pkg_link(name) if f.get("source") == "aur" else _esc(name)
+    """A finding's package name, linked to wherever that package lives.
+
+    It used to link only AUR names, on the grounds that "apt/flatpak/snap have no AUR
+    entry" — true, and they have their own pages, which is the thing you actually want
+    when a finding names something you do not recognise.
+    """
+    return _pkg_link(str(f.get("package", "")), source=str(f.get("source", "")))
 
 
 def _render_findings(data: dict) -> str:
@@ -350,12 +433,16 @@ def _render_pkglist(data: dict) -> str:
     pkgs = data.get("packages") or []
     if not pkgs:
         return '<div class="muted">none</div>'
+    # `alien-pkgs` is "installed from no known repo" and `obsolete-pkgs` is "no longer
+    # in any repo" -- on Arch both mean the AUR or a manual build, which is precisely
+    # the case where you want to look the name up.
+    src = data.get("source") or "aur"
     if isinstance(pkgs[0], dict):
-        li = "".join(f'<li>{_esc(str(p.get("name","")))} '
+        li = "".join(f'<li>{_pkg_link(str(p.get("name", "")), source=src)} '
                      f'<span class=muted>{_esc(str(p.get("version","")))}</span></li>'
                      for p in pkgs)
     else:
-        li = "".join(f"<li>{_esc(str(p))}</li>" for p in pkgs)
+        li = "".join(f"<li>{_pkg_link(str(p), source=src)}</li>" for p in pkgs)
     return f'<div class=muted>{len(pkgs)} package(s)</div><ul class=k>{li}</ul>'
 
 
@@ -460,9 +547,11 @@ def _render_advisories(data: dict) -> str:
         ver = _esc(str(f.get("installed_version", "")))
         fx = f.get("fixed_version")
         ver += f" &rarr; {_esc(str(fx))}" if fx else ""
-        cves = _esc(", ".join(map(str, f.get("cves") or [])))
+        cves = ", ".join(_advisory_link(c) for c in (f.get("cves") or []))
         link = _ext_link(str(f.get("url", "")), str(f.get("group_id") or "details"))
-        pkg = f'<span class=muted>{_esc(str(f.get("source", "")))}/</span>{_esc(str(f.get("package", "")))}'
+        pkg = (f'<span class=muted>{_esc(str(f.get("source", "")))}/</span>'
+               + _pkg_link(str(f.get("package", "")), source=str(f.get("source", "")),
+                           ecosystem=str(f.get("ecosystem", ""))))
         if not envs:
             where = '<span class=muted>&mdash;</span>'
         elif len(envs) == 1:
@@ -489,10 +578,13 @@ def _render_advisories(data: dict) -> str:
            '<span class=muted>(installed trails a security fix)</span></p>', _table(fixable)]
     for src, unc in (data.get("uncovered") or {}).items():
         if unc:
-            names = _esc(" ".join(sorted(map(str, unc))[:200]))
+            # These are the AUR/foreign ones, by definition -- the tracker covers the
+            # official repos, so anything it cannot see came from somewhere else.
+            names = " ".join(_pkg_link(str(n), source="aur")
+                             for n in sorted(map(str, unc))[:200])
             out.append(f'<p class=muted>Not covered by the {_esc(str(src))} tracker '
                        f'(AUR/manual/foreign): {len(unc)} package(s) — vet via '
-                       f'<code>fettle -A/-P/-I</code>.<br>'
+                       f'<code>fettle -P</code> / <code>-A</code>.<br>'
                        f'<span style="font-size:.72rem">{names}</span></p>')
     if data.get("manjaro"):
         out.append('<p class=muted>On Manjaro, "fix available" can reflect normal 1&ndash;2 '
@@ -552,7 +644,10 @@ def _is_empty(entry: dict) -> bool:
     if tool in ("sys-audit", "pkg-integrity"):
         return not (data.get("categories") or data.get("text"))
     if tool == "advisory-check":
-        return not data.get("findings")
+        # The uncovered list is not decoration: it is the tracker saying which
+        # packages it cannot see at all. A host with no tracked CVEs and 77 untracked
+        # packages was rendering as nothing to report.
+        return not (data.get("findings") or any((data.get("uncovered") or {}).values()))
     return False                                    # upgrade-check / unknown: keep
 
 

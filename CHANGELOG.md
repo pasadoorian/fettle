@@ -10,6 +10,35 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.82.0] — every name and identifier in the report is a link
+
+Package names link to wherever that package actually lives, and every advisory
+identifier to the authority that holds it. Applied to `advisory-check`, `pkg-audit`,
+`hardening-audit`, and the `alien-pkgs` / `obsolete-pkgs` lists.
+
+**Arch repo packages and AUR packages go to different places, on purpose.**
+`advisory-check`'s `arch` findings come from security.archlinux.org, which tracks
+**core/extra** — so `arch/apr` links to `archlinux.org/packages/?name=apr`, and an AUR
+link there would 404. The AUR packages are the ones in the tracker's own *"not covered"*
+list, which now link to `aur.archlinux.org`.
+
+**Advisory identifiers each go to their own authority**: `CVE-` to NVD, `GHSA-` to GitHub
+Advisories (many never reach NVD at all, so an NVD link would dead-end), `UBUNTU-CVE-` to
+Ubuntu's page (which carries the per-release fix status NVD cannot show), `AVG-`/`DSA-`/
+`USN-` to that distro's tracker. An identifier fettle does not recognise stays plain text
+rather than being guessed at.
+
+**Language findings now record their ecosystem**, so `osv/certifi` links to PyPI rather
+than nowhere. It was already being captured — and stored in the `distro_class` slot, which
+is what `[advisories] exclude_classes` filters on, so `exclude_classes = ["PyPI"]` would
+have silently dropped every Python finding. It has its own column now (cache schema 5;
+rows refresh on the next run, and older reports simply carry no link).
+
+Also: an `advisory-check` report with no findings but a non-empty *uncovered* list was
+treated as empty and hidden entirely — a host with no tracked CVEs and 77 packages the
+tracker cannot see rendered as nothing to report. And the uncovered footer still advised
+`fettle -A/-P/-I`, three releases after `-I` was retired.
+
 ## [0.81.1] — advisory tables were losing every column but the first
 
 Reported from a real run: the dashboard's **Fix available** section showed only the

@@ -1345,6 +1345,25 @@ the depth of this history — five rotated out of a single busy afternoon.
 every real desktop lands in, and letting it dominate the fleet view teaches you to ignore
 the colour.
 
+**Everything that names something is a link.** Package names go to wherever that
+package actually lives, and every advisory identifier to the authority that holds it:
+
+| | links to |
+|---|---|
+| `arch/openssl` (repo package) | `archlinux.org/packages/?name=openssl` |
+| AUR / foreign packages | `aur.archlinux.org/packages/<name>` |
+| apt · dnf · flatpak · snap | that ecosystem's package page |
+| `osv/certifi` (language package) | `pypi.org` / `npmjs.com` / `crates.io`, by recorded ecosystem |
+| `CVE-…` | `nvd.nist.gov` |
+| `GHSA-…` | `github.com/advisories` — many never reach NVD |
+| `UBUNTU-CVE-…` | `ubuntu.com/security` — it carries the per-release fix status |
+| `AVG-` · `DSA-` · `USN-` | that distro's own tracker |
+
+Note the first two rows are different places on purpose: `advisory-check`'s `arch`
+findings come from security.archlinux.org, which tracks **core/extra** — the AUR packages
+are the ones in its *"not covered by the tracker"* list. An identifier fettle does not
+recognise stays plain text rather than being guessed at.
+
 **One severity scale** (`Critical / High / Medium / Low / Info`) across supply-chain and
 advisory findings, in the terminal and in the JSON. They used to differ — `LOW: 38` and
 `Low: 510` could appear in the same view meaning different things — which made sorting or

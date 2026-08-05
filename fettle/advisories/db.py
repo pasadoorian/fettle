@@ -15,7 +15,10 @@ from pathlib import Path
 #    A cached row's `package` field changed shape, so old rows would render as
 #    `ALEAPP  ALEAPP` in the environments key until the TTL happened to expire.
 #    The row format is part of the schema even when the columns are not.
-SCHEMA_VERSION = 4
+# 5: language findings record their ECOSYSTEM (PyPI/npm/crates.io). Without it a
+#    stored finding cannot say whether `certifi` is a Python or a node package, so the
+#    report could not link it anywhere precise.
+SCHEMA_VERSION = 5
 
 
 def db_path(ctx) -> Path:
@@ -43,7 +46,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         "DROP TABLE IF EXISTS osv_vulns;"
         "CREATE TABLE advisories(source TEXT, group_id TEXT, package TEXT,"
         " status TEXT, severity TEXT, affected TEXT, fixed TEXT, cves TEXT,"
-        " advisory_id TEXT, url TEXT, dclass TEXT, cvss TEXT);"
+        " advisory_id TEXT, url TEXT, dclass TEXT, cvss TEXT, ecosystem TEXT);"
         "CREATE INDEX idx_adv_src_pkg ON advisories(source, package);"
         "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);"
         # OSV record cache for incremental sync (keyed by vuln id + its modified time).
@@ -54,22 +57,24 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 # columns returned by all_rows (everything but the source filter), in order.
 _COLS = ("group_id", "package", "status", "severity", "affected", "fixed",
-         "cves", "advisory_id", "url", "dclass", "cvss")
+         "cves", "advisory_id", "url", "dclass", "cvss", "ecosystem")
 _NFIELDS = 1 + len(_COLS)   # incl. the leading `source`
 
 
 def replace_source(conn: sqlite3.Connection, source: str, rows, *, now=None) -> None:
     """Replace all rows for ``source`` in one transaction; stamp its update time.
     A row is ``(source, group_id, package, status, severity, affected, fixed, cves,
-    advisory_id, url, dclass[, cvss])`` — ``dclass`` is the distro class tag (Arch
-    status / Debian urgency|nodsa / OSV native rating) and ``cvss`` the CVSS vector
-    (OSV; "" elsewhere). Short rows are padded, so existing providers need no change."""
+    advisory_id, url, dclass[, cvss[, ecosystem]])`` — ``dclass`` is the distro class
+    tag (Arch status / Debian urgency|nodsa / OSV native rating), ``cvss`` the CVSS
+    vector and ``ecosystem`` the language registry (PyPI/npm/crates.io), both OSV-only.
+    Short rows are padded, so existing providers need no change."""
     padded = [tuple(r) + ("",) * (_NFIELDS - len(r)) for r in rows]
     with conn:
         conn.execute("DELETE FROM advisories WHERE source=?", (source,))
         conn.executemany(
             "INSERT INTO advisories(source,group_id,package,status,severity,affected,"
-            "fixed,cves,advisory_id,url,dclass,cvss) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "fixed,cves,advisory_id,url,dclass,cvss,ecosystem) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             padded)
         conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)",
                      (f"updated_{source}", str(int(now if now is not None else time.time()))))
