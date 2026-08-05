@@ -20,8 +20,16 @@ from .config import DEFAULT_ACTIONS, Config
 from .config import load as load_config
 from .distro import UnknownDistro, detect
 from .output import Output
+from .util import invoking_user_home
 
-DEFAULT_CONFIG = Path.home() / ".config/fettle/config.toml"
+# Resolved from the INVOKING user's home, not `Path.home()`. Under sudo, HOME is
+# /root, so a bare Path.home() sends every consumer of this constant -- eight of them,
+# including two commands that elevate themselves -- to a config that does not exist,
+# where they silently fall back to built-in defaults. That was Phase 9's
+# highest-impact bug, fixed then by teaching the sudo re-exec to carry `--config`;
+# it came back the moment `sys-audit` learned to read config, because it elevates by
+# a different path. Fixing the constant fixes every route to it.
+DEFAULT_CONFIG = invoking_user_home() / ".config/fettle/config.toml"
 
 # (option-strings, action-name). Pipeline actions selectable as flags or bare words.
 # Dispatch-only shortcuts (-S sys-audit, -U upgrade-check, -p aur-precheck) are NOT

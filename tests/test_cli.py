@@ -425,3 +425,40 @@ def test_dispatch_shortcuts_are_documented_but_not_parsed():
     for opts, _, _ in cli.SHORTCUT_HELP:
         assert opts[0] in text
     assert set(cli.DISPATCH_SHORTCUTS) >= {"-S", "-U", "-p"}
+
+
+def test_default_config_follows_the_invoking_user_not_root(monkeypatch, tmp_path):
+    """Under sudo, HOME is /root, so `Path.home()` sends every consumer of
+    DEFAULT_CONFIG to a config that does not exist -- where they silently fall back to
+    built-in defaults.
+
+    Phase 9 fixed this once, by teaching the sudo re-exec to carry `--config`. It came
+    back in v0.84.0 the moment `sys-audit` learned to read config, because that command
+    elevates by a different route: `fettle -S firmware` reported chipsec as
+    unconfigured on a machine where it was configured. Fixing the constant fixes all
+    eight routes to it.
+    """
+    import importlib
+    import pwd
+
+    real = pwd.getpwnam
+    monkeypatch.setattr(pwd, "getpwnam",
+                        lambda n: real(n) if n != "someone" else
+                        type("P", (), {"pw_dir": str(tmp_path / "home/someone")})())
+    monkeypatch.setenv("HOME", "/root")
+    monkeypatch.setenv("SUDO_USER", "someone")
+    import fettle.cli as c
+    importlib.reload(c)
+    try:
+        assert str(c.DEFAULT_CONFIG).startswith(str(tmp_path / "home/someone"))
+        assert "/root" not in str(c.DEFAULT_CONFIG)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(c)
+
+
+def test_default_config_is_the_real_home_without_sudo(monkeypatch):
+    from fettle.util import invoking_user_home
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("HOME", "/home/nobody")
+    assert str(invoking_user_home()) == "/home/nobody"

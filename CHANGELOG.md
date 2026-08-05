@@ -10,6 +10,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.84.2] — `fettle -S` read root's config, not yours
+
+Reported from a real run: `fettle -S firmware` said *"chipsec: not configured"* on a
+machine whose config had just been given `[secure] chipsec_cmd`.
+
+`-S` **elevates itself**, sudo sets `HOME=/root`, and `DEFAULT_CONFIG` was
+`Path.home() / ".config/fettle/config.toml"` — so the elevated process read
+`/root/.config/fettle/config.toml`, found nothing, and silently used built-in defaults.
+
+**This is Phase 9's highest-impact bug, back in a new place.** It was fixed then by
+teaching the maintenance sudo re-exec to carry `--config <resolved path>`, and the
+project's notes describe it in exactly those terms. v0.84.0 gave `sys-audit` its first
+reason to read config — and `sys-audit` elevates by a different route, so it walked
+straight into it. The correct pattern was already in the same file: `_write_report` does
+the `SUDO_USER` → home lookup, and the new code did not use it.
+
+Fixed at the constant rather than at the call site: `DEFAULT_CONFIG` now resolves from
+the **invoking** user's home. That covers all eight consumers in one move, including
+`sudo fettle advisory-check` / `report` / `upgrade-check`, which had the same bug and
+nobody had hit yet. The four hand-rolled `SUDO_USER` lookups now have one shared
+implementation in `util.invoking_user_home()`.
+
 ## [0.84.1] — a top-level key documented below a table header lands in that table
 
 `fettle.toml.example` documented `ai_model` / `ai_effort` / `ai_max_web_searches` /
