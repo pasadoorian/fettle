@@ -110,7 +110,13 @@ TARGETS = {
         # checksec comes from EPEL on the EL family — it is absent from the base repos,
         # which is why `hardening-audit` was recorded as permanently un-runnable here.
         # Measured otherwise on Rocky 9: 147 deviations once it is installed.
-        "packages": ["epel-release", "checksec", "fwupd"],
+        # NOT one list: `dnf install epel-release checksec` FAILS -- measured, "No
+        # match for argument: checksec" -- because checksec only becomes resolvable
+        # once EPEL is installed and enabled, and cloud-init runs `packages:` as a
+        # single transaction whose failure takes every other package with it (the same
+        # way deborphan once did). EPEL goes in packages, checksec in runcmd.
+        "packages": ["epel-release", "fwupd"],
+        "runcmd": ["dnf -y install checksec"],
         "note": "EL9 is 53% of the enterprise fleet; Rocky publishes ~3x Alma's advisory rows",
     },
     "alma9": {
@@ -120,7 +126,13 @@ TARGETS = {
         # checksec comes from EPEL on the EL family — it is absent from the base repos,
         # which is why `hardening-audit` was recorded as permanently un-runnable here.
         # Measured otherwise on Rocky 9: 147 deviations once it is installed.
-        "packages": ["epel-release", "checksec", "fwupd"],
+        # NOT one list: `dnf install epel-release checksec` FAILS -- measured, "No
+        # match for argument: checksec" -- because checksec only becomes resolvable
+        # once EPEL is installed and enabled, and cloud-init runs `packages:` as a
+        # single transaction whose failure takes every other package with it (the same
+        # way deborphan once did). EPEL goes in packages, checksec in runcmd.
+        "packages": ["epel-release", "fwupd"],
+        "runcmd": ["dnf -y install checksec"],
         "note": "security-only errata feed — the contrast against Rocky's fuller one",
     },
     "fedora": {
@@ -639,21 +651,36 @@ _FAIL_MARKERS = ("Traceback (most recent call last)",)
 
 
 def classify(rc: int, output: str, timed_out: bool) -> tuple[str, str]:
-    """One cell of the matrix: (PASS|FAIL|SKIP, reason).
+    """One cell of the matrix: (PASS|ISSUE|FAIL|SKIP, reason).
 
     A SKIP always carries its reason. An action that could not run must never be
     indistinguishable from one that ran cleanly — that failure mode is the reason this
     lab exists, so the runner refuses to reproduce it.
+
+    **ISSUE is not FAIL.** The grid asks "does this action work on this distro", and
+    since fettle's actions gained real exit codes a read-only audit that *finds
+    something* exits 1 by design. Scoring that as FAIL made `pkg-integrity` look broken
+    on three targets when it was working perfectly — it had found altered files, which
+    is its entire job. An action that ran to completion and printed a summary gets
+    ISSUE, whatever its exit code; FAIL is reserved for not running at all.
     """
+    ran = "▸ Summary" in output or "Summary" in output
     if timed_out:
         return "FAIL", "timed out"
+    if "Traceback (most recent call last)" in output:
+        return "FAIL", "traceback"
     if rc != 0:
         first = next((ln.strip() for ln in output.splitlines()
-                      if ln.strip() and not ln.startswith("Remote target")), "")
-        return "FAIL", f"exit {rc}: {first[:70]}"
+                      if ln.strip().startswith(("✗", "!")) and "Remote target" not in ln),
+                     "") or next((ln.strip() for ln in output.splitlines()
+                                  if ln.strip() and not ln.startswith("Remote target")), "")
+        if not ran:
+            return "FAIL", f"exit {rc}, no summary: {first[:60]}"
+        return "ISSUE", f"exit {rc}: {first[:70]}"
     for line in output.splitlines():
         if any(m in line for m in _FAIL_MARKERS):
             return "FAIL", line.strip()[:80]
+    del ran
     for line in output.splitlines():
         for marker in _SKIP_MARKERS:
             if marker in line:
@@ -723,11 +750,16 @@ def cmd_matrix(conf, args) -> int:
         print(f"{target:<{width}}" + "".join(f"{row.get(a, '-'):<12}" for a in actions))
 
     tally = {v: sum(1 for r in results.values() for x in r.values() if x == v)
-             for v in ("PASS", "FAIL", "SKIP")}
-    print(f"\n{tally['PASS']} pass · {tally['FAIL']} FAIL · {tally['SKIP']} skip")
+             for v in ("PASS", "ISSUE", "FAIL", "SKIP")}
+    print(f"\n{tally['PASS']} pass · {tally['ISSUE']} issue · {tally['FAIL']} FAIL "
+          f"· {tally['SKIP']} skip")
+    if tally["ISSUE"]:
+        print("  (issue = the action RAN and reported something — a finding on the "
+              "target, or\n   a tool that failed. Read the reason; it is not a broken "
+              "action.)")
 
     if reasons:
-        print("\nreasons (every SKIP and FAIL carries one — a blank cell would be a lie):")
+        print("\nreasons (every non-PASS carries one — a blank cell would be a lie):")
         for (target, action), reason in sorted(reasons.items()):
             print(f"  {target:<10} {_ACTION_NAMES[action]:<12} {reason}")
     print(f"\nfull output per cell: {logdir}")
@@ -736,6 +768,9 @@ def cmd_matrix(conf, args) -> int:
     (logdir / f"matrix-{stamp}.txt").write_text(
         "\n".join(f"{t}\t{a}\t{v}\t{reasons.get((t, a), '')}"
                   for t, row in results.items() for a, v in row.items()))
+    # Only a FAIL means the harness could not exercise the action. An ISSUE is a
+    # real answer about the target, and a lab sweep that exits non-zero because a
+    # guest has altered files would train everyone to ignore the exit code.
     return 1 if tally["FAIL"] else 0
 
 
