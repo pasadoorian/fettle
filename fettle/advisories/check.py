@@ -321,11 +321,22 @@ def run(ctx) -> None:
 
 
 def update(ctx) -> None:
+    """Refresh the advisory cache. **Reports whether it worked.**
+
+    QA: this printed `✗ failed to fetch arch advisory data` inline and then exited 0
+    with `nothing to report`, because `err()` writes a line and `summary_fail()` sets
+    the status — and only the first was called. That matters more here than in most
+    places: refreshing the cache is exactly the job you put in a timer, and a timer
+    only ever sees the exit code. A run that cached 3951 rows said nothing either.
+    """
     out = ctx.output
+    _warn_retired_keys(ctx)
     provs = [p for p in _providers() if p.is_present(ctx)]
     if not provs:
         out.warn("no advisory provider for this system yet.")
+        out.summary_warn("advisory cache NOT refreshed — no provider for this system")
         return
+    ok, failed = [], []
     conn = db.connect(db.db_path(ctx))
     try:
         for p in provs:
@@ -333,10 +344,21 @@ def update(ctx) -> None:
             n = p.refresh(conn, ctx)
             if n < 0:
                 out.err(f"failed to fetch {p.source} advisory data.")
+                failed.append(p.source)
             else:
                 out.ok(f"{p.source}: cached {n} advisory rows.")
+                ok.append(f"{p.source} {n} row(s)")
     finally:
         conn.close()
+
+    done = ", ".join(ok) if ok else "nothing"
+    if failed:
+        # Partial success is still a stale cache for the feeds that failed, and the
+        # next `advisory-check` will answer from old data without knowing why.
+        out.summary_fail(f"advisory cache: {', '.join(failed)} FAILED to refresh"
+                         + (f" (refreshed: {done})" if ok else ""))
+    else:
+        out.summary_add(f"advisory cache refreshed: {done}")
 
 
 def security_note(ctx) -> None:

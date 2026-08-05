@@ -10,6 +10,27 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.78.0] — a failing advisory refresh looked exactly like a healthy one
+
+QA pass on `advisory-update` — one function, no findings to render, and the feature most
+likely to be run by a timer. That last part is the whole story.
+
+**The failure printed and the process exited 0.** `out.err()` writes a line to stderr;
+`summary_fail()` is what sets the exit status. Only the first was called, so a run where
+every feed failed printed `✗` per provider and still exited **0** with `nothing to
+report`. A systemd timer never reads stdout — so a permanently-failing refresh was
+indistinguishable from a healthy one for as long as nobody ran it by hand, while
+`advisory-check` quietly answered from ageing data. Partial failure now names both what
+failed and what refreshed, since a half-stale cache is invisible to the next check.
+
+**A successful refresh said nothing either** — measured, it cached 3951 rows across two
+providers and the digest read `nothing to report`. Now
+`✓ advisory cache refreshed: arch 2523 row(s), osv 1428 row(s)`.
+
+**An unsupported system reported success**: `no advisory provider for this system yet.`
+was a warn with an empty summary and exit 0, so a timer on such a host would report a
+healthy refresh forever. Now a warning — a fact about the platform, not a failure.
+
 ## [0.77.0] — the install-time malware gate passed in silence when its lists were blind
 
 QA pass on `aur-precheck` — the highest-consequence read-only check in the tool. Every

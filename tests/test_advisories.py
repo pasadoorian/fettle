@@ -926,3 +926,43 @@ def test_advisory_check_prints_its_summary_and_sets_the_exit_code(tmp_path, monk
     rc = cli._run_advisory("advisory-check", ["--no-config", "--dry-run"])
     assert "▸ Summary" in capsys.readouterr().out
     assert rc == 1                      # Critical, fix available
+
+
+# -- advisory-update reports whether it worked -------------------------------
+def _update_run(tmp_path, monkeypatch, *, rc):
+    from fettle.advisories import check as chk
+
+    class P(_StubProvider):
+        def refresh(self, conn, ctx=None):
+            return rc
+
+    monkeypatch.setattr(chk, "_providers", lambda: [P()])
+    ctx = _ctx(tmp_path)
+    chk.update(ctx)
+    ctx.output.print_summary()
+    return ctx.output
+
+
+def test_update_failure_sets_the_exit_status(tmp_path, monkeypatch, capsys):
+    """It printed `✗ failed to fetch …` inline and exited 0 with "nothing to report" —
+    `err()` writes a line, `summary_fail()` sets the status, and only the first was
+    called. Refreshing the cache is exactly the job you put in a timer, and a timer
+    only ever sees the exit code."""
+    out = _update_run(tmp_path, monkeypatch, rc=-1)
+    assert out.had_failures
+    assert "FAILED to refresh" in capsys.readouterr().out
+
+
+def test_update_success_says_what_it_cached(tmp_path, monkeypatch, capsys):
+    out = _update_run(tmp_path, monkeypatch, rc=2523)
+    assert not out.had_failures
+    assert "advisory cache refreshed: arch 2523 row(s)" in capsys.readouterr().out
+
+
+def test_update_with_no_provider_is_not_a_success(tmp_path, monkeypatch, capsys):
+    from fettle.advisories import check as chk
+    monkeypatch.setattr(chk, "_providers", lambda: [])
+    ctx = _ctx(tmp_path)
+    chk.update(ctx)
+    ctx.output.print_summary()
+    assert "NOT refreshed" in capsys.readouterr().out

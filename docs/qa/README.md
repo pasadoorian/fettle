@@ -115,7 +115,7 @@ Status of each feature's QA pass. `—` = not started.
 | upgrade-check | `-U` | [upgrade-check.md](upgrade-check.md) | **reviewed (no live run, by decision) — 2 fixed, 1 recorded** |
 | aur-precheck | `-p` | [aur-precheck.md](aur-precheck.md) | **swept — 4 fixed, incl. the malware gate passing on blind feeds** |
 | advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight); pre-update gate redesigned** |
-| advisory-update | — | — | — |
+| advisory-update | — | [advisory-update.md](advisory-update.md) | **swept — 3 fixed; a failing timer looked healthy** |
 | report | — | — | — |
 | web | — | — | — |
 | remote | — | — | — |
