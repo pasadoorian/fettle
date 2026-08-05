@@ -89,8 +89,47 @@ def _chipsec_cmd(scan) -> list | None:
     return [str(c) for c in cmd] if cmd else None
 
 
+# chipsec's own vocabulary, in the order a reader wants it. The JSON summary is an
+# ordered dict of {bucket: [module names]} plus a `total` -- documented, stable, and
+# far better than matching "PASSED" in prose, which is the trap this project has
+# fixed everywhere else.
+_CHIPSEC_BUCKETS = (
+    ("failed", "error", "FAILED"),
+    ("warnings", "warn", "warning"),
+    ("failed to run", "warn", "could not run"),
+    ("information", "info", "info"),
+)
+
+
+def _chipsec_unknown_platform(text: str) -> bool:
+    """Whether chipsec said it does not recognise this machine.
+
+    It says so three times over -- ``Unknown Platform``, ``Unrecognized Platform``,
+    ``Results from this system may be incorrect`` -- and it matters more than any
+    single verdict: on the QA host (Ryzen/Matisse) **26 of 33 modules were NOT
+    APPLICABLE** for want of register definitions, which is not 26 things being fine.
+    Reporting the seven that did run without this caveat would be presenting a blind
+    scan as a scan.
+    """
+    low = text.lower()
+    return ("unknown platform" in low or "unrecognized platform" in low
+            or "may be incorrect" in low)
+
+
 def firmware(scan) -> None:
-    """Chipsec-based firmware checks (ME manufacturing mode, BIOS write protect)."""
+    """chipsec's full default module set, reported by what it actually found.
+
+    fettle used to run exactly two modules, ``common.me_mfg_mode`` and
+    ``common.bios_wp``, chosen when the only target was Intel. Measured on an AMD
+    workstation both are NOT APPLICABLE -- no Intel ME, no SPI HAL -- so the check
+    produced nothing at all, while the default set found an unprotected flash
+    (``rom_armor``) and Secure Boot disabled with no PK/KEK/db. chipsec already knows
+    which of its modules apply to the platform, and it decides that better than a
+    hardcoded list can. The whole set took 5.0s.
+    """
+    import json
+    import tempfile
+
     chipsec = _chipsec_cmd(scan)
     if chipsec is None:
         scan.status("Chipsec", "not configured — firmware was NOT audited", "warn")
@@ -99,36 +138,53 @@ def firmware(scan) -> None:
                      '    chipsec_cmd = ["/usr/bin/chipsec_main"]   # packaged install',
                      '    # or ["python3", "/opt/chipsec/chipsec_main.py"]  # git checkout',
                      "Packaging varies per distro, so fettle asks rather than guesses.",
-                     "Would check: Intel ME manufacturing mode, SPI flash write "
-                     "protection."):
+                     "Would check: SPI/BIOS write protection, SMM, Secure Boot "
+                     "variables, and more."):
             scan.dim(line)
         return
     scan.status("Chipsec", " ".join(chipsec), "ok")
     if not scan.is_root():
-        scan.status("Warning", "chipsec requires root privileges", "error")
+        scan.status("Chipsec", "needs root — firmware was NOT audited "
+                    "(re-run without --user)", "warn")
         return
 
-    scan.sub("Intel ME Manufacturing Mode")
-    me, rc = scan.run_text_rc([*chipsec, "-m", "common.me_mfg_mode"])
-    if _ran(scan, "ME Manufacturing Mode", rc, "chipsec"):
-        me = me.lower()
-        if "passed" in me:
-            scan.status("ME Manufacturing Mode", "Disabled (PASSED)", "ok")
-        elif "failed" in me:
-            scan.status("ME Manufacturing Mode", "Enabled (FAILED)", "error")
-        else:
-            scan.status("ME Manufacturing Mode", "Unknown (no verdict reported)", "info")
+    with tempfile.TemporaryDirectory() as td:
+        out_file = f"{td}/chipsec.json"
+        text, rc = scan.run_text_rc([*chipsec, "-j", out_file])
+        try:
+            summary = json.loads(Path(out_file).read_text())
+        except (OSError, ValueError):
+            summary = None
 
-    scan.sub("BIOS Write Protection")
-    wp, rc = scan.run_text_rc([*chipsec, "-m", "common.bios_wp"])
-    if _ran(scan, "BIOS Write Protection", rc, "chipsec"):
-        wp = wp.lower()
-        if "passed" in wp:
-            scan.status("BIOS Write Protection", "Enabled (PASSED)", "ok")
-        elif "failed" in wp:
-            scan.status("BIOS Write Protection", "Disabled (FAILED)", "error")
-        else:
-            scan.status("BIOS Write Protection", "Unknown (no verdict reported)", "info")
+    if not isinstance(summary, dict):
+        scan.status("Chipsec", f"produced no readable results (exit {rc}) — firmware "
+                    "was NOT audited", "error")
+        if scan.verbose:
+            scan.result(text)
+        return
+
+    if _chipsec_unknown_platform(text):
+        scan.status("Platform", "chipsec does NOT recognise this platform — every "
+                    "verdict below is provisional, and the checks it skipped were "
+                    "skipped for want of register definitions, not because they "
+                    "passed", "warn")
+
+    def names(bucket):
+        return [str(n) for n in (summary.get(bucket) or [])]
+
+    for bucket, level, label in _CHIPSEC_BUCKETS:
+        for mod in names(bucket):
+            scan.status(mod.replace("chipsec.modules.", ""), label, level)
+
+    passed, na = names("passed"), names("not applicable")
+    tally = f"{len(passed)} passed"
+    if na:
+        # Counted, never silent: this is the difference between a clean scan and a
+        # blind one.
+        tally += f", {len(na)} not applicable (chipsec has no checks for this platform)"
+    scan.status("Chipsec modules", f"{summary.get('total', '?')} run — {tally}", "info")
+    if scan.verbose:
+        scan.result(text)
 
 
 # ---------------------------------------------------------------------------

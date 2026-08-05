@@ -187,6 +187,30 @@ Fixed at the constant, not the call site: `DEFAULT_CONFIG` resolves from the inv
 user's home, covering all eight consumers — including `sudo fettle advisory-check` /
 `report` / `upgrade-check`, which had the same bug and nobody had hit yet.
 
+### S-10 — two Intel modules where chipsec offers thirty-three. FIXED v0.85.0
+`firmware` ran exactly `common.me_mfg_mode` and `common.bios_wp` — chosen when the only
+target was Intel. Measured on an AMD Ryzen workstation, **both are NOT APPLICABLE** (no
+Intel ME; no SPI HAL), so the category produced nothing at all. chipsec's default set,
+run on the same machine in **5.0 seconds**, found:
+
+| | |
+|---|---|
+| **FAILED** | `rom_armor` — AMD PSP flash protection not enabled |
+| **WARNING** | `secureboot.variables` — Secure Boot off, PK/KEK/db all missing |
+| PASSED | `bios_kbrd_buffer`, `uefi.access_uefispec` |
+| EXCEPTION | `cpu_info` — a chipsec bug on this platform |
+
+Now runs the whole default set and reads chipsec's **JSON summary** (`-j`) rather than
+matching `PASSED` in its prose — the same English-matching trap fixed in `-f` (F-03) and
+sys-audit's own fwupd copy (S-03).
+
+**And the header mattered more than any verdict.** chipsec said three times that it did
+not recognise the platform (`Unknown Platform: VID=0x1022 … CPUID=0x830F10`, *"Results
+from this system may be incorrect"*). So the 26 NOT APPLICABLE results are 26 checks it
+had no definitions to perform — not 26 things being fine. fettle leads with that and marks
+the rest provisional. Reporting the seven that ran without it would have been a blind scan
+presented as a scan: the governing invariant, at hardware level.
+
 ## Open / not fixed here
 
 - **The summary prints warnings before failures**, so `!` lines appear above `✗` ones.

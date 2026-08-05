@@ -10,6 +10,44 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.85.0] — chipsec's whole default set, and "not applicable" told apart from "fine"
+
+`sys-audit`'s `firmware` category ran exactly two modules — `common.me_mfg_mode` and
+`common.bios_wp` — chosen when the only target was Intel. Measured on an AMD Ryzen
+workstation **both are NOT APPLICABLE** (no Intel ME, no SPI HAL), so the category
+produced nothing at all. chipsec's default set, on the same machine in **5.0 seconds**,
+found an unprotected flash (`rom_armor` FAILED) and Secure Boot disabled with no PK, KEK
+or db (`secureboot.variables`). chipsec already knows which of its modules apply to a
+platform, and it decides that better than a hardcoded list can.
+
+**Read from chipsec's JSON, not its prose.** `-j` yields a documented, ordered summary of
+`passed` / `failed` / `warnings` / `failed to run` / `information` / `not applicable`.
+Matching `"PASSED"` in output text is the same trap already fixed in `-f` (v0.61.0) and in
+sys-audit's own fwupd copy (v0.71.0).
+
+**The header mattered more than any single verdict.** chipsec said three times that it did
+not recognise the platform — `Unknown Platform: VID=0x1022, DID=0x1480, CPUID=0x830F10`,
+*"Results from this system may be incorrect"*, *"Platform dependent functionality is likely
+to be incorrect"*. So its **26 NOT APPLICABLE results are 26 checks it had no register
+definitions to perform**, not 26 things being fine. fettle now leads with that and marks
+the remaining verdicts provisional:
+
+```
+! Platform: chipsec does NOT recognise this platform — every verdict below is
+  provisional, and the checks it skipped were skipped for want of register
+  definitions, not because they passed
+✗ common.rom_armor: FAILED
+! common.secureboot.variables: warning
+! common.cpu.cpu_info: could not run
+  Chipsec modules: 33 run — 2 passed, 26 not applicable
+```
+
+Reporting the seven that ran without that caveat would have been a blind scan presented as
+a scan — the governing invariant of this whole QA pass, arriving at hardware level.
+
+A chipsec run that leaves no readable results is an error, not a quiet pass. Unprivileged,
+the category says it did not audit rather than skipping in silence.
+
 ## [0.84.2] — `fettle -S` read root's config, not yours
 
 Reported from a real run: `fettle -S firmware` said *"chipsec: not configured"* on a

@@ -1,5 +1,7 @@
 """Distro-neutral sys-audit checks — driven via root injection + command mocks."""
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 from fettle import command
@@ -128,59 +130,110 @@ def test_fwupd_absent(tmp_path, capsys):
 # When chipsec failed, the output matched neither "passed" nor "failed", so the
 # check printed NOTHING AT ALL -- and a missing line reads to a human as "no
 # problem here". An un-run check is now a finding.
-def _chipsec_scan(tmp_path, responses):
-    """A scan configured to find chipsec. Since v0.84.0 the command comes from
-    `[secure] chipsec_cmd` rather than a filesystem search — chipsec ships in three
-    layouts whose invocations differ, so fettle asks instead of guessing."""
+def _chipsec(tmp_path, capsys, *, summary=None, stdout="", rc=0, root=True,
+             configured=True, write_json=True):
+    """Drive the firmware check with a stubbed chipsec.
+
+    chipsec writes its results to the file named by `-j`; the stub does the same, so
+    the test exercises the real parse path rather than a mocked return value.
+    """
     from fettle.config import Config
     cfg = Config()
-    cfg.secure = {"chipsec_cmd": ["python3",
-                                  str(tmp_path / "opt/chipsec/chipsec_main.py")]}
-    return _scan(tmp_path, tools=(), responses=responses, config=cfg)
+    if configured:
+        cfg.secure = {"chipsec_cmd": ["/usr/bin/chipsec_main"]}
 
+    def fake_run(cmd, *, as_user=None, capture=False):
+        cmd = list(cmd)
+        if write_json and "-j" in cmd:
+            Path(cmd[cmd.index("-j") + 1]).write_text(json.dumps(summary or {}))
+        return command.Proc(rc, stdout, "")
 
-def _chipsec_cmd(tmp_path, module):
-    return ("python3", str(tmp_path / "opt/chipsec/chipsec_main.py"), "-m", module)
-
-
-def test_chipsec_failure_reports_unknown_not_silence(tmp_path, capsys):
-    responses = {_chipsec_cmd(tmp_path, "common.me_mfg_mode"):
-                 ("ERROR: could not load driver", 1),
-                 _chipsec_cmd(tmp_path, "common.bios_wp"):
-                 ("ERROR: could not load driver", 1)}
-    with patch("os.geteuid", return_value=0), \
-            _chipsec_scan(tmp_path, responses) as scan:
+    scan = Scan(output=Output(color=False), root=tmp_path, config=cfg)
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", return_value=False), \
+         patch("os.geteuid", return_value=0 if root else 1000):
         checks.firmware(scan)
     cap = capsys.readouterr()
-    out = cap.out + cap.err
-    assert "ME Manufacturing Mode: UNKNOWN — chipsec failed (exit 1)" in out
-    assert "BIOS Write Protection: UNKNOWN — chipsec failed (exit 1)" in out
+    return cap.out + cap.err
 
 
-def test_chipsec_ran_but_gave_no_verdict_is_neutral(tmp_path, capsys):
-    """Ran cleanly, matched neither verdict (e.g. module N/A on this hardware) —
-    that is Unknown, not an error; unsupported hardware must not go red."""
-    responses = {_chipsec_cmd(tmp_path, "common.me_mfg_mode"): "Module not applicable",
-                 _chipsec_cmd(tmp_path, "common.bios_wp"): "Module not applicable"}
-    with patch("os.geteuid", return_value=0), \
-            _chipsec_scan(tmp_path, responses) as scan:
-        checks.firmware(scan)
-    out = capsys.readouterr().out
-    assert "ME Manufacturing Mode: Unknown (no verdict reported)" in out
-    assert "chipsec failed" not in out
+_REAL_SUMMARY = {                      # measured: sudo chipsec_main on an AMD Ryzen box
+    "total": 33,
+    "failed to run": ["chipsec.modules.common.cpu.cpu_info"],
+    "passed": ["chipsec.modules.common.bios_kbrd_buffer",
+               "chipsec.modules.common.uefi.access_uefispec"],
+    "information": ["chipsec.modules.common.firmware_info"],
+    "failed": ["chipsec.modules.common.rom_armor"],
+    "warnings": ["chipsec.modules.common.secureboot.variables"],
+    "not applicable": [f"chipsec.modules.m{i}" for i in range(26)],
+    "archived": ["chipsec.modules.common.uefi.s3bootscript"],
+}
+_UNKNOWN = ("ERROR: Unknown Platform: VID = 0x1022, DID = 0x1480\n"
+            "[!] Results from this system may be incorrect.\n")
 
 
-def test_chipsec_normal_verdicts_unchanged(tmp_path, capsys):
-    """Guard on the fix itself: healthy runs must report exactly as before."""
-    responses = {_chipsec_cmd(tmp_path, "common.me_mfg_mode"): "[+] PASSED: ME not in mfg mode",
-                 _chipsec_cmd(tmp_path, "common.bios_wp"): "[-] FAILED: BIOS is not write protected"}
-    with patch("os.geteuid", return_value=0), \
-            _chipsec_scan(tmp_path, responses) as scan:
-        checks.firmware(scan)
-    cap = capsys.readouterr()
-    out = cap.out + cap.err
-    assert "ME Manufacturing Mode: Disabled (PASSED)" in out
-    assert "BIOS Write Protection: Disabled (FAILED)" in out
+def test_chipsec_reports_every_bucket_it_found(tmp_path, capsys):
+    """fettle ran exactly two modules -- me_mfg_mode and bios_wp -- chosen when the
+    only target was Intel. Measured on an AMD workstation BOTH are NOT APPLICABLE, so
+    the check produced nothing, while the default set found an unprotected flash and
+    Secure Boot disabled."""
+    out = _chipsec(tmp_path, capsys, summary=_REAL_SUMMARY)
+    assert "common.rom_armor: FAILED" in out
+    assert "common.secureboot.variables: warning" in out
+    assert "common.cpu.cpu_info: could not run" in out
+    assert "33 run — 2 passed" in out
+
+
+def test_not_applicable_is_a_counted_coverage_gap(tmp_path, capsys):
+    """26 of 33 were NOT APPLICABLE for want of register definitions. That is not 26
+    things being fine."""
+    out = _chipsec(tmp_path, capsys, summary=_REAL_SUMMARY)
+    assert "26 not applicable" in out
+    assert "no checks for this platform" in out
+
+
+def test_an_unrecognised_platform_leads_the_report(tmp_path, capsys):
+    """chipsec says so three times over, and it matters more than any single verdict:
+    presenting the seven that ran without the caveat is a blind scan reported as a
+    scan."""
+    out = _chipsec(tmp_path, capsys, summary=_REAL_SUMMARY, stdout=_UNKNOWN)
+    assert "does NOT recognise this platform" in out
+    assert "provisional" in out
+
+
+def test_a_recognised_platform_gets_no_caveat(tmp_path, capsys):
+    out = _chipsec(tmp_path, capsys, summary=_REAL_SUMMARY,
+                   stdout="[CHIPSEC] Platform: Coffeelake\n")
+    assert "does NOT recognise" not in out
+
+
+def test_no_readable_results_is_not_a_clean_scan(tmp_path, capsys):
+    """The file chipsec was told to write is missing or unparseable -- so nothing was
+    audited, and that must not render like nothing was wrong."""
+    out = _chipsec(tmp_path, capsys, write_json=False, rc=1)
+    assert "produced no readable results" in out and "NOT audited" in out
+
+
+def test_unconfigured_chipsec_says_what_to_write(tmp_path, capsys):
+    out = _chipsec(tmp_path, capsys, configured=False)
+    assert "not configured — firmware was NOT audited" in out
+    assert "[secure]" in out and "chipsec_cmd" in out
+
+
+def test_unprivileged_says_it_did_not_audit(tmp_path, capsys):
+    out = _chipsec(tmp_path, capsys, summary=_REAL_SUMMARY, root=False)
+    assert "needs root — firmware was NOT audited" in out
+
+
+def test_a_string_chipsec_cmd_is_accepted(tmp_path, capsys):
+    """`chipsec_cmd = "/usr/bin/chipsec_main"` is the natural thing to write for a
+    single-word command; accepting only a list would fail with no explanation."""
+    from fettle.config import Config
+    from fettle.secure.checks import _chipsec_cmd
+    cfg = Config()
+    cfg.secure = {"chipsec_cmd": "/usr/bin/chipsec_main"}
+    assert _chipsec_cmd(Scan(output=Output(color=False), config=cfg)) == \
+        ["/usr/bin/chipsec_main"]
 
 
 def test_fwupd_no_updates_stays_ok_despite_nonzero_exit(tmp_path, capsys):
@@ -271,39 +324,7 @@ def test_chipsec_command_is_configured_not_guessed(tmp_path, capsys):
     a git checkout at /opt/chipsec/chipsec_main.py. Searching harder would have traded
     one wrong guess for another -- the three layouts need three different invocations,
     so a path alone is not enough."""
-    from fettle.config import Config
-    cfg = Config()
-    cfg.secure = {"chipsec_cmd": ["/usr/bin/chipsec_main"]}
-    responses = {("/usr/bin/chipsec_main", "-m", "common.me_mfg_mode"):
-                 "[+] PASSED: ME not in mfg mode",
-                 ("/usr/bin/chipsec_main", "-m", "common.bios_wp"):
-                 "[+] PASSED: BIOS is write protected"}
-    with patch("os.geteuid", return_value=0), \
-            _scan(tmp_path, responses=responses, config=cfg) as scan:
-        checks.firmware(scan)
-    out = capsys.readouterr().out
+    out = _chipsec(tmp_path, capsys, summary={"total": 1, "passed": ["m"]})
     assert "Chipsec: /usr/bin/chipsec_main" in out
-    assert "ME Manufacturing Mode: Disabled (PASSED)" in out
+    assert "1 run — 1 passed" in out
 
-
-def test_unconfigured_chipsec_says_what_to_write(tmp_path, capsys):
-    """"Not found - install from github" was advice for a problem the user did not
-    have: chipsec WAS installed. The message has to name the setting."""
-    with _scan(tmp_path) as scan:
-        checks.firmware(scan)
-    cap = capsys.readouterr()
-    out = cap.out + cap.err
-    assert "not configured — firmware was NOT audited" in out
-    assert "[secure]" in out and "chipsec_cmd" in out
-
-
-def test_a_string_chipsec_cmd_is_accepted(tmp_path, capsys):
-    """`chipsec_cmd = "/usr/bin/chipsec_main"` is the natural thing to write for a
-    single-word command; accepting only a list would fail with no explanation."""
-    from fettle.config import Config
-    cfg = Config()
-    cfg.secure = {"chipsec_cmd": "/usr/bin/chipsec_main"}
-    with patch("os.geteuid", return_value=0), \
-            _scan(tmp_path, config=cfg) as scan:
-        checks.firmware(scan)
-    assert "Chipsec: /usr/bin/chipsec_main" in capsys.readouterr().out

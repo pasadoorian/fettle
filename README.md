@@ -1005,6 +1005,29 @@ chipsec_cmd = ["/usr/bin/chipsec_main"]
 
 Unset, the `firmware` category says plainly that it did not run, and names the setting.
 
+**It runs chipsec's whole default set** (~33 modules, ~5s), not a hardcoded pair. fettle
+used to run exactly `common.me_mfg_mode` and `common.bios_wp`, chosen when the only target
+was Intel — and on an AMD workstation *both* are NOT APPLICABLE, so the check produced
+nothing while the default set found an unprotected flash and Secure Boot disabled. chipsec
+decides what applies to your platform better than a fixed list can. Results are read from
+its **JSON output**, not scraped from its prose.
+
+**"Not applicable" is reported as a coverage gap, not a pass.** On a platform chipsec does
+not recognise — an AMD Ryzen here — 26 of 33 modules had no register definitions to work
+from, and fettle says so and marks the remaining verdicts provisional:
+
+```
+! Platform: chipsec does NOT recognise this platform — every verdict below is
+  provisional, and the checks it skipped were skipped for want of register
+  definitions, not because they passed
+✗ common.rom_armor: FAILED
+! common.secureboot.variables: warning
+  Chipsec modules: 33 run — 2 passed, 26 not applicable
+```
+
+chipsec loads its own kernel driver (`modprobe chipsec`) to read MSRs, PCI config space
+and SPI. Setting `chipsec_cmd` is what opts you in.
+
 **Exit status:** `1` when the scan found something needing attention, `0` otherwise —
 so it is usable in cron and CI. A *warning* (Secure Boot disabled, no TPM, an optional
 tool absent) does **not** fail the run: those are facts about the machine you may have
@@ -1036,7 +1059,7 @@ sudo/`--all` for the fullest results — many checks only produce real output as
 |---|---|
 | `secureboot` | Secure Boot state + the **2026 Microsoft cert-expiry matrix** (2011 vs 2023 KEK/db certs, migration status) |
 | `bios` | BIOS/UEFI vendor, version, date; motherboard info |
-| `firmware` | chipsec — Intel ME manufacturing mode, BIOS write-protection (needs `[secure] chipsec_cmd` + root) |
+| `firmware` | chipsec's **full default module set** — SPI/BIOS write protection, SMM, Secure Boot variables, ROM Armor, debug interfaces, and ~25 more (needs `[secure] chipsec_cmd` + root) |
 | `fwupd` | firmware devices, available updates, HSI security attributes |
 | `intel-me` | MEI device, ME firmware version, ME PCI controller |
 | `microcode` | CPU microcode revision + `/sys` vulnerability mitigations |
