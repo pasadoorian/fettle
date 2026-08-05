@@ -10,6 +10,37 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.76.0] — upgrade-check: a verdict you can act on, and commands attributed to their author
+
+Code review of `upgrade-check` (no live run — it costs money per invocation, and it is
+known to work; every fix here is covered by unit tests through the injectable runner).
+
+**The third instance of the same pair.** `-U` had no summary lines at all and returned `0`
+from every path, so a `risky` verdict, a clean `safe`, an absent API key and an API failure
+were indistinguishable to anything downstream. sys-audit had this in v0.71.0 and
+advisory-check in v0.74.0 — and the v0.74.0 write-up *predicted* this one. The common
+factor is structural: every subcommand with its own entry point has to remember to call
+`print_summary()` and compute a status, while pipeline actions get it once from
+`actions.run()`.
+
+Now: verdicts reach the digest and **exit 0** whatever they say (`safe` is `✓`,
+`caution`/`risky` are `!`), while **"could not run" is `✗` and exit 1** — no API key, or
+the analysis unavailable. A check you asked for and got an answer from has not failed; one
+that never ran is the thing a script needs to tell apart.
+
+**The hallucination guard protected the lower-consequence field.** `watch_items` entries
+naming a package that is not actually upgrading are dropped — a real guard. But
+`must_do_before` / `should_do_after` passed through unvalidated, and the system prompt
+asks the model for *"concrete commands/steps, not 'be careful'"*. Those rendered under a
+heading styled exactly like fettle's own advice, which invites copy-paste — and web search
+feeds the model forum posts anyone can write. They are now labelled *"suggested by the
+model — verify before running"*. The content is still unvalidated: validating a free-form
+command is a much larger problem than checking a name against a list, and saying so
+honestly beats a guard that only catches the obvious cases.
+
+Recorded, not changed: the JSON schema is a prompt-level contract parsed by brace-matching,
+where `output_config.format` would enforce it at the API layer.
+
 ## [0.75.0] — the pre-update security gate argued for the harmful answer
 
 `fettle -u` / `-a` ran a `security_gate` before a real upgrade, and on an unpatched

@@ -146,6 +146,15 @@ def _validate(data: dict, snapshot) -> Result:
     )
 
 
+# Every action list below is text the MODEL wrote. The system prompt asks it for
+# "concrete commands/steps", and those lines used to render in the same style as
+# fettle's own `next_step` advice — so a suggestion the model invented, or one it read
+# in a forum post that anybody can write, arrived looking like the tool vouched for it.
+# The hallucination guard only ever covered `watch_items` (package names), which is the
+# lower-consequence field of the two. Attribution is the cheap half of the fix.
+_MODEL_MARK = "suggested by the model — verify before running"
+
+
 def format_report(result: "Result") -> str:
     """Full plain-text report (for the screen body and the saved upgrade-check report
     under ~/.fettle/reports/<host>/)."""
@@ -154,9 +163,11 @@ def format_report(result: "Result") -> str:
     if result.summary:
         lines += ["", result.summary]
     if result.must_do_before:
-        lines += ["", "Before upgrading:"] + [f"  - {s}" for s in result.must_do_before]
+        lines += ["", f"Before upgrading ({_MODEL_MARK}):"] \
+            + [f"  - {s}" for s in result.must_do_before]
     if result.should_do_after:
-        lines += ["", "After upgrading:"] + [f"  - {s}" for s in result.should_do_after]
+        lines += ["", f"After upgrading ({_MODEL_MARK}):"] \
+            + [f"  - {s}" for s in result.should_do_after]
     if result.watch_items:
         lines += ["", "Watch:"] + [f"  - {w.get('package')}: {w.get('concern')}"
                                    for w in result.watch_items]

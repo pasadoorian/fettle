@@ -1137,6 +1137,18 @@ random name (not a predictable world-writable `/tmp` path) and removed after the
 
 ## Upgrade Checker (AI) — experimental
 
+**Exit status:** `1` when the check **could not run** — no API key, or the analysis came
+back unavailable. A *verdict* always exits `0`, whatever it says: `safe`/`caution`/`risky`
+is the model's opinion about an upgrade, not fettle being unable to do its job. The
+verdict also reaches the run summary, so `-U` is no longer silent in the digest.
+
+**Actions the model suggests are labelled as such.** `must_do_before` / `should_do_after`
+are text the model wrote, and the prompt asks it for concrete commands — so they render
+as *"suggested by the model — verify before running"* rather than in the same style as
+fettle's own advice. Package names in `watch_items` are checked against the real pending
+set and dropped if invented; the free-form command text is **not** validated, which is
+why it is attributed instead.
+
 > ⚠️ **Experimental / under active testing.** This feature is still being validated
 > across VMs and distros. Treat its advice as a **second opinion**, not a guarantee —
 > read the cited forum threads and use your own judgment before upgrading.

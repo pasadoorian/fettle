@@ -727,6 +727,21 @@ def _run_upgrade_check(argv: list[str]) -> int:
         return 1
     ctx = Context(output=out, config=cfg, user_home=Path.home())
 
+    def _finish(rc: int) -> int:
+        """Render the summary and settle the exit status.
+
+        Every path here used to `return 0` with no summary at all, so a RISKY verdict,
+        a clean bill of health and the check never running were indistinguishable to
+        anything downstream. Third instance of this pair (sys-audit v0.71.0,
+        advisory-check v0.74.0): each subcommand with its own entry point has to
+        remember, and each one forgot.
+
+        A verdict is an opinion about the system and exits 0 whatever it says; `✗` and
+        a non-zero status are reserved for the check having been unable to run.
+        """
+        out.print_summary()
+        return 1 if out.had_failures else rc
+
     if args.collect:
         # Gather + emit JSON ONLY (stdout stays clean for the caller to parse);
         # rootless, no Anthropic call. Warnings/errors above went to stderr.
@@ -739,7 +754,8 @@ def _run_upgrade_check(argv: list[str]) -> int:
     pending = backend.pending_upgrades(ctx)
     if not pending:
         out.ok("system is up to date — nothing to upgrade.")
-        return 0
+        out.summary_add("upgrade check: nothing pending")
+        return _finish(0)
 
     out.note(f"{len(pending)} package(s) pending; gathering system details (inxi)...")
     snap = ai_snapshot.gather(ctx, backend)
@@ -748,7 +764,9 @@ def _run_upgrade_check(argv: list[str]) -> int:
         out.warn("no API key set (ANTHROPIC_API_KEY or config ai_api_key) — "
                  "showing the package list only:")
         _print_pending(pending)
-        return 0
+        out.summary_fail("upgrade check did NOT run — no API key "
+                         "(ANTHROPIC_API_KEY or [config] ai_api_key)")
+        return _finish(0)
 
     out.note(f"asking {cfg.ai_model} (may take a minute; searching distro forums)...")
     result = uc.analyze(snap, config=cfg, allow_web=not args.no_web)
@@ -757,11 +775,29 @@ def _run_upgrade_check(argv: list[str]) -> int:
         if not args.verbose:
             out.note("re-run with --verbose to see why the AI step failed.")
         _print_pending(pending)
-        return 0
+        out.summary_fail(f"upgrade check did NOT run — {len(pending)} pending "
+                         "package(s) were NOT assessed (re-run with --verbose)")
+        return _finish(0)
 
     _render_upgrade_check(out, result, user_home=ctx.user_home,
                           sudo_user=ctx.sudo_user, config=ctx.config)
-    return 0
+    _summarize_verdict(out, result, len(pending))
+    return _finish(0)
+
+
+def _summarize_verdict(out: Output, result, pending: int) -> None:
+    """One digest line per verdict. `risky` warns rather than fails: it is the model's
+    opinion about an upgrade, not fettle being unable to do its job — and a check you
+    asked for and got an answer from has not failed."""
+    line = (f"upgrade check: {result.safety_verdict.upper()} "
+            f"({result.failure_likelihood} failure likelihood), {pending} package(s)")
+    if result.safety_verdict == "safe":
+        out.summary_add(line)
+    else:
+        out.summary_warn(line)
+    if result.dropped_watch_items:
+        out.summary_warn(f"{result.dropped_watch_items} model-flagged item(s) dropped "
+                         "— not in the actual upgrade set")
 
 
 def _print_pending(pending) -> None:

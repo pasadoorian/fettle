@@ -53,9 +53,12 @@ def test_no_key_shows_package_list(capsys, monkeypatch):
          patch("fettle.ai.snapshot.gather", return_value=_snap()):
         rc = cli_main(["upgrade-check", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0
+    # The check did NOT run. It used to exit 0 with no summary, so "no key" was
+    # indistinguishable from a clean verdict to anything downstream.
+    assert rc == 1
     assert "no API key" in cap.err
     assert "linux  6.12 -> 6.18" in cap.out
+    assert "did NOT run" in cap.out + cap.err
 
 
 def test_happy_path_renders_and_saves(capsys, monkeypatch, tmp_path):
@@ -96,5 +99,43 @@ def test_analysis_unavailable_falls_back(capsys, monkeypatch):
          patch("fettle.ai.upgrade_check.analyze", return_value=None):
         rc = cli_main(["upgrade-check", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0
+    assert rc == 1                      # could not run != a clean bill of health
     assert "unavailable" in cap.err and "linux  6.12 -> 6.18" in cap.out
+    assert "were NOT assessed" in cap.out + cap.err
+
+
+# -- the verdict reaches the digest, and only a broken check fails the run ---
+def _verdict_run(capsys, monkeypatch, verdict):
+    from fettle.ai.upgrade_check import Result
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    res = Result(safety_verdict=verdict, failure_likelihood="low", summary="s",
+                 must_do_before=["pacman -Syu --ignore linux"], recommendation="proceed")
+    with patch("fettle.cli.detect", return_value=_Backend([("linux", "6.12", "6.18")])), \
+         patch("fettle.ai.snapshot.gather", return_value=_snap()), \
+         patch("fettle.ai.upgrade_check.analyze", return_value=res), \
+         patch("fettle.reports.write_report", return_value="/dev/null"):
+        rc = cli_main(["upgrade-check", "--no-config"])
+    cap = capsys.readouterr()
+    return rc, cap.out + cap.err
+
+
+def test_safe_verdict_reaches_the_summary(capsys, monkeypatch):
+    rc, text = _verdict_run(capsys, monkeypatch, "safe")
+    assert rc == 0
+    assert "upgrade check: SAFE" in text
+
+
+def test_risky_verdict_warns_but_does_not_fail_the_run(capsys, monkeypatch):
+    """It is the model's opinion about an upgrade, not fettle being unable to do its
+    job — and a check you asked for and got an answer from has not failed."""
+    rc, text = _verdict_run(capsys, monkeypatch, "risky")
+    assert rc == 0
+    assert "upgrade check: RISKY" in text
+
+
+def test_model_authored_commands_are_attributed(capsys, monkeypatch):
+    """The system prompt asks the model for concrete commands, and web search feeds it
+    forum posts anyone can write. Those lines rendered like fettle's own advice."""
+    _rc, text = _verdict_run(capsys, monkeypatch, "caution")
+    assert "suggested by the model — verify before running" in text
+    assert "pacman -Syu --ignore linux" in text
