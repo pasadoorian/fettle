@@ -87,6 +87,22 @@ second name. Deriving nothing from argv cannot go wrong.
 Harmless today because both lists are computed before the loop — and exactly the kind of
 thing that is not harmless the next time someone edits below it.
 
+## Deferred by decision
+
+Two long inline lists that want the same `[+]`/`[-]` treatment the multi-environment
+expander got in v0.83.0. Parked deliberately, tracked as **D1**/**D2** in the
+outstanding-issues list:
+
+- **The uncovered-packages list** — `advisory-check` prints all 77 AUR/foreign names as
+  one paragraph, under *every* retained entry, so at `keep = 10` it repeats ten times in
+  one host section. Since v0.82.0 each name is a link, which makes it longer. Whatever
+  replaces it must keep the *count* visible when collapsed: this is a coverage statement —
+  the packages the tracker cannot see at all — not decoration.
+- **`aur-audit` removal candidates** — ~50 names inline. The list length is intended
+  (flag-ALL was the explicit choice in v0.16.0); only the presentation is at issue. The
+  "pacman only tracks packaged dependents" caveat has to stay outside any collapse, since
+  it qualifies the whole list.
+
 ## Left for the operator
 The **historical** directories on disk are untouched: twelve fragments of four lab
 machines, plus `clean`. Nothing merges them retroactively, and `~/.fettle/` is the user's
