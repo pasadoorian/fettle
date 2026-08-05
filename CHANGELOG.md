@@ -10,6 +10,31 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.82.1] — the stale-flag bug becomes a test instead of a habit
+
+`-I` was retired in v0.73.0. Grepping for `aur_ioc_scan` found none of the four places
+that outlived it, because all four spell it **`-I`**: the advisory footer's
+`vet via fettle -A/-P/-I`, the **web UI still offering it as a runnable action**, the lab
+matrix's label map, and a fourth in an f-string found two releases later. The project's
+own notes already called this "the post-v0.4.0 stale-flag class of bug" and said to grep
+the flag *letters* — advice that existed and was not followed, twice.
+
+So it is a test now (`tests/test_stale_flags.py`). It reads the valid set from the
+parsers themselves — the main parser plus every subcommand's `--help` — so it cannot
+drift from what fettle actually accepts, and it checks both spellings: `fettle -X` and
+a backticked `` `fettle some-action` ``.
+
+The full sweep over the repo is **clean**. Two things about that result are worth stating,
+because "found nothing" is the same shape as "could not look":
+
+- The sweep is proved against a **canary**: a second test plants `fettle -I`,
+  `fettle aur-ioc-scan` and `fettle --totally-made-up` in the tree and asserts all three
+  are caught, while `fettle -p pkg` (valid) and `pacman -Qtdq` (not ours) are not.
+- Getting to zero took three rounds of narrowing. Matching `fettle` anywhere on a line
+  flagged `pacman -Qtdq` next to a `~/.fettle/` path; treating any line starting with
+  "fettle" as a command flagged a hundred sentences ("fettle refuses to…"). Both
+  false-positive classes are documented in the test so nobody widens it back.
+
 ## [0.82.0] — every name and identifier in the report is a link
 
 Package names link to wherever that package actually lives, and every advisory
