@@ -556,11 +556,14 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
     except Exception:
         cfg = None
     ctxlike = SimpleNamespace(user_home=Path.home(), sudo_user=None, config=cfg)
-    # File under what the MACHINE calls itself, not the ssh target: a lab guest on
-    # DHCP otherwise became a new "host" every time its address moved, splitting one
-    # machine's history across three dashboard cards. Falls back to the target.
-    name = remote.remote_hostname(host, ssh_args=ssh_args) or host
+    name = host
     try:
+        # File under what the MACHINE calls itself, not the ssh target: a lab guest on
+        # DHCP otherwise became a new "host" every time its address moved, splitting
+        # one machine's history across three dashboard cards. Falls back to the
+        # target. INSIDE the try -- it shells out to ssh, and this function promises
+        # never to break the run it follows.
+        name = remote.remote_hostname(host, ssh_args=ssh_args) or host
         _, keep = reports._settings(ctxlike)
         dest = reports.reports_dir(ctxlike, name)
         names = remote.fetch_reports(host, dest, ssh_args=ssh_args)
@@ -570,12 +573,20 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
         logs = remote.fetch_logs(host, ldest, ssh_args=ssh_args)
         if logs:
             reports.prune(ldest, "run", keep)
+        where = f" -> {name}" if name != host else ""
         if names or logs:
-            where = f" -> {name}" if name != host else ""
             print(f"Fetched {len(set(names))} report(s), {len(set(logs))} run-log(s) "
                   f"from {host}{where}")
-    except Exception:  # pragma: no cover - fetch-back must never break a run
-        pass
+        else:
+            # Silence here meant "the remote wrote nothing" and "we could not collect
+            # what it wrote" were the same result -- and an audit action always writes
+            # a report, so nothing arriving is worth saying out loud.
+            remote._err(f"No reports or run-logs came back from {host}{where} — if "
+                        "the run produced any, they are still on that host")
+    except Exception as exc:  # fetch-back must never break a run...
+        # ...but a fetch-back that silently fails leaves you believing you have
+        # reports you do not.
+        remote._err(f"Could not fetch reports from {host}: {exc!r}")
 
 
 def _run_report(argv: list[str]) -> int:

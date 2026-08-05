@@ -13,15 +13,17 @@ from fettle.secure import audit
 class _Rec:
     """Records subprocess-style calls; returns a fixed rc (+ optional stdout) per
     command head."""
-    def __init__(self, rcs=None, stdouts=None):
+    def __init__(self, rcs=None, stdouts=None, stderrs=None):
         self.calls = []
         self.rcs = rcs or {}
         self.stdouts = stdouts or {}
+        self.stderrs = stderrs or {}
 
     def __call__(self, cmd, *a, **k):
         self.calls.append(list(cmd))
         return subprocess.CompletedProcess(cmd, self.rcs.get(cmd[0], 0),
-                                           stdout=self.stdouts.get(cmd[0]))
+                                           stdout=self.stdouts.get(cmd[0]),
+                                           stderr=self.stderrs.get(cmd[0]))
 
 
 # -- the shared runner -------------------------------------------------------
@@ -66,11 +68,20 @@ def test_run_ssh_args_passthrough():
     assert ssh.index("-oConnectTimeout=5") < ssh.index("h")  # ssh args precede host
 
 
-def test_run_scp_failure_aborts(capsys):
-    rec = _Rec(rcs={"scp": 1})
+def test_run_scp_failure_aborts_and_says_why(capsys):
+    """`scp -q` suppresses the only useful line. Measured: to a host that does not
+    resolve it prints just "Connection closed", while without -q you get "ssh: Could
+    not resolve hostname ...: Name or service not known" first. fettle captures the
+    output now and prints it on failure, so success stays quiet."""
+    rec = _Rec(rcs={"scp": 1},
+               stderrs={"scp": "ssh: Could not resolve hostname badhost: "
+                               "Name or service not known\nlost connection\n"})
     rc = remote.run("badhost", ["clean"], runner=rec)
     assert rc == 1 and not any(c[0] == "ssh" for c in rec.calls)
-    assert "scp to badhost failed" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "could not copy fettle to badhost" in err
+    assert "Could not resolve hostname" in err
+    assert "-q" not in [t for c in rec.calls if c[0] == "scp" for t in c]
 
 
 def test_run_propagates_remote_rc():
@@ -572,3 +583,38 @@ def test_ssh_args_reach_the_scp_upload():
     assert "-oProxyJump=jump" in scp
     ssh = next(c for c in calls if c[0] == "ssh")
     assert "-oProxyJump=jump" in ssh
+
+
+def test_errors_are_flushed_after_stdout(capsys, monkeypatch):
+    """stdout is block-buffered off a terminal, stderr never is -- so captured to a
+    file or a pipe (a group run, a CI job) every error surfaced at the TOP, detached
+    from the `=== [group] host ===` header it belonged to."""
+    order = []
+    monkeypatch.setattr(sys.stdout, "flush", lambda: order.append("flush"))
+    monkeypatch.setattr(sys.stderr, "flush", lambda: None)
+    remote._err("boom")
+    assert order == ["flush"]           # stdout drained before stderr was written
+
+
+def test_fetch_back_says_when_nothing_came_back(capsys, tmp_path, monkeypatch):
+    """Silence meant "the remote wrote nothing" and "we could not collect what it
+    wrote" were the same result -- and an audit action always writes a report."""
+
+    from fettle import cli
+    monkeypatch.setattr(cli, "_in_test", lambda: False)
+    monkeypatch.setattr(remote, "remote_hostname", lambda *a, **k: "")
+    monkeypatch.setattr(remote, "fetch_reports", lambda *a, **k: [])
+    monkeypatch.setattr(remote, "fetch_logs", lambda *a, **k: [])
+    monkeypatch.setattr(cli.Path, "home", staticmethod(lambda: tmp_path))
+    cli._fetch_remote_reports("h1", [])
+    assert "No reports or run-logs came back from h1" in capsys.readouterr().err
+
+
+def test_a_broken_fetch_back_is_reported_not_swallowed(capsys, tmp_path, monkeypatch):
+    from fettle import cli
+    monkeypatch.setattr(cli, "_in_test", lambda: False)
+    monkeypatch.setattr(remote, "remote_hostname",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
+    monkeypatch.setattr(cli.Path, "home", staticmethod(lambda: tmp_path))
+    cli._fetch_remote_reports("h1", [])          # must not raise
+    assert "Could not fetch reports from h1" in capsys.readouterr().err

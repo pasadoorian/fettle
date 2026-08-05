@@ -35,6 +35,21 @@ class RemoteGroup:
     yes: bool = False                                   # imply --yes (unattended)
 
 
+def _err(msg: str) -> None:
+    """Write to stderr *after* flushing stdout.
+
+    stdout is block-buffered when it is not a terminal; stderr never is. Captured to
+    a file or a pipe -- which is exactly what a group run or a CI job does -- every
+    error therefore surfaced at the TOP, detached from the `=== [group] host ===`
+    header it belonged to. On a four-host group you could not tell which host an
+    error came from. `Output._to_stderr` already does this; these paths use bare
+    prints and did not.
+    """
+    sys.stdout.flush()
+    print(msg, file=sys.stderr)
+    sys.stderr.flush()
+
+
 def _str_list(value) -> list[str]:
     return [str(x) for x in value if str(x).strip()] \
         if isinstance(value, (list, tuple)) else []
@@ -131,9 +146,19 @@ def _upload_zipapp(host: str, runner, ssh_args=()) -> str | None:
         pyz = Path(td) / "fettle.pyz"
         build_zipapp(pyz)
         print(f"Uploading fettle to {host}:~/{remote_name} ...")
-        scp = runner(["scp", "-q", *ssh_args, str(pyz), f"{host}:{remote_name}"])
+        # NOT `-q`: it suppresses the one line that says what went wrong. Measured --
+        # `scp -q` to a host that does not resolve prints only "Connection closed",
+        # while without it you get "ssh: Could not resolve hostname ...: Name or
+        # service not known" first. lab.py's own source documents that confusion.
+        # Captured instead, so success stays quiet and a failure is explained.
+        scp = runner(["scp", *ssh_args, str(pyz), f"{host}:{remote_name}"],
+                     capture_output=True, text=True)
     if scp.returncode != 0:
-        print(f"Error: scp to {host} failed", file=sys.stderr)
+        detail = (getattr(scp, "stderr", "") or "").strip().splitlines()
+        _err(f"Error: could not copy fettle to {host}"
+             + (f" — {detail[0]}" if detail else f" (scp exit {scp.returncode})"))
+        for line in detail[1:4]:
+            _err(f"  {line}")
         return None
     return remote_name
 

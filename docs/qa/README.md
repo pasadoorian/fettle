@@ -118,7 +118,7 @@ Status of each feature's QA pass. `—` = not started.
 | advisory-update | — | [advisory-update.md](advisory-update.md) | **swept — 3 fixed; a failing timer looked healthy** |
 | report | — | [report.md](report.md) | **swept — 4 fixed, then a UX pass: card verdict, delta, severity filter, links** |
 | web | — | — | — |
-| remote | — | — | — |
+| remote | — | [remote.md](remote.md) | **swept — 4 fixed, on top of 3 found while sweeping other features** |
 
 ### Cross-cutting behaviour — QA'd once, not per feature
 

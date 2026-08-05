@@ -10,6 +10,36 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.86.0] — remote failures now say what went wrong, and where
+
+QA pass on `fettle remote`, against the lab: single hosts, a three-host group with one
+deliberately unreachable member, and a host that does not resolve.
+
+**`scp -q` hid the only useful line.** An unreachable host produced
+`/usr/bin/scp: Connection closed` and nothing else. Measured side by side, dropping `-q`
+yields `ssh: Could not resolve hostname …: Name or service not known` first — and
+**`lab.py`'s own source documents this exact confusion**, describing the code that kept
+doing it. Now captured rather than silenced: success stays quiet, failure is explained.
+
+**Every error appeared at the top, detached from its host.** stdout is block-buffered off
+a terminal, stderr never is — so captured to a file or a pipe, which is what a group run
+or a CI job does, the errors floated above the `=== [group] host ===` header that said
+which machine they came from. `Output._to_stderr` already flushes stdout first for exactly
+this reason; these paths used bare `print`.
+
+**"Nothing came back" was silent.** The fetch-back reported only when it collected
+something, so reports that failed to arrive looked identical to none being written — and
+every audit action writes a report.
+
+**And the fetch-back could break the run it follows** — a bug I introduced in v0.79.0 by
+putting the hostname lookup outside the `try`, in a function whose docstring promises it
+never does that. Caught by writing the test for the finding above and watching it raise
+instead of print.
+
+Verified working as designed: a group continues past a dead host, exits 1 when any host
+failed, confirms before a destructive run, and falls back to the safe action set when none
+is named.
+
 ## [0.85.0] — chipsec's whole default set, and "not applicable" told apart from "fine"
 
 `sys-audit`'s `firmware` category ran exactly two modules — `common.me_mfg_mode` and
