@@ -228,6 +228,9 @@ def installed_versions() -> dict[str, str]:
 class RhelAdvisorySource(base.AdvisoryProvider):
     source = "rhel"
 
+    def scope(self, ctx) -> str:
+        return "installed system packages, matched against dnf's advisory metadata"
+
     def _osrel(self, ctx) -> dict:
         try:
             from pathlib import Path

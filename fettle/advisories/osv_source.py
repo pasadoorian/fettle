@@ -53,20 +53,15 @@ def _env_label(env: Path) -> str:
     return name
 
 
-def _unique_labels(envs) -> dict:
-    """``{env_dir: label}`` with **every label distinct**.
+def env_labels(paths) -> dict:
+    """``{path: short label}`` for display, every label distinct.
 
-    Labels are part of a finding's identity: rows are cached as ``env:package`` and
-    deduplicated on that name, so two environments sharing a label silently collapse
-    into one and a real finding disappears. Collisions are not hypothetical — a tree
-    can hold ``src/cisa-kev/venv`` and ``src/cvetool/cisa-kev/venv`` (different
-    projects, same directory name), or ``venv-fettle-dev`` and ``venv-fettle-web``
-    (same project, two environments, both labelled by their parent).
-
-    Colliding labels are widened with more path context until they separate, so the
-    common case stays short and only ambiguous ones grow.
+    Identity is the path (see :meth:`OSVSource._environments`); this is purely how a
+    path is spelled on a crowded terminal line. Collisions are still widened, because
+    two rows reading `venv` would be worse than useless — but a collision is now a
+    cosmetic problem rather than one that loses a finding.
     """
-    labels = {e: _env_label(e) for e in envs}
+    labels = {p: _env_label(Path(p)) for p in paths}
     for level in (2, 3, 4, 5):
         seen: dict = {}
         for lbl in labels.values():
@@ -74,10 +69,11 @@ def _unique_labels(envs) -> dict:
         clashing = {lbl for lbl, n in seen.items() if n > 1}
         if not clashing:
             break
-        for env, lbl in labels.items():
+        for path, lbl in labels.items():
             if lbl in clashing:
-                labels[env] = "/".join(env.parts[-level:])
+                labels[path] = "/".join(Path(path).parts[-level:])
     return labels
+
 
 
 def _site_packages(env: Path) -> list[Path]:
@@ -109,6 +105,14 @@ def _find_venvs(root: Path, max_depth: int) -> list[Path]:
 
 class OsvLanguageSource(base.AdvisoryProvider):
     source = "osv"
+
+    def scope(self, ctx) -> str:
+        roots, depth = self._cfg(ctx)
+        envs = {e for e, _sp in self._environments(ctx)}
+        where = ", ".join(roots)
+        return (f"{len(envs)} Python environment(s) found on disk — a walk of "
+                f"{where} (depth {depth}) plus uv/pipx apps and pip --user; "
+                "environments the distro does NOT manage")
 
     def is_present(self, ctx) -> bool:
         return True                              # queries OSV.dev; enumerates what's installed
@@ -183,7 +187,15 @@ class OsvLanguageSource(base.AdvisoryProvider):
         return Path(getattr(ctx, "user_home", None) or Path.home())
 
     def _environments(self, ctx) -> list[tuple[str, Path]]:
-        """``(label, site-packages dir)`` for every unmanaged Python environment."""
+        """``(environment path, site-packages dir)`` for every unmanaged environment.
+
+        The identity stored is the **path**, not a short label. Labels used to be the
+        identity, which had two costs: two environments that shrank to the same label
+        silently collapsed into one finding (hence the collision-widening below), and
+        the report named `jetkvm` without ever saying where `jetkvm` was — leaving you
+        to go and find it before you could act. Paths are unique by construction and
+        are the thing you need in order to do anything about a finding.
+        """
         out: list[tuple[str, Path]] = []
         home = self._home(ctx)
 
@@ -193,7 +205,7 @@ class OsvLanguageSource(base.AdvisoryProvider):
             import site
             user = Path(site.getusersitepackages())
             if user.is_dir() and not _under_system_prefix(user):
-                out.append(("user", user))
+                out.append((str(user), user))
         except Exception:                        # site is absent in some embeddings
             pass
 
@@ -210,9 +222,8 @@ class OsvLanguageSource(base.AdvisoryProvider):
         for root in roots:
             envs += _find_venvs(Path(root).expanduser(), depth)
 
-        labels = _unique_labels(envs)
         for env in envs:
-            out += [(labels[env], sp) for sp in _site_packages(env)]
+            out += [(str(env), sp) for sp in _site_packages(env)]
         return out
 
     def _node_dirs(self, ctx) -> list[tuple[str, Path]]:

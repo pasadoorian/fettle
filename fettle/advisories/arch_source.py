@@ -22,6 +22,10 @@ _TRACKER = "https://security.archlinux.org/"
 class ArchAdvisorySource(base.AdvisoryProvider):
     source = "arch"
 
+    def scope(self, ctx) -> str:
+        return ("installed system packages, matched against the Arch Linux "
+                "security tracker (security.archlinux.org)")
+
     def is_present(self, ctx) -> bool:
         return bool(command.which("pacman") and command.which("vercmp"))
 

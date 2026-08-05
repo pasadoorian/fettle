@@ -149,6 +149,9 @@ class _StubProvider:
     def is_present(self, ctx):
         return True
 
+    def scope(self, ctx):
+        return "installed system packages, matched against a stub tracker"
+
     def refresh(self, conn, ctx=None):
         return 2
 
@@ -576,9 +579,10 @@ def test_language_scan_finds_project_venvs_under_configured_roots(tmp_path):
     _fake_venv(root / "bifrost", ".venv", {"jinja2": "3.0.0"})
     ctx = _osv_ctx(tmp_path, venv_roots=[str(root)], venv_depth=3)
     got = {(name, ver, env) for _eco, name, ver, env in OsvLanguageSource()._pip(ctx)}
-    # labelled by PROJECT, not by the venv dir's own name ("venv"/".venv")
-    assert ("requests", "2.25.0", "SploitScan") in got
-    assert ("jinja2", "3.0.0", "bifrost") in got
+    # Identified by absolute path; the PROJECT-based short label is display-only
+    # (see test_labels_stay_short_when_unambiguous).
+    assert ("requests", "2.25.0", str(root / "SploitScan/venv")) in got
+    assert ("jinja2", "3.0.0", str(root / "bifrost/.venv")) in got
 
 
 def test_language_scan_ignores_distro_managed_site_packages(tmp_path):
@@ -598,7 +602,8 @@ def test_language_scan_finds_uv_and_pipx_apps(tmp_path):
     _fake_venv(tmp_path / ".local/share/pipx/venvs", "httpie", {"httpie": "3.0.0"})
     ctx = _osv_ctx(tmp_path, venv_roots=[])       # no project roots: tools only
     got = {(name, env) for _eco, name, _v, env in OsvLanguageSource()._pip(ctx)}
-    assert ("ruff", "ruff") in got and ("httpie", "httpie") in got
+    assert ("ruff", str(tmp_path / ".local/share/uv/tools/ruff")) in got \
+        and ("httpie", str(tmp_path / ".local/share/pipx/venvs/httpie")) in got
 
 
 def test_venv_search_is_depth_bounded(tmp_path):
@@ -632,7 +637,7 @@ def test_same_package_in_two_venvs_stays_two_findings(tmp_path):
     _fake_venv(root / "toolB", "venv", {"requests": "2.25.0"})
     ctx = _osv_ctx(tmp_path, venv_roots=[str(root)], venv_depth=3)
     envs = sorted(env for *_x, env in OsvLanguageSource()._pip(ctx))
-    assert envs == ["toolA", "toolB"]
+    assert envs == [str(root / "toolA/venv"), str(root / "toolB/venv")]
 
 
 def test_node_scan_reads_unmanaged_trees_without_npm(tmp_path):
@@ -748,11 +753,30 @@ def test_same_dirname_in_different_projects_gets_distinct_labels(tmp_path):
 
 def test_labels_stay_short_when_unambiguous(tmp_path):
     """Widening only kicks in on a collision — the common case stays readable."""
+    from fettle.advisories.osv_source import env_labels
+    a = str(tmp_path / "src/SploitScan/venv")
+    b = str(tmp_path / "src/ALEAPP/venv")
+    assert set(env_labels([a, b]).values()) == {"SploitScan", "ALEAPP"}
+
+
+def test_identity_is_the_path_not_the_label(tmp_path):
+    """QA: the report named `jetkvm (25.3.0)` and never said where jetkvm was, so
+    acting on a finding began with a `find`. The label is now display-only; the
+    stored identity is the absolute path."""
     from fettle.advisories.osv_source import OsvLanguageSource
-    _fake_venv(tmp_path / "src/SploitScan", "venv", {"requests": "2.25.0"})
-    _fake_venv(tmp_path / "src/ALEAPP", "venv", {"jinja2": "3.0.0"})
+    _fake_venv(tmp_path / "src/jetkvm", "venv", {"requests": "2.25.0"})
     ctx = _osv_ctx(tmp_path, venv_roots=[str(tmp_path / "src")])
-    assert {env for *_x, env in OsvLanguageSource()._pip(ctx)} == {"SploitScan", "ALEAPP"}
+    envs = {env for *_x, env in OsvLanguageSource()._pip(ctx)}
+    assert envs == {str(tmp_path / "src/jetkvm/venv")}
+
+
+def test_colliding_labels_still_widen(tmp_path):
+    """Two `venv` dirs under same-named projects must not both read as one name."""
+    from fettle.advisories.osv_source import env_labels
+    a = str(tmp_path / "src/kev/venv")
+    b = str(tmp_path / "src/cvetool/kev/venv")
+    labels = env_labels([a, b])
+    assert len(set(labels.values())) == 2
 
 
 # -- cargo / crates.io -------------------------------------------------------
@@ -822,3 +846,75 @@ def test_cargo_feeds_the_shared_installed_list(tmp_path):
     ctx = _osv_ctx(tmp_path, venv_roots=[])
     ecos = {eco for eco, *_rest in OsvLanguageSource()._installed(ctx)}
     assert "crates.io" in ecos
+
+
+# -- the summary must match what was actually established --------------------
+def _run_check(tmp_path, monkeypatch, *, stale=False, findings=None):
+    from fettle.advisories import check as chk
+    ctx = _ctx(tmp_path)
+
+    class P(_StubProvider):
+        def refresh(self, conn, ctx=None):
+            return -1 if stale else 2
+
+        def findings(self, ctx, conn):
+            return findings if findings is not None else []
+
+        def uncovered(self, ctx):
+            return []
+
+    monkeypatch.setattr(chk, "_providers", lambda: [P()])
+    chk.run(ctx)
+    return ctx.output
+
+
+def test_open_cves_are_not_a_green_tick(tmp_path, monkeypatch, capsys):
+    """`✓ advisories: 34 pending` — unpatched CVEs are open items, not an
+    accomplishment."""
+    out = _run_check(tmp_path, monkeypatch, findings=[_f("poppler", "High")])
+    out.print_summary()
+    assert "!" in capsys.readouterr().out
+    assert not out.had_failures
+
+
+def test_critical_with_a_fix_available_fails_the_run(tmp_path, monkeypatch):
+    out = _run_check(tmp_path, monkeypatch, findings=[_f("poppler", "Critical")])
+    assert out.had_failures
+
+
+def test_stale_feed_is_not_a_clean_bill_of_health(tmp_path, monkeypatch, capsys):
+    """A CVE check is only worth its answer: unfetchable feed data means the answer
+    covers less than it looks like it does."""
+    _run_check(tmp_path, monkeypatch, stale=True).print_summary()
+    assert "NOT current" in capsys.readouterr().out
+
+
+def test_clean_and_current_says_so(tmp_path, monkeypatch, capsys):
+    out = _run_check(tmp_path, monkeypatch, findings=[])
+    out.print_summary()
+    assert "nothing known-vulnerable" in capsys.readouterr().out
+    assert not out.had_failures
+
+
+def test_advisory_check_prints_its_summary_and_sets_the_exit_code(tmp_path, monkeypatch,
+                                                                  capsys):
+    """The summary was written to a channel nobody rendered, and the exit status was
+    a hardcoded 0 — the same pair sys-audit had (v0.71.0)."""
+    from fettle import cli
+    from fettle.advisories import check as chk
+
+    class P(_StubProvider):
+        def refresh(self, conn, ctx=None):
+            return 1
+
+        def findings(self, ctx, conn):
+            return [_f("poppler", "Critical")]
+
+        def uncovered(self, ctx):
+            return []
+
+    monkeypatch.setattr(chk, "_providers", lambda: [P()])
+    monkeypatch.setenv("HOME", str(tmp_path))
+    rc = cli._run_advisory("advisory-check", ["--no-config", "--dry-run"])
+    assert "▸ Summary" in capsys.readouterr().out
+    assert rc == 1                      # Critical, fix available

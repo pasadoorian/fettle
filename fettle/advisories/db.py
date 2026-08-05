@@ -11,7 +11,11 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+# 4: OSV rows identify an environment by absolute PATH, not by a short label.
+#    A cached row's `package` field changed shape, so old rows would render as
+#    `ALEAPP  ALEAPP` in the environments key until the TTL happened to expire.
+#    The row format is part of the schema even when the columns are not.
+SCHEMA_VERSION = 4
 
 
 def db_path(ctx) -> Path:

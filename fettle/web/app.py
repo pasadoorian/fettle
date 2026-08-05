@@ -57,7 +57,6 @@ def _audit(header: str, code) -> None:
 _READONLY_ACTIONS = [
     ("-P", "Supply-chain audit (pkg-audit)"),
     ("-A", "AUR health (aur-audit)"),
-    ("-I", "AUR IoC scan (aur-ioc-scan)"),
     ("-H", "Binary hardening (hardening-audit)"),
     ("-d", "Config drift (config-drift)"),
     ("-x", "Auto-updates posture (auto-updates)"),

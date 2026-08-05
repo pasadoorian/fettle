@@ -673,7 +673,11 @@ def _run_advisory(cmd: str, argv: list[str]) -> int:
     ctx = SimpleNamespace(config=cfg, user_home=user_home, sudo_user=sudo_user,
                           output=out, dry_run=getattr(args, "dry_run", False), root="/")
     (check.update if cmd == "advisory-update" else check.run)(ctx)
-    return 0
+    # The summary was written to a channel nobody rendered, and the exit status was a
+    # hardcoded 0 — the same pair sys-audit had. A CVE check that cannot report
+    # "Critical, fix available" to a script is not usable in one.
+    out.print_summary()
+    return 1 if out.had_failures else 0
 
 
 def _run_upgrade_check(argv: list[str]) -> int:

@@ -27,6 +27,10 @@ _URGENCY = {"high": "High", "medium": "Medium", "low": "Low",
 class DebianAdvisorySource(AptAdvisorySource):
     source = "debian"
 
+    def scope(self, ctx) -> str:
+        return ("installed system packages, matched against the Debian security "
+                "tracker (security-tracker.debian.org)")
+
     def _suite(self, ctx=None) -> str:
         return self._codename(ctx)
 

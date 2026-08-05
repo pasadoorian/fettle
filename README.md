@@ -1338,6 +1338,35 @@ fettle web --port 9000        # a different port
 
 ## Security advisories / CVE tracking — `advisory-check` *(opt-in)*
 
+**Two different things are checked, and the report says which is which.** Installed
+**system packages** are matched against your distro's security tracker. Separately, the
+**Python and Node environments the distro does not manage** — project venvs, uv/pipx
+apps, `pip install --user` — are matched against OSV. That second half means fettle
+**walks your filesystem**: `[advisories] venv_roots` (default `["~/src"]`) and
+`venv_depth` (default 5) bound the search, and every run prints what it looked at:
+
+```
+What was checked:
+  arch   installed system packages, matched against the Arch Linux security tracker
+  osv    49 Python environment(s) found on disk — a walk of ~/src (depth 5) plus
+         uv/pipx apps and pip --user; environments the distro does NOT manage
+```
+
+Findings in those environments are listed by a short label and resolved to **full paths**
+at the end of the report (and in the JSON), because "`jetkvm` is vulnerable" is not
+actionable until you know which `jetkvm`:
+
+```
+Environments (46) — the short names above, in full:
+  ALEAPP     /home/paulda/src/ALEAPP/venv
+  jetkvm     /home/paulda/src/jetkvm/venv
+```
+
+**Exit status:** `1` when something is Critical *and* a fix is already released — the one
+case that should stop an automated run. Everything else outstanding is a warning and exits
+`0`, as is a run whose feed data could not be refreshed (reported as such, never as a
+clean bill of health).
+
 `fettle advisory-check` (Arch/Manjaro, Debian, and Ubuntu for OS packages, plus
 **Python/Node packages via OSV** on any distro) tells you, per
 installed package: CVEs with **a fix you haven't applied yet**, and — the distinctive

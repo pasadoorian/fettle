@@ -610,7 +610,7 @@ MUTATING_ACTIONS = ["-c", "-o", "-u"]
 _ACTION_NAMES = {"-P": "pkg-audit", "-H": "hardening", "-d": "config-drift",
                  "-x": "auto-updates", "-r": "rebuild-chk", "-k": "kernel",
                  "-f": "firmware", "-O": "only-update", "-A": "aur-audit",
-                 "-I": "aur-ioc", "-c": "clean",
+                 "-c": "clean",
                  "-o": "orphans", "-u": "update"}
 
 # Substrings that mean "this did not run", not "this ran and found nothing". Keeping them

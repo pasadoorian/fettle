@@ -38,6 +38,10 @@ _FIXED = re.compile(
 class UbuntuAdvisorySource(AptAdvisorySource):
     source = "ubuntu"
 
+    def scope(self, ctx) -> str:
+        return ("installed system packages, matched against Ubuntu security "
+                "notices (USN)")
+
     def is_present(self, ctx) -> bool:
         return self._osrel(ctx).get("ID") == "ubuntu" and bool(command.which("dpkg"))
 

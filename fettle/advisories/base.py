@@ -79,6 +79,16 @@ class AdvisoryProvider(abc.ABC):
         """Classify installed packages against the cached data."""
 
     @abc.abstractmethod
+    def scope(self, ctx) -> str:
+        """One line saying what this provider actually looked at.
+
+        QA: the report mixed rows from the distro's package database with rows from a
+        walk of the user's home directory, distinguished only by a ``arch/`` vs
+        ``osv/`` prefix you had to already know how to read. A tool that walks your
+        filesystem should say that it did, and where.
+        """
+        return ""
+
     def uncovered(self, ctx) -> list[str]:
         """Installed packages this tracker does NOT cover (AUR/manual/foreign) — for
         the honesty report so a clean result never over-reassures."""

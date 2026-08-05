@@ -114,7 +114,7 @@ Status of each feature's QA pass. `—` = not started.
 | sys-audit | `-S` | [sys-audit.md](sys-audit.md) | **swept — 7 fixed, incl. one affecting every `fettle remote` run** |
 | upgrade-check | `-U` | — | — |
 | aur-precheck | `-p` | — | — |
-| advisory-check | — | — | — |
+| advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight)** |
 | advisory-update | — | — | — |
 | report | — | — | — |
 | web | — | — | — |

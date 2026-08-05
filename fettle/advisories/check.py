@@ -49,17 +49,25 @@ def _is_manjaro(ctx) -> bool:
 
 
 # -- refresh (best-effort) ---------------------------------------------------
-def _ensure_fresh(conn, provider, ttl, out, ctx=None, *, force=False) -> None:
+def _ensure_fresh(conn, provider, ttl, out, ctx=None, *, force=False) -> str:
+    """``""`` when the data is current, else why it isn't.
+
+    The caller needs the answer, not just the log line: a CVE check running on a
+    stale or absent feed is the "could not look" case, and it used to warn inline
+    and then contribute a clean-looking summary anyway.
+    """
     last = db.last_updated(conn, provider.source)
     if not force and last is not None and (time.time() - last) <= ttl:
-        return
+        return ""
     if out:
         out.note(f"refreshing {provider.source} advisory data…")
     n = provider.refresh(conn, ctx)
-    if n < 0 and out:
-        out.warn(f"could not fetch {provider.source} advisory data"
-                 + ("; using the cached copy." if last is not None
-                    else " (offline?) and none is cached."))
+    if n >= 0:
+        return ""
+    why = ("using a cached copy" if last is not None else "and NONE is cached")
+    if out:
+        out.warn(f"could not fetch {provider.source} advisory data — {why}.")
+    return f"{provider.source} ({why})"
 
 
 # -- filters (§19.8) ---------------------------------------------------------
@@ -126,14 +134,15 @@ def _installed_summary(f, envs) -> str:
     return f"{versions[0]}…{versions[-1]} ({len(versions)} versions)"
 
 
-def _lines_for(f, envs=()) -> list[str]:
+def _lines_for(f, envs=(), labels=None) -> list[str]:
     ver = _installed_summary(f, envs)
     ver += f" -> {f.fixed_version}" if f.fixed_version else ""
     cves = " ".join(f.cves[:4]) + (" …" if len(f.cves) > 4 else "")
     cvss = f"  ({f.cvss})" if f.cvss else ""
     out = [f"  [{f.severity:<8}] {f.source}/{f.package} {ver}   {cves}   {f.url}{cvss}"]
     if envs:
-        shown = ", ".join(f"{e} ({v})" for e, v in envs[:_ENVS_SHOWN])
+        lab = labels or {}
+        shown = ", ".join(f"{lab.get(e, e)} ({v})" for e, v in envs[:_ENVS_SHOWN])
         more = f" (+{len(envs) - _ENVS_SHOWN} more)" if len(envs) > _ENVS_SHOWN else ""
         where = (f"in {len(envs)} environments: " if len(envs) > 1 else "in ")
         out.append(f"             {where}{shown}{more}")
@@ -150,7 +159,15 @@ def _count_note(groups, raw_total) -> str:
             f"grouped by package+CVE)")
 
 
-def _render(findings, uncovered, manjaro, sources):
+def _render(findings, uncovered, manjaro, sources, scopes=()):
+    # Environments are identified by absolute path; the terminal shows a short label
+    # and the key at the end resolves it. QA: the report said `jetkvm (25.3.0)` and
+    # never said where jetkvm was, so acting on a finding began with a `find`.
+    from .osv_source import env_labels
+    env_paths = sorted({e for f in findings for e in ([f.environment] if f.environment
+                                                      else [])})
+    labels = env_labels(env_paths) if env_paths else {}
+
     pending_f = [f for f in findings if f.status == base.PENDING_FIX]
     fixable_f = [f for f in findings if f.status != base.PENDING_FIX]
     pending = sorted(_group(pending_f), key=_sev_key)
@@ -158,15 +175,24 @@ def _render(findings, uncovered, manjaro, sources):
 
     lines = [f"Security advisories  -  {datetime.now():%Y-%m-%d %H:%M:%S}", ""]
 
+    # Say what was looked at before saying what was found. Two very different things
+    # are being reported — the distro's package database, and a walk of your home
+    # directory — and the only signal used to be an `arch/` vs `osv/` row prefix.
+    if scopes:
+        lines.append("What was checked:")
+        lines += [f"  {src:<6} {text}" for src, text in scopes if text]
+        lines.append("")
+
     lines.append(f"=== Pending fixes — vulnerable, NO fix released yet ({len(pending)}) ==="
                  + _count_note(pending, len(pending_f)))
-    lines += [ln for f, envs in pending for ln in _lines_for(f, envs)] or ["  none"]
+    lines += [ln for f, envs in pending for ln in _lines_for(f, envs, labels)] \
+        or ["  none"]
 
     hi = [(f, e) for f, e in fixable if base.severity_rank(f.severity) >= 3]
     lo = [(f, e) for f, e in fixable if base.severity_rank(f.severity) < 3]
     lines += ["", f"=== Fix available — installed trails a security fix ({len(fixable)}) ==="
               + _count_note(fixable, len(fixable_f))]
-    lines += [ln for f, envs in hi for ln in _lines_for(f, envs)] \
+    lines += [ln for f, envs in hi for ln in _lines_for(f, envs, labels)] \
         or (["  none at Critical/High"] if lo else ["  none"])
     if lo:
         tally = {}
@@ -180,7 +206,7 @@ def _render(findings, uncovered, manjaro, sources):
         if unc:
             lines += ["", f"NOT covered by the {src} tracker (AUR/manual/foreign): "
                       f"{len(unc)} package(s)", "  " + " ".join(sorted(unc)),
-                      "  (their CVEs aren't tracked here — vet via `fettle -A`/`-P`/`-I`)"]
+                      "  (their CVEs aren't tracked here — vet via `fettle -P` / `-A`)"]
     if "debian" in sources:
         lines += ["", "Note: Debian coverage is by source package from the tracker; "
                   "third-party/local .debs aren't separately flagged yet."]
@@ -194,6 +220,11 @@ def _render(findings, uncovered, manjaro, sources):
         lines += ["", "Note: Ubuntu fix-available findings come from the OVAL feed. "
                   "'Vulnerable, no fix yet' (pending) is opt-in via [advisories] "
                   "ubuntu_pending + ubuntu_pending_severity (OSV-sourced)."]
+
+    if labels:
+        lines += ["", f"Environments ({len(labels)}) — the short names above, in full:"]
+        width = max(len(v) for v in labels.values())
+        lines += [f"  {labels[pth]:<{width}}  {pth}" for pth in env_paths]
 
     if manjaro and fixable:
         lines += ["", "Note: on Manjaro, 'fix available' can reflect the normal 1–2 week",
@@ -209,6 +240,10 @@ def _render(findings, uncovered, manjaro, sources):
                    "fixed_available_occurrences": len(fixable_f)},
         "uncovered": uncovered,
         "manjaro": manjaro,
+        # label -> absolute path, so a consumer of the JSON can act on a finding
+        # without re-deriving where the environment lives.
+        "environments": {labels[p]: p for p in env_paths},
+        "scopes": dict(scopes),
     }
     return lines, data
 
@@ -223,17 +258,21 @@ def run(ctx) -> None:
         return
     cfg = _cfg(ctx)
     conn = db.connect(db.db_path(ctx))
-    findings, uncovered = [], {}
+    findings, uncovered, degraded = [], {}, []
     try:
         for p in provs:
-            _ensure_fresh(conn, p, cfg["cache_ttl"], out, ctx)
+            stale = _ensure_fresh(conn, p, cfg["cache_ttl"], out, ctx)
+            if stale:
+                degraded.append(stale)
             findings += p.findings(ctx, conn)
             uncovered[p.source] = p.uncovered(ctx)
     finally:
         conn.close()
 
     findings = _apply_filters(findings, cfg)
-    lines, data = _render(findings, uncovered, _is_manjaro(ctx), [p.source for p in provs])
+    scopes = [(p.source, p.scope(ctx)) for p in provs]
+    lines, data = _render(findings, uncovered, _is_manjaro(ctx),
+                          [p.source for p in provs], scopes)
     for ln in lines:
         print(ln)
 
@@ -244,9 +283,25 @@ def run(ctx) -> None:
             out.note(f"full report saved to {report}")
         except OSError as exc:
             out.warn(f"could not write advisory-check report: {exc}")
-    out.summary_add(
-        f"advisories: {data['counts']['pending']} pending, "
-        f"{data['counts']['fixed_available']} fix-available")
+    counts = data["counts"]
+    line = (f"advisories: {counts['pending']} pending, "
+            f"{counts['fixed_available']} fix-available")
+    crit = [f for f in findings
+            if f.status != base.PENDING_FIX and base.severity_rank(f.severity) >= 4]
+    if degraded:
+        # A CVE check is only worth its answer. Stale or missing feed data means the
+        # answer covers less than it appears to, so it must not read as a clean pass.
+        out.summary_warn(f"{line} — but advisory data is NOT current: "
+                         + ", ".join(degraded))
+    elif crit:
+        # A Critical with a fix already released is the one case that should stop an
+        # automated run; `security_gate` already treats it that way before -u/-a.
+        out.summary_fail(f"{line} — {len(crit)} CRITICAL with a fix available")
+    elif counts["pending"] or counts["fixed_available"]:
+        # Unpatched CVEs are open items, not an accomplishment.
+        out.summary_warn(line)
+    else:
+        out.summary_add("advisories: nothing known-vulnerable")
 
 
 def update(ctx) -> None:

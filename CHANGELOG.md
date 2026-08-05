@@ -10,6 +10,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.74.0] — advisory-check says what it looked at, and where
+
+QA pass on `advisory-check`, prompted by two observations on sight: you could not tell
+which findings came from the package database and which from a scan of the filesystem,
+and the filesystem ones named `jetkvm` without ever saying where `jetkvm` was.
+
+**What was checked, stated up front.** Rows from the distro's package database and rows
+from a recursive walk of your home directory were interleaved, distinguished only by an
+`arch/` vs `osv/` prefix you had to already know how to read. Each provider now answers
+for itself, naming the roots and depth it walked.
+
+**Environments are identified by absolute path.** The short label used to be the
+*identity*, which had two costs: two environments that shrank to the same label could
+collapse into one finding (hence the collision-widening logic), and a finding could not
+be acted on without running `find` first. Labels are now display-only, resolved in a key
+at the end of the report and in the JSON. The cache's row format changed with it, so
+`SCHEMA_VERSION` is bumped — otherwise an existing cache renders `ALEAPP  ALEAPP` until
+its TTL expires.
+
+**The summary was written to a channel nobody rendered.** `_run_advisory` called
+`check.run()` and returned a hardcoded `0`, never calling `print_summary()`. Every
+summary line this feature produced went nowhere, and a Critical-with-a-fix could not be
+reported to a script. **The same pair sys-audit had in v0.71.0** — both are subcommands
+with their own entry point rather than pipeline actions.
+
+Now: `✗` and exit 1 for Critical with a fix available (consistent with the gate that
+already blocks `-u`/`-a` on it), `!` for anything else outstanding, `✓ nothing
+known-vulnerable` when clean — and a feed that could not be refreshed says so instead of
+passing as clean.
+
+**And a retired flag in three places.** The uncovered-packages footer advised
+`fettle -A`/`-P`/`-I`; the **web UI still offered `-I` as a runnable action**; the lab
+matrix still labelled it. `-I` was retired the day before. Grepping for `aur_ioc_scan`
+missed all three, because all three spell it `-I` — which is precisely what this
+project's own notes call the "stale-flag class of bug" and say to grep for.
+
 ## [0.73.1] — `--ssh-arg` now reaches the upload, not just the run
 
 `fettle remote --ssh-arg=…` configured the ssh command and **not** the `scp` that uploads
