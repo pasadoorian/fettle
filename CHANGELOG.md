@@ -10,6 +10,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.83.0] — multi-environment findings expand to their paths
+
+An advisory affecting several Python environments rendered as `44 environments` with the
+paths in a `title` tooltip. A tooltip cannot be copied, cannot be reached on a touch
+device, and would not have held 44 paths anyway.
+
+They expand now, with the same `[+]`/`[-]` affordance the report entries use:
+
+```
+[-] 44 environments
+    23.2.1       /home/paulda/src/ALEAPP/venv
+    24.0         /home/paulda/src/CVE-2022-31814/venv
+    26.1.1       /home/paulda/src/bifrost/.venv
+```
+
+**Oldest version first**, because within one finding the installed versions differ a lot —
+`pip` sat at **11 distinct versions across its 44 venvs** — and which ones are furthest
+behind is what turns a count into a work queue. The fix target is the same for all of them.
+
+Sorted numerically, not lexically: string order ranks `10.0` below `9.0`, and `6.8.0-99`
+above `6.8.0-124` — the trap the kernel code already documents. Rendered as plain lines
+rather than a list, so a drag-select copies clean paths.
+
+One implementation note worth recording: these are `<details>` nested inside the entry
+`<details>`, and the severity filter walked *every* `details` under a group. It now
+selects entry-level ones only, or filtering would have collapsed and revealed the
+expanders as a side effect.
+
 ## [0.82.1] — the stale-flag bug becomes a test instead of a habit
 
 `-I` was retired in v0.73.0. Grepping for `aur_ioc_scan` found none of the four places

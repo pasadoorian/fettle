@@ -242,6 +242,10 @@ section.host>h2::before{content:"# ";color:var(--dim)}
 .group{padding:.2rem .9rem .9rem}
 .group h3{margin:.9rem 0 .35rem;font-size:.9rem;color:var(--cyan)}
 .group h3::before{content:"## ";color:var(--dim)}
+details.envs{border:0;background:none;margin:0}
+details.envs>summary{padding:0;font-size:inherit;gap:.35rem}
+details.envs>pre{margin:.3rem 0 .1rem;padding:.35rem .5rem;background:#080d14;
+  border:1px solid var(--border);border-radius:3px;font-size:.74rem;overflow-x:auto}
 details{border:1px solid var(--border);border-radius:4px;margin:.35rem 0;background:#0a0f16}
 details[open]{border-color:#26384b}
 summary{cursor:pointer;padding:.4rem .65rem;font-size:.84rem;display:flex;gap:.55rem;align-items:center;list-style:none}
@@ -303,7 +307,7 @@ function apply(){
     const host=sec.dataset.host; let anyH=false;
     sec.querySelectorAll('.group').forEach(g=>{
       const type=g.dataset.type; let anyG=false;
-      g.querySelectorAll('details').forEach(d=>{
+      g.querySelectorAll('details[data-host]').forEach(d=>{
         // data-sev is -1 for entries that carry no findings at all (run-logs,
         // package lists). Those are hidden by a severity filter rather than shown
         // regardless: asking for "High and above" and getting a run-log back is not
@@ -520,6 +524,16 @@ def _render_log(entry: dict) -> str:
 _ADV_SEV = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
 
 
+def _vkey(version: str) -> tuple:
+    """Numeric sort key for a version string.
+
+    String order is wrong the moment a component reaches double digits -- it ranks
+    `6.8.0-99` above `6.8.0-124`, the exact trap the kernel code documents. Oldest
+    first is the point here, so it has to be right.
+    """
+    return tuple(int(n) for n in re.findall(r"\d+", str(version))) or (0,)
+
+
 def _render_advisories(data: dict) -> str:
     findings = data.get("findings") or []
 
@@ -532,8 +546,16 @@ def _render_advisories(data: dict) -> str:
             key = (f.get("source"), f.get("package"), f.get("fixed_version"),
                    f.get("severity"), tuple(map(str, f.get("cves") or [])))
             groups.setdefault(key, []).append(f)
-        return [(fs[0], sorted({str(f.get("environment") or "") for f in fs} - {""}))
-                for fs in groups.values()]
+        # Pairs, not just names: within one finding the installed version varies a
+        # lot -- `pip` sat at 11 distinct versions across its 44 venvs -- and which
+        # ones are furthest behind is the thing that turns a count into a work queue.
+        out = []
+        for fs in groups.values():
+            pairs = sorted({(str(f.get("environment") or ""),
+                             str(f.get("installed_version") or "")) for f in fs}
+                           - {("", "")}, key=lambda ev: (_vkey(ev[1]), ev[0]))
+            out.append((fs[0], pairs))
+        return out
 
     def _row(f: dict, envs: list) -> str:
         # The CVSS vector is reference detail, not something read at a glance -- and
@@ -555,10 +577,14 @@ def _render_advisories(data: dict) -> str:
         if not envs:
             where = '<span class=muted>&mdash;</span>'
         elif len(envs) == 1:
-            where = _esc(envs[0])
-        else:                                    # full list in the tooltip
-            where = (f'<span title="{_esc(", ".join(envs))}">{len(envs)} '
-                     f'environments</span>')
+            where = _esc(envs[0][0])
+        else:
+            # A tooltip could not be read, copied, or reached on a touch device, and
+            # 44 paths do not fit in one anyway. Same [+]/[-] idiom as the entries,
+            # plain lines so a drag-select copies clean paths.
+            body = "\n".join(f"{v:<12} {e}" for e, v in envs)
+            where = (f'<details class="envs"><summary>{len(envs)} environments'
+                     f'</summary><pre>{_esc(body)}</pre></details>')
         return (f'<tr><td>{badge}</td><td>{pkg}</td><td>{where}</td><td>{ver}</td>'
                 f'<td>{cves}</td><td>{link}</td></tr>')
 

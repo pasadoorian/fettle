@@ -1439,9 +1439,23 @@ What was checked:
          uv/pipx apps and pip --user; environments the distro does NOT manage
 ```
 
-Findings in those environments are listed by a short label and resolved to **full paths**
-at the end of the report (and in the JSON), because "`jetkvm` is vulnerable" is not
-actionable until you know which `jetkvm`:
+In the HTML report, a finding that spans several environments **expands** to show them,
+oldest version first — because within one finding the installed versions differ a lot
+(`pip` sat at 11 distinct versions across 44 venvs), and which ones are furthest behind
+is what turns a count into a work queue. Plain lines, so a drag-select copies clean paths:
+
+```
+[-] 44 environments
+    23.2.1       /home/paulda/src/ALEAPP/venv
+    23.2.1       /home/paulda/src/CVE-Half-Day-Watcher/venv
+    24.0         /home/paulda/src/CVE-2022-31814/venv
+    …
+    26.1.1       /home/paulda/src/bifrost/.venv
+```
+
+The terminal report lists them by a short label and resolves those to **full paths** at
+the end (and in the JSON), because "`jetkvm` is vulnerable" is not actionable until you
+know which `jetkvm`:
 
 ```
 Environments (46) — the short names above, in full:

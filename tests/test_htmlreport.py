@@ -575,3 +575,55 @@ def test_pkg_audit_links_every_source_not_just_the_aur(tmp_path):
                                       "package": "curl", "question": "STALE",
                                       "detail": "d"}]})
     assert "packages.debian.org/curl" in htmlreport.build(_ctx(tmp_path)).read_text()
+
+
+# -- multi-environment findings expand to real paths --------------------------
+def _adv_multi(tmp_path, pairs):
+    _write_report_json(tmp_path, "h1", "advisory-check", "20260805-120000",
+                       {"findings": [
+                           {"source": "osv", "package": "pip", "severity": "High",
+                            "installed_version": v, "environment": e,
+                            "fixed_version": "26.2", "cves": ["CVE-2025-1"],
+                            "status": "fixable", "url": "https://osv.dev/x",
+                            "group_id": "GHSA-x", "ecosystem": "PyPI"}
+                           for e, v in pairs]})
+    return htmlreport.build(_ctx(tmp_path)).read_text()
+
+
+def test_multiple_environments_expand_to_their_paths(tmp_path):
+    """It said "4 environments" with the paths in a `title` tooltip — which cannot be
+    copied, cannot be reached on a touch device, and would not have held the 44 paths
+    of the largest real group anyway."""
+    text = _adv_multi(tmp_path, [("/srv/a/venv", "23.2.1"), ("/srv/b/venv", "25.0")])
+    assert '<details class="envs"><summary>2 environments' in text
+    assert "/srv/a/venv" in text and "/srv/b/venv" in text
+    assert "title=\"/srv" not in text                  # not hidden in a tooltip
+
+
+def test_environments_are_listed_oldest_version_first(tmp_path):
+    """Which ones are furthest behind is what turns a count into a work queue."""
+    text = _adv_multi(tmp_path, [("/srv/new/venv", "26.1.1"),
+                                 ("/srv/old/venv", "23.2.1"),
+                                 ("/srv/mid/venv", "24.0")])
+    body = text[text.index("<pre>", text.index('class="envs"')):]
+    assert body.index("/srv/old") < body.index("/srv/mid") < body.index("/srv/new")
+
+
+def test_version_order_is_numeric_not_lexical():
+    """String order ranks `10.0` below `9.0` and `6.8.0-99` above `6.8.0-124` — the
+    trap the kernel code documents."""
+    v = ["1.26.20", "2.5.0", "9.0", "10.0", "23.2.1"]
+    assert sorted(v, key=htmlreport._vkey) == ["1.26.20", "2.5.0", "9.0", "10.0",
+                                               "23.2.1"]
+
+
+def test_a_single_environment_needs_no_expander(tmp_path):
+    text = _adv_multi(tmp_path, [("/srv/only/venv", "23.2.1")])
+    assert "/srv/only/venv" in text and 'class="envs"' not in text
+
+
+def test_the_filter_does_not_reach_inside_an_entry(tmp_path):
+    """The expanders are nested <details>. The severity filter walks entry-level ones
+    only — otherwise filtering would collapse or reveal them as a side effect."""
+    text = _adv_multi(tmp_path, [("/srv/a/venv", "1.0"), ("/srv/b/venv", "2.0")])
+    assert "querySelectorAll('details[data-host]')" in text
