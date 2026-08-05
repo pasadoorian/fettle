@@ -548,19 +548,24 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
     except Exception:
         cfg = None
     ctxlike = SimpleNamespace(user_home=Path.home(), sudo_user=None, config=cfg)
+    # File under what the MACHINE calls itself, not the ssh target: a lab guest on
+    # DHCP otherwise became a new "host" every time its address moved, splitting one
+    # machine's history across three dashboard cards. Falls back to the target.
+    name = remote.remote_hostname(host, ssh_args=ssh_args) or host
     try:
         _, keep = reports._settings(ctxlike)
-        dest = reports.reports_dir(ctxlike, host)
+        dest = reports.reports_dir(ctxlike, name)
         names = remote.fetch_reports(host, dest, ssh_args=ssh_args)
         if names:
             reports.prune_known(dest, keep)
-        ldest = reports.logs_dir(ctxlike, host)
+        ldest = reports.logs_dir(ctxlike, name)
         logs = remote.fetch_logs(host, ldest, ssh_args=ssh_args)
         if logs:
             reports.prune(ldest, "run", keep)
         if names or logs:
+            where = f" -> {name}" if name != host else ""
             print(f"Fetched {len(set(names))} report(s), {len(set(logs))} run-log(s) "
-                  f"from {host}")
+                  f"from {host}{where}")
     except Exception:  # pragma: no cover - fetch-back must never break a run
         pass
 

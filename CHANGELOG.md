@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.79.0] — one machine was showing up as three hosts
+
+QA pass on `fettle report`, against a real tree: 27 report directories, 20 log
+directories, 9 report types. It is the only feature whose output is a *view* of other
+features' output, so it inherits their naming decisions and is where those become visible.
+
+**One machine appeared as up to three hosts.** Reports were filed under the **ssh
+target**, so a lab guest on DHCP became a new "host" every time its lease moved — twelve
+dashboard cards for four machines, each holding a fragment of one timeline, which defeats
+the point of a view whose value is trend. The fetch-back now asks the machine what it
+calls itself (validated against a hostname pattern, falling back to the sanitised target
+when unreachable) and files under that.
+
+**A rejected command had minted a permanent host.** The dashboard had one called `clean`,
+traced to an injection test from v0.22.0:
+`fettle remote -- -oProxyCommand=touch /tmp/pwned-by-fettle clean`. **The guard worked** —
+fettle refused it — but the run-log took its host name from argv *before* validation,
+skipping anything starting with `-`, and landed on `clean`. The derivation is deleted: a
+run-log records a **local invocation** and is filed under `local`, full stop. The remote
+writes and ships back its own transcript, so the old behaviour was duplicating that under
+a second name anyway.
+
+**`pkg-integrity` rendered as a raw JSON dump** — split out of `sys-audit` in v0.72.0,
+built from the same `Scan` so its shape is identical, and never registered in the renderer
+table. Five reports affected.
+
+**Eight empty host directories rendered cards** reading "no reports / latest: –". Hidden
+now, with the count kept in the header so they are hidden rather than disappeared.
+
+Also: `render()`'s per-host loop shadowed its own `groups` parameter — harmless today
+because both lists are computed before the loop, and exactly the kind of thing that stops
+being harmless the next time someone edits below it.
+
+Historical directories are left alone; this stops new ones being created.
+
 ## [0.78.0] — a failing advisory refresh looked exactly like a healthy one
 
 QA pass on `advisory-update` — one function, no findings to render, and the feature most

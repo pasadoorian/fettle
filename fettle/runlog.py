@@ -119,18 +119,20 @@ def _early_config(argv):
 
 
 def log_host(argv) -> str:
-    """Host tag for the run-log: the target of ``fettle remote <host> …``, else
-    ``local``. Skips ``--ssh-arg X`` / ``-J X`` value pairs to find the host."""
-    if not argv or argv[0] != "remote":
-        return "local"
-    it = iter(argv[1:])
-    for tok in it:
-        if tok in ("--ssh-arg", "-J"):
-            next(it, None)
-            continue
-        if tok.startswith("-"):
-            continue
-        return tok
+    """Always ``local`` — this log is the record of a **local invocation**.
+
+    It used to dig the target out of ``fettle remote <host> …`` and file the log under
+    that name, which was wrong twice over. The remote machine writes and ships back
+    its *own* transcript (see ``_fetch_remote_reports``), so this one duplicated it
+    under a second name; and the name came from argv **before the host was validated**,
+    so a rejected command minted a directory from whatever the arguments happened to
+    contain. A real one, found on disk during QA:
+
+        fettle remote -- -oProxyCommand=touch /tmp/pwned-by-fettle clean
+
+    fettle refused it — the guard worked — and still left a permanent host called
+    `clean` on the dashboard. Deriving nothing from argv cannot go wrong.
+    """
     return "local"
 
 

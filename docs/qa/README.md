@@ -116,7 +116,7 @@ Status of each feature's QA pass. `—` = not started.
 | aur-precheck | `-p` | [aur-precheck.md](aur-precheck.md) | **swept — 4 fixed, incl. the malware gate passing on blind feeds** |
 | advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight); pre-update gate redesigned** |
 | advisory-update | — | [advisory-update.md](advisory-update.md) | **swept — 3 fixed; a failing timer looked healthy** |
-| report | — | — | — |
+| report | — | [report.md](report.md) | **swept — 4 fixed; one machine was showing up as three hosts** |
 | web | — | — | — |
 | remote | — | — | — |
 

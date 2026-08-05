@@ -118,9 +118,14 @@ def test_backfill_is_idempotent_and_nondestructive(tmp_path):
 
 # -- RH2: dashboard + per-type rendering -------------------------------------
 def test_dashboard_and_controls_present(tmp_path):
+    # A band tally with an EMPTY package list cannot happen in real data — and a host
+    # whose only report has nothing in it is now hidden, so the fixture has to carry a
+    # package or there is (correctly) no card to assert on.
     _write_report_json(tmp_path, "local", "hardening-audit", "20260721-010101",
                        {"band_tally": {"Critical": 1, "High": 2},
-                        "scan": {"analyzed": 4000}, "packages": []})
+                        "scan": {"analyzed": 4000},
+                        "packages": [{"package": "openssl", "band": "Critical",
+                                      "score": 18, "bins": 2, "missing": ["relro"]}]})
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert 'class="dashboard"' in text and 'class="card"' in text
     assert 'id="q"' in text and 'id="hostf"' in text and 'id="typef"' in text
@@ -345,3 +350,34 @@ def test_report_entry_shows_producing_command(tmp_path):
                                 "binaries": [], "checks": {}}]}}))
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert 'class="cmdtag"' in text and "fettle -H" in text   # the exact command shown
+
+
+# -- host cards: only for hosts that have something to show -------------------
+def test_empty_host_directories_are_hidden_and_counted(tmp_path):
+    """Eight of these on the QA machine, each rendering a card reading
+    "no reports / latest: -" — left behind by fetch-backs that found nothing and by
+    lab guests whose DHCP address moved."""
+    _write_report_json(tmp_path, "real-host", "pkg-audit", "20260721-010101",
+                       {"findings": [{"source": "aur", "package": "x",
+                                      "question": "KNOWN_BAD", "severity": "CRIT",
+                                      "detail": "d"}]})
+    (tmp_path / ".fettle/reports" / "ghost-host").mkdir(parents=True)
+    (tmp_path / ".fettle/logs" / "another-ghost").mkdir(parents=True)
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "real-host" in text
+    assert "ghost-host" not in text and "another-ghost" not in text
+    assert "2 empty hidden" in text              # hidden, not disappeared
+
+
+def test_pkg_integrity_has_a_renderer(tmp_path):
+    """Split out of sys-audit in v0.72.0 and built from the same `Scan`, so the
+    payload shape is identical — but it was never registered, and five reports
+    rendered as a raw JSON dump."""
+    assert htmlreport._RENDERERS.get("pkg-integrity") is htmlreport._render_sysaudit
+    _write_report_json(tmp_path, "h1", "pkg-integrity", "20260721-010101",
+                       {"categories": ["Package file integrity"],
+                        "level_counts": {"error": 1},
+                        "text": "[error] Package Integrity: 3 file(s) differ"})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    assert "Package file integrity" in text
+    assert '"level_counts"' not in text          # not a raw JSON dump

@@ -45,10 +45,19 @@ def test_log_host_local_by_default():
     assert runlog.log_host([]) == "local"
 
 
-def test_log_host_reads_remote_target():
-    assert runlog.log_host(["remote", "web-01", "-a"]) == "web-01"
-    # skips --ssh-arg / -J value pairs before the host
-    assert runlog.log_host(["remote", "--ssh-arg", "-p2222", "-J", "jump", "foo", "-H"]) == "foo"
+def test_log_host_never_derives_a_directory_from_argv():
+    """It used to file the log under the `fettle remote <host>` target, taken from
+    argv **before the host was validated** — so a rejected command minted a permanent
+    host directory. Found on disk during QA:
+
+        fettle remote -- -oProxyCommand=touch /tmp/pwned-by-fettle clean
+
+    fettle refused the command and still left a dashboard host called `clean`. The
+    remote ships back its own transcript, so this log is purely the local invocation.
+    """
+    assert runlog.log_host(["remote", "web-01", "-a"]) == "local"
+    assert runlog.log_host(["remote", "--", "-oProxyCommand=touch /tmp/x", "clean"]) \
+        == "local"
 
 
 # -- guards: record/tee must no-op in tests & when guarded -------------------

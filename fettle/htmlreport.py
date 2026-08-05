@@ -486,6 +486,10 @@ _RENDERERS = {
     "upgrade-check": _render_upgrade, "aur-audit": _render_aur_audit,
     "alien-pkgs": _render_pkglist, "obsolete-pkgs": _render_pkglist,
     "sys-audit": _render_sysaudit, "advisory-check": _render_advisories,
+    # pkg-integrity was split out of sys-audit in v0.72.0 and is built from the same
+    # `Scan`, so its payload has the identical shape — but it was never registered
+    # here, and five reports rendered as a raw JSON dump on the dashboard.
+    "pkg-integrity": _render_sysaudit,
 }
 
 
@@ -525,7 +529,7 @@ def _is_empty(entry: dict) -> bool:
     if tool == "aur-audit":
         return not (data.get("packages") or data.get("not_found_in_aur")
                     or data.get("maintainer_changes"))
-    if tool == "sys-audit":
+    if tool in ("sys-audit", "pkg-integrity"):
         return not (data.get("categories") or data.get("text"))
     if tool == "advisory-check":
         return not data.get("findings")
@@ -605,6 +609,12 @@ def _host_summary(host: dict) -> str:
             f'<div class="count muted">latest: {_esc(_fmt_ts(latest)) or "—"}</div>')
 
 
+def _has_content(entry_map: dict) -> bool:
+    """Whether this host has anything at all worth a card."""
+    return any(not _is_empty(e)
+               for kind in ("reports", "logs") for e in entry_map.get(kind, []))
+
+
 def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
            groups=frozenset()) -> str:
     # A configured group name (e.g. `fettle remote bifrost-lab`) is NOT a host — its
@@ -614,6 +624,12 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
     all_names = sorted(hostmap)
     hosts = [h for h in all_names if h not in groups]
     group_names = [h for h in all_names if h in groups]
+    # A host directory with nothing in it still rendered a card reading "no reports /
+    # latest: -". Eight of them on the QA machine, left by fetch-backs that found
+    # nothing and by lab guests whose DHCP address moved. Counted, so they are hidden
+    # rather than disappeared.
+    empty_hosts = [h for h in hosts if not _has_content(hostmap[h])]
+    hosts = [h for h in hosts if h not in empty_hosts]
     all_types = sorted({e.get("tool", "?") for h in hosts
                         for e in hostmap[h]["reports"] if not _is_empty(e)})
     host_opts = "".join(f'<option value="{_esc(h)}">{_esc(h)}</option>' for h in hosts)
@@ -624,7 +640,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
 
     sections = []
     for h in hosts:
-        groups = []
+        blocks = []          # NOT `groups` -- that is the parameter, shadowed here
         hidden = 0
         by_tool: dict[str, list[dict]] = {}
         for e in hostmap[h]["reports"]:
@@ -640,7 +656,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
                 f'{_entry_badge(e)}{_cmd_tag(e)}</summary>'
                 f'<div class="body">{_render_entry_body(e)}</div></details>'
                 for e in entries)
-            groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'
+            blocks.append(f'<div class="group" data-host="{_esc(h)}" data-type="{_esc(tool)}">'
                           f'<h3>{_section_title(tool, len(entries))}</h3>{items}</div>')
         logs = [e for e in hostmap[h]["logs"] if not _is_empty(e)]
         if logs:
@@ -650,14 +666,14 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
                 f'<span class="muted">{_esc(_run_label(e))}</span>'
                 f'</summary><div class="body">{_render_entry_body(e)}</div></details>'
                 for e in logs)
-            groups.append(f'<div class="group" data-host="{_esc(h)}" data-type="run-log">'
+            blocks.append(f'<div class="group" data-host="{_esc(h)}" data-type="run-log">'
                           f'<h3>{_section_title("run-log", len(logs))}</h3>{items}</div>')
-        if not groups:                              # nothing to show for this host
+        if not blocks:                              # nothing to show for this host
             continue
         note = (f'<div class="group muted" style="font-size:.75rem">'
                 f'({hidden} empty report(s) hidden)</div>') if hidden else ""
         sections.append(f'<section class="host" data-host="{_esc(h)}">'
-                        f'<h2>{_esc(h)}</h2>{"".join(groups)}{note}</section>')
+                        f'<h2>{_esc(h)}</h2>{"".join(blocks)}{note}</section>')
 
     # "Group runs" — a tiny pass/fail summary of each `fettle remote <group>`
     # session. The real per-host results (incl. the update output) live under each
@@ -704,7 +720,7 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
 <header>
 <div class="titlebar"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span><span class="tb-title">— ~/.fettle/report.html —</span></div>
 <div class="prompt-line"><span class="user">{_esc(user)}</span><span class="sep">@</span><span class="host">fettle</span><span class="sep">:</span><span class="cwd">~/.fettle</span><span class="dollar">$</span> <span class="cmd">fettle report</span><span class="cursor"></span></div>
-<div class="meta"># generated {_esc(generated_at)} · fettle v{_esc(version)} · {len(hosts)} host(s)</div>
+<div class="meta"># generated {_esc(generated_at)} · fettle v{_esc(version)} · {len(hosts)} host(s){_esc(f" · {len(empty_hosts)} empty hidden") if empty_hosts else ""}</div>
 <div class="controls">
 <input id="q" type="search" placeholder="grep…">
 <select id="hostf"><option value="">all hosts</option>{host_opts}</select>

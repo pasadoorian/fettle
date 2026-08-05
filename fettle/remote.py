@@ -13,6 +13,7 @@ Phase-3 plan; the zipapp is the current transport.
 from __future__ import annotations
 
 import secrets
+import re
 import shlex
 import shutil
 import subprocess
@@ -135,6 +136,33 @@ def _upload_zipapp(host: str, runner, ssh_args=()) -> str | None:
         print(f"Error: scp to {host} failed", file=sys.stderr)
         return None
     return remote_name
+
+
+_HOSTNAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+
+
+def remote_hostname(host: str, *, ssh_args=(), runner=subprocess.run) -> str:
+    """What the remote machine calls itself, or ``""``.
+
+    Reports were filed under the **ssh target**, so a lab guest on DHCP became a new
+    "host" every time its address moved — one machine showed up three times on the
+    dashboard with its history split between them. The machine's own name is stable
+    across that.
+
+    Best-effort and validated: an unreachable host or a surprising answer falls back
+    to the caller's sanitised target rather than turning arbitrary remote output into
+    a local path component.
+    """
+    try:
+        proc = runner(["ssh", *ssh_args, host, "hostname"],
+                      capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if getattr(proc, "returncode", 1) != 0:
+        return ""
+    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    name = lines[-1] if lines else ""
+    return name if _HOSTNAME_OK.match(name) else ""
 
 
 def _remote_cmd(remote_name: str, fettle_args, *, sudo: bool) -> str:
