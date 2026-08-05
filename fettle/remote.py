@@ -112,17 +112,25 @@ def _valid_host(host: str) -> bool:
     return True
 
 
-def _upload_zipapp(host: str, runner) -> str | None:
+def _upload_zipapp(host: str, runner, ssh_args=()) -> str | None:
     """Build the fettle zipapp and scp it to the remote user's ``$HOME`` under a
     random, unpredictable name (not world-writable ``/tmp``, so another local user
     can't pre-place or swap the file we then run under sudo). Returns the remote
-    filename relative to ``$HOME``, or ``None`` on upload failure."""
+    filename relative to ``$HOME``, or ``None`` on upload failure.
+
+    ``ssh_args`` reaches scp too. It did not until v0.73.1: ``--ssh-arg`` configured
+    the *run* but not the *upload*, so any host that needs an option to be reachable
+    at all — a jump host, a non-default port, a specific known_hosts — failed here,
+    reported as scp's uninformative "Connection closed". These are ``-o KEY=VALUE``
+    options, which ssh and scp both accept; the docs say so, and scp's differing
+    flags are why :func:`_fetch_remote_dir` tunnels tar over ssh instead.
+    """
     remote_name = f".fettle-remote.{secrets.token_hex(16)}.pyz"
     with tempfile.TemporaryDirectory() as td:
         pyz = Path(td) / "fettle.pyz"
         build_zipapp(pyz)
         print(f"Uploading fettle to {host}:~/{remote_name} ...")
-        scp = runner(["scp", "-q", str(pyz), f"{host}:{remote_name}"])
+        scp = runner(["scp", "-q", *ssh_args, str(pyz), f"{host}:{remote_name}"])
     if scp.returncode != 0:
         print(f"Error: scp to {host} failed", file=sys.stderr)
         return None
@@ -154,7 +162,7 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     if not _valid_host(host):
         return 1
     print(f"Remote target: {host}  (sudo={'on' if sudo else 'off'})")
-    remote_name = _upload_zipapp(host, runner)
+    remote_name = _upload_zipapp(host, runner, ssh_args)
     if remote_name is None:
         return 1
     # -t allocates a PTY for interactive sudo/prompts + ANSI; skip it for
@@ -238,7 +246,7 @@ def collect(host: str, fettle_args, *, ssh_args=(), runner=subprocess.run) -> st
     on failure. Rootless, no PTY — for ``upgrade-check --collect``, where the
     remote prints a snapshot we analyse locally. Remote stderr passes through."""
     print(f"Remote target: {host}  (collect; no sudo)")
-    remote_name = _upload_zipapp(host, runner)
+    remote_name = _upload_zipapp(host, runner, ssh_args)
     if remote_name is None:
         return None
     ssh_cmd = ["ssh", *ssh_args, host, _remote_cmd(remote_name, fettle_args, sudo=False)]

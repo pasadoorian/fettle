@@ -250,31 +250,90 @@ def vm_ip(conf: dict, target: str) -> str | None:
 
 
 
-def forget_host_key(addr: str) -> None:
-    """Drop any known_hosts entry for `addr` on the controlling machine.
+# Lab host keys live in their OWN file, never the real ~/.ssh/known_hosts. These VMs
+# are rebuilt and snapshot-reverted constantly and their keys change every time; mixed
+# in with real hosts that produces a stream of REMOTE HOST IDENTIFICATION HAS CHANGED
+# warnings, and the habit of clicking past those is worth more than the convenience.
+# Delete this file to reset the lab's trust wholesale, losing nothing else.
+#
+# Pair it with, in ~/.ssh/config:
+#
+#     Host fettle-fedora
+#         HostName 192.168.1.252   # the only guest the router does not register in DNS
+#
+#     Host fettle-*
+#         User paulda
+#         IdentityFile ~/.ssh/paulda-ecdsa
+#         IdentitiesOnly yes
+#         UserKnownHostsFile ~/.ssh/known_hosts.fettle-lab
+#         StrictHostKeyChecking accept-new
+LAB_KNOWN_HOSTS = Path("~/.ssh/known_hosts.fettle-lab").expanduser()
+_DEFAULT_KNOWN_HOSTS = Path("~/.ssh/known_hosts").expanduser()
+
+
+def ssh_opts() -> list[str]:
+    """ssh/scp options that point at the lab's own known_hosts."""
+    return ["-o", f"UserKnownHostsFile={LAB_KNOWN_HOSTS}",
+            "-o", "StrictHostKeyChecking=accept-new"]
+
+
+def host_names(target: str, addr: str) -> list[str]:
+    """Every spelling ssh might look this guest up under.
+
+    ssh keys known_hosts by the value it actually connects to: the name you typed,
+    or `HostName` when the config overrides it. lab.py connects by address while a
+    human types `ssh fettle-debian`, so both have to be recorded or one of them
+    prompts. Measured, not assumed — with `HostName` set, the entry landed under the
+    address; without it, under the name.
+    """
+    return [f"fettle-{target}", addr]
+
+
+def forget_host_key(addr: str, target: str | None = None) -> None:
+    """Drop stale entries for this guest on the controlling machine.
 
     Lab VMs take DHCP addresses off the real LAN, so an address is very likely to have
     belonged to something else before. A stale entry makes ssh refuse the new host, and
     `scp` reports it only as "Connection closed" — which reads like a broken guest rather
     than a local trust problem. Measured: this is exactly what happened on the first VM.
+
+    The default known_hosts is cleaned too, not written: lab runs before this change
+    wrote there, and one of those entries would still block a connection.
     """
-    subprocess.run(["ssh-keygen", "-R", addr], capture_output=True, text=True)
+    hosts = host_names(target, addr) if target else [addr]
+    for path in (LAB_KNOWN_HOSTS, _DEFAULT_KNOWN_HOSTS):
+        if not path.exists():
+            continue
+        for host in hosts:
+            subprocess.run(["ssh-keygen", "-R", host, "-f", str(path)],
+                           capture_output=True, text=True)
 
 
-def trust_host_key(addr: str) -> None:
-    """Record the guest's current host key on the controlling machine.
+def trust_host_key(addr: str, target: str | None = None) -> None:
+    """Record the guest's current host key, under every name it answers to.
 
     Removing the stale entry is only half the job: an *unknown* host is just as fatal to
     anything non-interactive, because it cannot answer the first-contact prompt. `fettle
     remote` runs `scp -q`, which reports that only as "Connection closed" — measured, and
     indistinguishable from a broken guest until you run scp by hand.
+
+    Written unhashed on purpose. `ssh-keyscan -H` hides which host a line belongs to,
+    which is the right default for a file full of real hosts and the wrong one for a
+    scratch file you want to read and prune by hand.
     """
-    known = Path("~/.ssh/known_hosts").expanduser()
-    scan = subprocess.run(["ssh-keyscan", "-H", addr], capture_output=True, text=True)
-    if scan.returncode == 0 and scan.stdout.strip():
-        known.parent.mkdir(mode=0o700, exist_ok=True)
-        with known.open("a") as fh:
-            fh.write(scan.stdout)
+    scan = subprocess.run(["ssh-keyscan", addr], capture_output=True, text=True)
+    if scan.returncode != 0 or not scan.stdout.strip():
+        return
+    names = ",".join(host_names(target, addr)) if target else addr
+    lines = [f"{names} {ln.split(' ', 1)[1]}"
+             for ln in scan.stdout.splitlines()
+             if ln.strip() and not ln.startswith("#") and " " in ln]
+    if not lines:
+        return
+    LAB_KNOWN_HOSTS.parent.mkdir(mode=0o700, exist_ok=True)
+    with LAB_KNOWN_HOSTS.open("a") as fh:
+        fh.write("\n".join(lines) + "\n")
+    LAB_KNOWN_HOSTS.chmod(0o600)
 
 
 def agent_exec(conf: dict, target: str, shell_cmd: str) -> None:
@@ -312,18 +371,21 @@ def wait_ready(conf: dict, target: str, *, tries: int = 60) -> str:
         if not addr:
             addr = vm_ip(conf, target)
             if addr:
-                forget_host_key(addr)
+                forget_host_key(addr, target)
         if addr:
             # Prime the bridge/switch MAC learning from the guest side.
             agent_exec(conf, target, "ping -c2 -W2 $(ip route | "
                                      "awk '/^default/{print $3}') >/dev/null 2>&1")
             probe = subprocess.run(
+                # First contact, before any key is recorded: this one probe stays
+                # key-agnostic on purpose. trust_host_key() below is what establishes
+                # trust, and everything after it verifies against the lab file.
                 ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
                  "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=5",
                  f"{spec['user']}@{addr}", "cloud-init status --wait >/dev/null 2>&1; true"],
                 capture_output=True, text=True)
             if probe.returncode == 0:
-                trust_host_key(addr)
+                trust_host_key(addr, target)
                 return addr
         time.sleep(10)
         print("    ...")
@@ -527,8 +589,7 @@ def cmd_ip(conf, args) -> int:
 def cmd_ssh(conf, args) -> int:
     spec = TARGETS.get(args.target) or die(f"unknown target {args.target!r}")
     addr = vm_ip(conf, args.target) or die("no address; is it running?")
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-           f"{spec['user']}@{addr}", *args.rest]
+    cmd = ["ssh", *ssh_opts(), f"{spec['user']}@{addr}", *args.rest]
     return subprocess.run(cmd).returncode
 
 
@@ -600,7 +661,9 @@ def _run_action(conf, target, spec, addr, action, logdir):
     ssh and the run-log fetch-back at the same time.
     """
     import subprocess as sp
-    argv = ["python", "-m", "fettle", "remote", f"{spec['user']}@{addr}", action]
+    argv = ["python", "-m", "fettle", "remote"]
+    argv += [f"--ssh-arg={opt}" for opt in ssh_opts()]
+    argv += [f"{spec['user']}@{addr}", action]
     if action in MUTATING_ACTIONS:
         argv.append("--yes")
     argv += spec.get("fettle_args", [])
@@ -675,7 +738,7 @@ def cmd_destroy(conf, args) -> int:
         return 0
     addr = vm_ip(conf, args.target)
     if addr:
-        forget_host_key(addr)
+        forget_host_key(addr, args.target)
     print(f"==> destroying {name} (base image is kept)")
     virsh(conf, f"destroy {name}", check=False)
     virsh(conf, f"snapshot-delete {name} pristine --metadata", check=False)

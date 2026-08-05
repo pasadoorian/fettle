@@ -555,3 +555,20 @@ def test_zipapp_propagates_the_exit_code(tmp_path):
     proc = subprocess.run([sys.executable, str(pyz), "-A", "-S"],
                           capture_output=True, text=True)
     assert proc.returncode == 2, proc.stdout + proc.stderr
+
+
+def test_ssh_args_reach_the_scp_upload():
+    """`--ssh-arg` configured the run but not the upload, so a host that needs an
+    option to be reachable at all — a jump host, a port, a specific known_hosts —
+    failed at scp, reported as its uninformative "Connection closed"."""
+    calls = []
+
+    def runner(cmd, **kw):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    remote.run("host1", ["clean"], ssh_args=["-oProxyJump=jump"], runner=runner)
+    scp = next(c for c in calls if c[0] == "scp")
+    assert "-oProxyJump=jump" in scp
+    ssh = next(c for c in calls if c[0] == "ssh")
+    assert "-oProxyJump=jump" in ssh

@@ -131,7 +131,34 @@ without hardcoding DHCP addresses — which change whenever a VM is rebuilt.
 
 **One quirk:** a NetworkManager-based guest (Fedora) takes its DHCP lease *before*
 cloud-init sets the hostname, so it registers under the wrong name on first boot.
-`systemctl restart NetworkManager` once fixes it permanently.
+`systemctl restart NetworkManager` once fixes it permanently — until then it needs an
+explicit `HostName` below.
+
+### `~/.ssh/config`
+
+```sshconfig
+Host fettle-fedora
+    HostName 192.168.1.252      # only while its DNS registration is missing
+
+Host fettle-*
+    User paulda                 # whatever you set as ADMIN_USER
+    IdentityFile ~/.ssh/paulda-ecdsa
+    IdentitiesOnly yes
+    UserKnownHostsFile ~/.ssh/known_hosts.fettle-lab
+    StrictHostKeyChecking accept-new
+```
+
+**Lab host keys live in their own file** (`~/.ssh/known_hosts.fettle-lab`), and `lab.py`
+writes there rather than to your real `known_hosts`. These VMs are rebuilt and
+snapshot-reverted constantly and their keys change every time; mixed in with real hosts
+that produces a steady stream of REMOTE HOST IDENTIFICATION HAS CHANGED warnings, and
+the habit of clicking past those costs more than the convenience is worth. `rm` the file
+to reset the lab's trust wholesale, losing nothing else.
+
+`lab.py` records each guest under **both** spellings — `fettle-<target>,<address>` on one
+line — because ssh keys `known_hosts` by whatever it actually connects to: the name you
+typed, or `HostName` when the config overrides it. `lab.py` connects by address while you
+type a name, so both have to be there or one of them prompts.
 
 ## Known limits
 

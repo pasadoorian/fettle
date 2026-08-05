@@ -10,6 +10,21 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.73.1] — `--ssh-arg` now reaches the upload, not just the run
+
+`fettle remote --ssh-arg=…` configured the ssh command and **not** the `scp` that uploads
+the zipapp — `_upload_zipapp` never took the argument. So any host that needs an option
+to be reachable *at all* (a jump host, a non-default port, a specific `known_hosts`)
+failed before it started, reported as scp's uninformative `Connection closed`. Found
+while pointing the VM lab at its own `known_hosts` file, which is exactly that case.
+
+The lab tooling (`tests/lab/lab.py`, not shipped) now keeps guest host keys in
+`~/.ssh/known_hosts.fettle-lab` instead of the real one: those VMs are rebuilt constantly
+and their keys change every time, and training yourself to click past REMOTE HOST
+IDENTIFICATION HAS CHANGED is a bad trade for the convenience. Each guest is recorded
+under both `fettle-<target>` and its address, because ssh keys `known_hosts` by whatever
+it actually connects to — the lab connects by address while a human types the name.
+
 ## [0.73.0] — four AUR views become three, and each one says when to use it
 
 Four commands looked at AUR packages and printed overlapping answers. Reading the code
