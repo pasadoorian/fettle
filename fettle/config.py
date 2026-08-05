@@ -80,8 +80,10 @@ class Config:
     # (seconds before the SQLite cache is refreshed on a run, default 21600),
     # severity_threshold ("" = all, else Critical/High/Medium/Low), exclude_packages
     # (name globs), exclude_classes (distro status/class tags to hide, e.g. Debian
-    # "unimportant"/"no-dsa"), warn_gate (bool, default true — extra confirm before
-    # `-u`/`-a` when Critical CVEs are unpatched). Ubuntu "no fix yet" (pending) is
+    # "unimportant"/"no-dsa"). `warn_gate` was retired in v0.75.0 — the pre-upgrade
+    # confirm it controlled argued for the harmful answer, since an upgrade is what
+    # installs available fixes; a run that still sets it is told so. Ubuntu "no fix
+    # yet" (pending) is
     # opt-in via ubuntu_pending (bool, default false) with ubuntu_pending_severity
     # (low|medium|high|critical, default high) as its floor — a real box has ~1300
     # pending Ubuntu CVEs, mostly negligible. The OSV language scan covers only

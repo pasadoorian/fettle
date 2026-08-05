@@ -94,13 +94,10 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
     if ctx.dry_run:
         _preview_transaction(backend, ctx)
     else:
-        # Best-effort security gate (Phase 19): warn (and, if enabled, confirm) on
-        # unpatched Critical CVEs before a real upgrade. Never blocks on missing data.
-        from .advisories.check import security_gate
-        if not security_gate(ctx):
-            out.warn("update skipped — review with `fettle advisory-check`.")
-            out.summary_add("update SKIPPED at the security gate")
-            return
+        # Best-effort security posture before a real upgrade (Phase 19). Informational
+        # only: it never blocks, because the update is what installs available fixes.
+        from .advisories.check import security_note
+        security_note(ctx)
 
     failed_before = len(ctx.failed_commands)
     results = [backend.update_system(ctx), backend.update_extras(ctx)]

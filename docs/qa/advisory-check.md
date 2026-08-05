@@ -109,6 +109,62 @@ Retiring the flag and grepping for `aur_ioc_scan` was not enough — these three
 to grep for the *flag letters* after any rename. That instruction existed, and I did not
 follow it.
 
+---
+
+## The pre-update gate — swept separately (v0.75.0)
+
+`security_gate` was the one path where advisory data could **block a mutating action**:
+`fettle -u` / `-a` called it before a real upgrade, and it could return `False` to abort.
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-AD-12 | **The question it asks is the right one** | **FAIL → redesigned** (SG-01) |
+| QA-AD-13 | **Its count agrees with the report it cites** | **FAIL → fixed** (SG-02) |
+| QA-AD-14 | **Aborting is not reported as success** | **FAIL → fixed by removal** (SG-03) |
+| QA-AD-15 | Severity detection matches the rest of the codebase | **FAIL → fixed** (SG-04) |
+| QA-AD-16 | Never fetches; a network problem cannot delay an upgrade | PASS *(by design)* |
+| QA-AD-17 | Never raises; an advisory bug cannot break an update | PASS *(by design)* |
+| QA-AD-18 | `--yes` is never silently blocked | PASS — and now unreachable by construction |
+
+### SG-01 — the prompt argued for the harmful answer. REDESIGNED v0.75.0
+On an unpatched Critical it asked:
+
+> `Continue with the update despite unpatched Critical CVEs?`
+
+Measured on the QA host: **732 of 770 findings had a fix already released.** So the
+update it offered to abort was precisely the thing that installs those fixes, and
+answering "no" left the machine both unpatched *and* still vulnerable. For a Critical
+with **no** fix released, aborting does not help either — the update is unrelated to it.
+There is no state of the world in which the abort is the better answer.
+
+**The codebase already contained the argument against its own behaviour.** RHEL's
+`_signature_gate` docstring explains the asymmetry it observes with the advisory gate:
+*"an unpatched CVE is a pre-existing condition that blocking does not fix — refusing to
+upgrade leaves you unpatched, which is worse."* That was written as a contrast, while
+the advisory side did the opposite. The two agree now.
+
+`security_gate` is now `security_note`: it prints the posture and returns nothing. It
+separates Criticals **with** a fix released (a note — this upgrade should install them,
+named so you can verify afterwards) from Criticals with **none** (a warning — the one
+thing the upgrade genuinely cannot address). `[advisories] warn_gate` is retired, and a
+config that still sets it is told so rather than silently believing it is guarded.
+
+### SG-02 — the note contradicted the document it cited. FIXED v0.75.0
+```
+security: 770 advisory finding(s) affect installed packages … see `fettle advisory-check`
+```
+Running `fettle advisory-check` then showed **176**. The note counted raw findings; the
+report groups by package+CVE. Both numbers were correct and no one could reconcile them.
+The note now counts what the report shows.
+
+### SG-03 — an aborted update wore a green tick. FIXED v0.75.0
+`summary_add("update SKIPPED at the security gate")` — `✓` on an upgrade that did not
+happen. Removed along with the abort path it described.
+
+### SG-04 — `f.severity == "Critical"`
+String equality where the rest of the module uses `severity_rank`. Correct against
+today's providers and silently wrong against any that spells it differently. Now ranked.
+
 ## Not exercised
 
 - **Debian/Ubuntu/RHEL trackers** were not re-run in this sweep; the findings above are

@@ -477,58 +477,66 @@ def test_osv_dedup_tolerates_short_rows_on_collision():
     assert len(dedup_rows([r1, r2])) == 1            # collapses, no crash
 
 
-# -- update-flow security gate (best-effort, §19.8) --------------------------
-def test_gate_proceeds_when_no_cache(tmp_path):
-    # no advisories.db present -> never blocks a routine update
-    assert check.security_gate(_ctx(tmp_path)) is True
-
-
-def test_gate_confirms_on_critical(tmp_path):
-    findings = [_f("openssl", "Critical")]
+# -- pre-update security note (informational only, never blocks) ------------
+def _note(tmp_path, findings, **ctxkw):
+    """Drive security_note with stubbed findings; returns captured output."""
     with patch("fettle.advisories.check._providers",
-               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
+               lambda: [type("P", (_StubProvider,),
+                             {"findings": lambda s, c, conn: findings})()]):
         ctx = _ctx(tmp_path, Config())
+        for k, v in ctxkw.items():
+            setattr(ctx, k, v)
         db.connect(db.db_path(ctx)).close()
-        ctx.assume_yes = False
-        ctx.confirm = lambda *a, **k: False          # user says no
-        assert check.security_gate(ctx) is False     # -> abort
-        ctx.confirm = lambda *a, **k: True           # user says yes
-        assert check.security_gate(ctx) is True
+        check.security_note(ctx)
+        return ctx
 
 
-def test_gate_no_critical_proceeds(tmp_path):
-    findings = [_f("vim", "High")]                   # High, not Critical -> no gate
-    with patch("fettle.advisories.check._providers",
-               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
-        ctx = _ctx(tmp_path, Config())
-        db.connect(db.db_path(ctx)).close()
-        ctx.assume_yes = False
-        ctx.confirm = lambda *a, **k: False          # would abort IF asked
-        assert check.security_gate(ctx) is True       # not asked -> proceeds
+def test_note_says_nothing_without_a_cache(tmp_path, capsys):
+    check.security_note(_ctx(tmp_path))              # no advisories.db present
+    assert capsys.readouterr().out == ""
 
 
-def test_gate_under_assume_yes_never_blocks(tmp_path):
-    findings = [_f("openssl", "Critical")]
-    with patch("fettle.advisories.check._providers",
-               lambda: [type("P", (_StubProvider,), {"findings": lambda s, c, conn: findings})()]):
-        ctx = _ctx(tmp_path, Config())
-        db.connect(db.db_path(ctx)).close()
-        ctx.assume_yes = True
-        ctx.confirm = lambda *a, **k: False          # must NOT be consulted
-        assert check.security_gate(ctx) is True
+def test_note_never_asks_and_never_blocks(tmp_path):
+    """It was a gate: an unpatched Critical prompted "Continue with the update
+    despite unpatched Critical CVEs?" and False aborted the upgrade. That argues for
+    the harmful answer — the update is what installs the fixes. It informs now."""
+    asked = []
+    _note(tmp_path, [_f("openssl", "Critical")], assume_yes=False,
+          confirm=lambda *a, **k: asked.append(a) or False)
+    assert not asked                                 # never consulted
+    assert check.security_note(_ctx(tmp_path)) is None
 
 
-def test_update_action_aborts_when_gate_false():
+def test_note_separates_fixable_criticals_from_pending(tmp_path, capsys):
+    """The distinction is the whole point: an upgrade installs one and cannot touch
+    the other, so only the second is worth a warning."""
+    fixable = _f("openssl", "Critical")
+    pending = base.AdvisoryFinding(
+        source="arch", package="djvulibre", installed_version="3.5-1",
+        status=base.PENDING_FIX, severity="Critical", cves=["CVE-2025-1"])
+    _note(tmp_path, [fixable, pending])
+    cap = capsys.readouterr()
+    assert "should install them: openssl" in cap.out
+    assert "NO fix released" in cap.out + cap.err and "djvulibre" in cap.out + cap.err
+
+
+def test_note_counts_what_advisory_check_shows(tmp_path, capsys):
+    """It counted raw findings and pointed at a report that groups them, so the note
+    said 770 and the report said 176."""
+    dup = [_f("openssl", "High"), _f("openssl", "High")]
+    _note(tmp_path, dup)
+    assert "1 known-vulnerable package(s)" in capsys.readouterr().out
+
+
+def test_update_action_is_never_blocked_by_advisories():
     from unittest.mock import MagicMock
 
     from fettle import actions
     backend, ctx = MagicMock(), MagicMock()
     ctx.dry_run = False
-    with patch("fettle.advisories.check.security_gate", return_value=False):
+    with patch("fettle.advisories.check.security_note") as note:
         actions._update(backend, ctx)
-    backend.update_system.assert_not_called()        # gate aborted -> no upgrade
-    with patch("fettle.advisories.check.security_gate", return_value=True):
-        actions._update(backend, ctx)
+    note.assert_called_once()
     backend.update_system.assert_called_once()
 
 

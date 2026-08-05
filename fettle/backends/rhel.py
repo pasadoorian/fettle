@@ -1115,11 +1115,13 @@ class RhelBackend(PackageBackend):
         """Ask before installing packages whose signatures nobody checked.
 
         Returns ``False`` only to abort. Note the deliberate asymmetry with
-        :func:`~fettle.advisories.check.security_gate`, which fails *open*: an unpatched
-        CVE is a pre-existing condition that blocking does not fix — refusing to upgrade
-        leaves you unpatched, which is worse. ``gpgcheck=0`` is the opposite: the
-        upgrade itself is the delivery mechanism, so an unreadable stdin defaults to
-        *not* installing unverified packages.
+        :func:`~fettle.advisories.check.security_note`, which does not gate at all: an
+        unpatched CVE is a pre-existing condition that blocking does not fix — refusing
+        to upgrade leaves you unpatched, which is worse. (That reasoning was written
+        here first, while the advisory side still prompted to abort; v0.75.0 made the
+        two agree.) ``gpgcheck=0`` is the opposite: the upgrade itself is the delivery
+        mechanism, so an unreadable stdin defaults to *not* installing unverified
+        packages.
         """
         repos = self._unsigned_repos(ctx)
         if not repos:

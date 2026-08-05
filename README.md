@@ -1385,13 +1385,17 @@ The report leads with a **Pending fixes** callout (vulnerable, no fix yet), then
 severity-banded **Fix available** table, then the packages the tracker **doesn't
 cover** (AUR/manual/foreign) so a clean result never over-reassures. Version
 comparison is delegated to `vercmp` (Arch) / `dpkg --compare-versions` (Debian). It's
-**opt-in** (never in the default `-a` set); on `fettle -u`/`-a` a best-effort gate
-warns (and, with `[advisories] warn_gate`, confirms) on unpatched **Critical** CVEs —
-but never blocks a routine update on missing/stale/offline data.
+**opt-in** (never in the default `-a` set). On `fettle -u`/`-a` it prints a
+best-effort security note before the upgrade — how many packages are known-vulnerable,
+how many Critical, and which Criticals have **no fix released** (the only ones an
+upgrade cannot address). It **never blocks the update**: an unpatched CVE is a
+pre-existing condition that refusing to upgrade does not fix, and for anything with a
+fix released the upgrade *is* the remedy. It reads only the cached database, so a
+network problem can never delay an upgrade either.
 
 `[advisories]` config: `cache_ttl`, `severity_threshold`, `exclude_packages` (globs),
 `exclude_classes` (hide distro class tags, e.g. Debian `["nodsa","unimportant",
-"end-of-life"]`), `warn_gate`, `ubuntu_pending` / `ubuntu_pending_severity` (opt-in
+"end-of-life"]`), `ubuntu_pending` / `ubuntu_pending_severity` (opt-in
 Ubuntu "no fix yet", below), and `venv_roots` / `venv_depth` (where to hunt for
 virtualenvs, below). On Manjaro, "fix available" is phrased as possible sync lag, not
 alarm.

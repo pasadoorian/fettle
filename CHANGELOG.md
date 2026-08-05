@@ -10,6 +10,39 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.75.0] — the pre-update security gate argued for the harmful answer
+
+`fettle -u` / `-a` ran a `security_gate` before a real upgrade, and on an unpatched
+Critical CVE it asked:
+
+> `Continue with the update despite unpatched Critical CVEs?`
+
+Measured on the QA host: **732 of 770 findings had a fix already released.** The update
+it offered to abort was precisely what installs those fixes — answering "no" left the
+machine unpatched *and* still vulnerable. For a Critical with no fix released, aborting
+does not help either, since the update is unrelated to it. There is no state of the world
+where the abort is the better answer.
+
+The reasoning was already in the codebase, as a *contrast*: RHEL's `_signature_gate`
+docstring notes that "an unpatched CVE is a pre-existing condition that blocking does not
+fix — refusing to upgrade leaves you unpatched, which is worse", while the advisory side
+did the opposite. The two agree now.
+
+`security_gate` is now **`security_note`** — it informs and gets out of the way:
+
+- Criticals **with a fix released**: a note naming them, since this upgrade should
+  install them and you will want to check afterwards.
+- Criticals with **no fix released**: a warning — the one thing an upgrade cannot fix.
+- Never blocks, never prompts, still never fetches and never raises.
+
+`[advisories] warn_gate` is retired; a config that still sets it is told so, instead of
+leaving someone believing their updates are guarded.
+
+**Two more from the same sweep.** The note said `770 advisory finding(s) … see
+`fettle advisory-check``, and that report showed **176** — it counted raw findings while
+the report groups by package+CVE, so the note contradicted the document it cited. And
+aborting an upgrade was reported as `✓ update SKIPPED at the security gate`.
+
 ## [0.74.0] — advisory-check says what it looked at, and where
 
 QA pass on `advisory-check`, prompted by two observations on sight: you could not tell

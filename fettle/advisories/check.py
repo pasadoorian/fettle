@@ -27,6 +27,12 @@ def _providers():
             RhelAdvisorySource(), OsvLanguageSource()]
 
 
+_RETIRED_KEYS = {
+    "warn_gate": ("the pre-update confirm was removed in v0.75.0 — an update installs "
+                  "available fixes, so nothing about CVE state blocks it now"),
+}
+
+
 def _cfg(ctx) -> dict:
     a = getattr(ctx.config, "advisories", None) or {}
     return {
@@ -34,8 +40,17 @@ def _cfg(ctx) -> dict:
         "severity_threshold": str(a.get("severity_threshold", "") or ""),
         "exclude_packages": a.get("exclude_packages", []) or [],
         "exclude_classes": [str(c) for c in (a.get("exclude_classes", []) or [])],
-        "warn_gate": bool(a.get("warn_gate", True)),
     }
+
+
+def _warn_retired_keys(ctx) -> None:
+    """A config key that no longer does anything must say so. Left silent, someone
+    keeps believing `warn_gate = true` is guarding their updates."""
+    a = getattr(getattr(ctx, "config", None), "advisories", None) or {}
+    out = getattr(ctx, "output", None)
+    for key, why in _RETIRED_KEYS.items():
+        if key in a and out:
+            out.warn(f"[advisories] {key} no longer has any effect — {why}.")
 
 
 def _is_manjaro(ctx) -> bool:
@@ -256,6 +271,7 @@ def run(ctx) -> None:
         out.warn("no advisory provider for this system "
                  "(Arch/Manjaro, Debian/Ubuntu and the RHEL family are supported).")
         return
+    _warn_retired_keys(ctx)
     cfg = _cfg(ctx)
     conn = db.connect(db.db_path(ctx))
     findings, uncovered, degraded = [], {}, []
@@ -323,17 +339,31 @@ def update(ctx) -> None:
         conn.close()
 
 
-def security_gate(ctx) -> bool:
-    """Best-effort pre-update advisory gate (§19.8). Uses ONLY the cached DB — it
-    never fetches, and MUST never block or fail a routine update on missing/stale/
-    offline data. Prints a short security summary; if ``warn_gate`` is on and Critical
-    CVEs are unpatched, asks one extra confirm. Returns ``False`` only to ABORT the
-    update. Never raises."""
+def security_note(ctx) -> None:
+    """Print the security posture before a real upgrade. **Never blocks it.**
+
+    This was a *gate*: on an unpatched Critical it asked "Continue with the update
+    despite unpatched Critical CVEs?" and returned False to abort. QA found that
+    argues for the harmful answer. On the machine it was measured on, 732 of 770
+    findings had a fix already released — so the update it offered to abort was
+    precisely the thing that installs those fixes, and answering "no" left the box
+    both unpatched *and* vulnerable. For a Critical with no fix released, aborting
+    does not help either: the update is unrelated to it.
+
+    So it informs and gets out of the way. An update is the remedy; nothing about CVE
+    state should stand in front of it.
+
+    Reads ONLY the cached DB — never fetches, so a network problem cannot delay an
+    upgrade — and never raises. Best-effort by design: on any error it says nothing
+    and the update proceeds.
+    """
     out = getattr(ctx, "output", None)
+    if out is None:
+        return
     try:
         path = db.db_path(ctx)
         if not path.exists():
-            return True                              # no cached data -> proceed
+            return                                   # no cached data -> nothing to say
         cfg = _cfg(ctx)
         conn = db.connect(path)
         try:
@@ -343,21 +373,26 @@ def security_gate(ctx) -> bool:
             conn.close()
         findings = _apply_filters(findings, cfg)
         if not findings:
-            return True
-        crit = sorted({f.package for f in findings if f.severity == "Critical"})
-        if out:
-            out.note(f"security: {len(findings)} advisory finding(s) affect installed "
-                     f"packages, {len(crit)} Critical — see `fettle advisory-check`")
-        if not (cfg["warn_gate"] and crit):
-            return True
-        if getattr(ctx, "assume_yes", False):
-            if out:
-                out.warn("proceeding despite unpatched Critical CVEs (--yes): "
-                         + ", ".join(crit))
-            return True
-        if out:
-            out.warn("unpatched Critical CVEs: " + ", ".join(crit))
-        return ctx.confirm("Continue with the update despite unpatched Critical CVEs?",
-                           default=True)
-    except Exception:                                # never let advisory logic break an update
-        return True
+            return
+        # Count what `fettle advisory-check` shows. Counting raw findings here said
+        # "770 advisory finding(s) ... see `fettle advisory-check`", and running that
+        # showed 176 — the note contradicted the document it sent you to.
+        groups = _group(findings)
+        crit = [f for f, _envs in groups if base.severity_rank(f.severity) >= 4]
+        fixable = [f for f in crit if f.status != base.PENDING_FIX]
+        pending = [f for f in crit if f.status == base.PENDING_FIX]
+
+        out.note(f"security: {len(groups)} known-vulnerable package(s) on this system, "
+                 f"{len(crit)} Critical — detail in `fettle advisory-check`")
+        if fixable:
+            names = ", ".join(sorted({f.package for f in fixable})[:6])
+            out.note(f"  {len(fixable)} Critical with a fix released — this update "
+                     f"should install them: {names}")
+        if pending:
+            # The one thing an upgrade genuinely cannot fix, so it is the one thing
+            # worth raising a warning about here.
+            names = ", ".join(sorted({f.package for f in pending})[:6])
+            out.warn(f"{len(pending)} Critical with NO fix released — the update will "
+                     f"not address these: {names}")
+    except Exception:            # never let advisory logic disturb an update
+        return
