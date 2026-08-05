@@ -45,7 +45,7 @@ def test_envelope_command_reflects_argv(monkeypatch):
 
 def test_structured_data_is_stored_verbatim(tmp_path):
     data = {"findings": [{"severity": "CRIT", "package": "evil"}], "count": 1}
-    txt = reports.write_report("aur-ioc-scan", "text", _ctx(tmp_path),
+    txt = reports.write_report("aur-ioc-scan", "text", _ctx(tmp_path),  # stale-flag-ok
                                host="web-01", now=_at(), data=data)
     env = _json_of(txt)
     assert env["host"] == "web-01"

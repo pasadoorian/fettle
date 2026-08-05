@@ -72,7 +72,7 @@ TARGETS = {
         "packages": ["checksec", "pacman-contrib", "rebuild-detector", "fwupd", "git",
                      "base-devel"],
         # `yay` lives in the AUR, so pacman cannot install it — and without an AUR helper
-        # three Arch-only capabilities (aur-audit, aur-ioc-scan, and the AUR half of
+        # three Arch-only capabilities (aur-audit, aur-precheck, and the AUR half of
         # update) cannot be exercised at all. yay-bin is prebuilt, so this downloads
         # rather than compiles. Best-effort: failure leaves those as SKIPs, which is the
         # status quo rather than a regression.

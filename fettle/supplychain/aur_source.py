@@ -4,7 +4,8 @@ Answers the question-set for foreign (AUR/manual) packages using the AUR RPC and
 the lenucksi IOC feed, and detects maintainer changes across runs (the "Atomic
 Arch" re-adoption tell). This backs the cross-distro ``pkg-audit`` command (the
 normalized-``Finding`` umbrella). The Arch-specific ``aur-audit`` (-A) health
-table and ``aur-ioc-scan`` (-S) live in ``fettle/aur/{audit,ioc_scan}.py`` and
+table lives in ``fettle/aur/audit.py`` (the IoC scanner it once named was retired
+in v0.73.0; its checks are here). Old path: ``fettle/aur/{audit,ioc_scan}.py`` and
 share the low-level helpers in ``fettle/aur/common.py``.
 """
 
@@ -83,9 +84,9 @@ class AURSource(SourceProvider):
             out.append(Finding(Severity.CRITICAL, self.source, name, KNOWN_BAD,
                                f"malicious JS package trace under {path}"))
 
-        # Coverage of the IoC half, inherited from `aur-ioc-scan` when that action was
+        # Coverage of the IoC half, inherited from `aur-ioc-scan` (retired) when
         # retired in v0.73.0. Without it, folding -I into -P would have silently
-        # undone the fix -I's QA sweep landed: the malware check reporting "nothing
+        # undone the fix that sweep landed: the malware check reporting "nothing
         # matched" while the feeds it matches against were never read. -P runs on
         # every `fettle -a`, so this is the copy that matters.
         if ioc.unavailable:

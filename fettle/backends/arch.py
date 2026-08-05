@@ -417,7 +417,7 @@ class ArchBackend(PackageBackend):
             out.note("updating AUR packages (yay, with PKGBUILD review)...")
             yay_cmd += ["--diffmenu=true", "--editmenu=true"]
         ctx.execute(yay_cmd, as_user=ctx.sudo_user)
-        out.next_step("check AUR packages before the next build: fettle -A -I")
+        out.next_step("check AUR packages before the next build: fettle -A -P")
         return Result()
 
     # -- pending upgrades (UC1) ----------------------------------------------
@@ -600,7 +600,7 @@ class ArchBackend(PackageBackend):
                 alien = reports.write_report("alien-pkgs", "\n".join(kept), ctx,
                                              data=data)
                 out.note(f"foreign (AUR/manual) packages saved to {alien} "
-                         "for review (vet with -A/-I)")
+                         "for review (vet with -A / -P)")
             except OSError as exc:
                 out.warn(f"could not write alien-pkgs report: {exc}")
         suppressed = len(foreign) - len(kept)

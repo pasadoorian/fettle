@@ -215,7 +215,17 @@ def main(argv: list[str]) -> int:
     if not args.user and not cli._is_root() and not cli._in_test():
         cli._reexec_with_sudo()  # replaces the process (carries PYTHONPATH via env)
 
-    scan = Scan(output=out, root=Path("/"), verbose=args.verbose)
+    # sys-audit read no config until v0.84.0; `[secure] chipsec_cmd` is the first
+    # thing it needs one for. A bad/absent config never blocks a scan.
+    try:
+        from ..cli import DEFAULT_CONFIG
+        from ..config import load as _load
+        cfg, cfg_warnings = _load(DEFAULT_CONFIG)
+        for w in cfg_warnings:
+            out.warn(w)
+    except Exception:
+        cfg = None
+    scan = Scan(output=out, root=Path("/"), verbose=args.verbose, config=cfg)
     run(chosen, scan)
     _write_report(scan, out)
     # A security scan that always exits 0 cannot be used in automation.

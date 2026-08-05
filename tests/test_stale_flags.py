@@ -32,10 +32,20 @@ _WORD = re.compile(r"`fettle\s+([a-z][a-z0-9-]{2,})")
 _SSH_OPT = re.compile(r"^-o[A-Z]")               # `-oProxyCommand=…` is ssh's, not ours
 
 # History, not advice: these record retired spellings on purpose.
-_SKIP_PARTS = {".git", "venv-fettle-dev", "__pycache__", "matrix-logs"}
+_SKIP_PARTS = {".git", "__pycache__", "matrix-logs"}
+# Any virtualenv, not just the one that existed when this was written --
+# `venv-fettle-web` was being scanned, and pip's own source uses `-I`.
+_SKIP_PREFIXES = ("venv", ".venv")
 # This file deliberately contains retired spellings, in its own canary.
-_SKIP_FILES = {"CHANGELOG.md", "PLAN.md", "test_stale_flags.py"}
+_SKIP_FILES = {"CHANGELOG.md", "PLAN.md", "test_stale_flags.py",
+               "PARITY.md"}     # a historical comparison, not advice
 _SKIP_DIRS = ("docs/qa",)
+# An explicit opt-out for the places that must name a retired spelling: the routing
+# table that catches it, the message explaining where it went, the report types still
+# on disk under the old name, and the regression tests whose whole subject is the
+# rename. Put it in a line comment, or in the first 400 chars to exempt a file. A
+# marker beats a heuristic -- it is greppable, and adding one is a deliberate act.
+_ALLOW = "stale-flag-ok"
 
 
 def _valid() -> tuple[set, set]:
@@ -56,6 +66,7 @@ def _files():
         rel = f.relative_to(ROOT)
         if (f.is_file() and f.suffix in (".py", ".md", ".lua", ".toml")
                 and not any(p in _SKIP_PARTS for p in f.parts)
+                and not any(p.startswith(_SKIP_PREFIXES) for p in f.parts)
                 and f.name not in _SKIP_FILES
                 and not str(rel).startswith(_SKIP_DIRS)):
             yield rel, f
@@ -72,6 +83,8 @@ def sweep() -> list[str]:
         for n, line in enumerate(text.splitlines(), 1):
             if "retir" in line.lower():           # a line SAYING a flag is retired
                 continue
+            if _ALLOW in line or _ALLOW in text[:400]:   # line, or whole-file opt-out
+                continue
             found = set(_CTX.findall(line))
             if re.search(r"(?<![.\w])fettle\b", line):
                 found |= set(_TICKED.findall(line))
@@ -79,6 +92,14 @@ def sweep() -> list[str]:
                      for t in found if t not in flags and not _SSH_OPT.match(t)]
             hits += [f"{rel}:{n}: {w} -- {line.strip()[:70]}"
                      for w in _WORD.findall(line) if w not in words and w not in flags]
+            # A retired spelling ANYWHERE, not just next to the word "fettle". The
+            # example config listed `aur-ioc-scan` in its `default_actions` array --
+            # a line that never says "fettle", so every rule above walked past it.
+            # Word-boundary, not substring: a bare `in` match found `-I` inside
+            # "malware-IOC feeds".
+            hits += [f"{rel}:{n}: {r} -- {line.strip()[:70]}"
+                     for r in cli._RETIRED
+                     if re.search(rf"(?<![\w-]){re.escape(r)}(?![\w-])", line)]
     return sorted(hits)
 
 

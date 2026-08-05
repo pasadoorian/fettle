@@ -70,25 +70,46 @@ def bios(scan) -> None:
 
 
 # ---------------------------------------------------------------------------
+def _chipsec_cmd(scan) -> list | None:
+    """The argv prefix that runs ``chipsec_main``, from ``[secure] chipsec_cmd``.
+
+    Configured, not guessed. chipsec ships in at least three shapes — a git checkout
+    run as ``python3 /opt/chipsec/chipsec_main.py``, a distro package that puts a
+    console script at ``/usr/bin/chipsec_main``, and a pip install whose entry point
+    lands wherever that interpreter keeps scripts. fettle used to look only for the
+    checkout layout, so on a packaged install (measured on the QA host: chipsec 2.0.7
+    at ``/usr/bin/chipsec_main``) it reported "Not found" while chipsec was installed
+    and working. Searching harder would have traded one wrong guess for another; the
+    invocation differs between the layouts too, so a path alone is not enough.
+    """
+    cfg = getattr(getattr(scan, "config", None), "secure", None) or {}
+    cmd = cfg.get("chipsec_cmd")
+    if isinstance(cmd, str):
+        cmd = [cmd]
+    return [str(c) for c in cmd] if cmd else None
+
+
 def firmware(scan) -> None:
     """Chipsec-based firmware checks (ME manufacturing mode, BIOS write protect)."""
-    chipsec = _find_tool(scan, "chipsec", "chipsec_main.py")
+    chipsec = _chipsec_cmd(scan)
     if chipsec is None:
-        scan.status("Chipsec", "Not found - install from https://github.com/chipsec/chipsec",
-                    "warn")
-        for line in ("Chipsec checks would include:",
-                     "- Intel ME manufacturing mode verification",
-                     "- SPI flash write protection status",
-                     "- Comprehensive firmware security audit"):
+        scan.status("Chipsec", "not configured — firmware was NOT audited", "warn")
+        for line in ("Set the command in ~/.config/fettle/config.toml:",
+                     "    [secure]",
+                     '    chipsec_cmd = ["/usr/bin/chipsec_main"]   # packaged install',
+                     '    # or ["python3", "/opt/chipsec/chipsec_main.py"]  # git checkout',
+                     "Packaging varies per distro, so fettle asks rather than guesses.",
+                     "Would check: Intel ME manufacturing mode, SPI flash write "
+                     "protection."):
             scan.dim(line)
         return
-    scan.status("Chipsec Path", str(chipsec), "ok")
+    scan.status("Chipsec", " ".join(chipsec), "ok")
     if not scan.is_root():
         scan.status("Warning", "chipsec requires root privileges", "error")
         return
 
     scan.sub("Intel ME Manufacturing Mode")
-    me, rc = scan.run_text_rc(["python3", str(chipsec), "-m", "common.me_mfg_mode"])
+    me, rc = scan.run_text_rc([*chipsec, "-m", "common.me_mfg_mode"])
     if _ran(scan, "ME Manufacturing Mode", rc, "chipsec"):
         me = me.lower()
         if "passed" in me:
@@ -99,7 +120,7 @@ def firmware(scan) -> None:
             scan.status("ME Manufacturing Mode", "Unknown (no verdict reported)", "info")
 
     scan.sub("BIOS Write Protection")
-    wp, rc = scan.run_text_rc(["python3", str(chipsec), "-m", "common.bios_wp"])
+    wp, rc = scan.run_text_rc([*chipsec, "-m", "common.bios_wp"])
     if _ran(scan, "BIOS Write Protection", rc, "chipsec"):
         wp = wp.lower()
         if "passed" in wp:

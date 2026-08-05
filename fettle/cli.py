@@ -954,13 +954,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 # Retired spellings -> what replaced them. argparse would say "unrecognized
-# arguments: -I", which tells you nothing about where the capability went.
-_RETIRED = {
-    "-I": "aur-ioc-scan", "--aur-ioc-scan": "aur-ioc-scan",
-    "aur-ioc-scan": "aur-ioc-scan", "aur_ioc_scan": "aur-ioc-scan",
+# arguments: -I", which says nothing about where it went.  # stale-flag-ok
+_RETIRED = {                                     # stale-flag-ok: this IS the table
+    "-I": "aur-ioc-scan", "--aur-ioc-scan": "aur-ioc-scan",      # stale-flag-ok
+    "aur-ioc-scan": "aur-ioc-scan", "aur_ioc_scan": "aur-ioc-scan",   # stale-flag-ok
 }
 _RETIRED_NOTE = {
-    "aur-ioc-scan": (
+    "aur-ioc-scan": (                            # stale-flag-ok
         "retired in v0.73.0 — `fettle -P` (pkg-audit) runs every check it did, on "
         "every ecosystem, and now also reports when an IoC feed could not be read."),
 }

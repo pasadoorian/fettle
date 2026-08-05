@@ -111,6 +111,14 @@ class Config:
     # may override skip_sources per machine for a shared config — note that
     # `fettle remote` runs on the remote and reads the REMOTE's config.
     supplychain: dict = field(default_factory=dict)
+    # sys-audit (`fettle -S`). Keys: chipsec_cmd (list — the argv that runs
+    # chipsec_main, e.g. ["/usr/bin/chipsec_main"] for a packaged install or
+    # ["python3", "/opt/chipsec/chipsec_main.py"] for a git checkout). NOT
+    # auto-detected: chipsec ships in at least three layouts whose invocations
+    # differ, and fettle reporting "not found" while chipsec was installed and
+    # working was worse than asking. Absent = the firmware check says it did not run.
+    secure: dict = field(default_factory=dict)
+
     # Pre-check AUR packages against the IoC feeds BEFORE `yay -Sua` builds them,
     # and prompt to abort on a finding. On by default; `--no-aur-precheck` skips it.
     aur_precheck_on_update: bool = True
@@ -132,7 +140,7 @@ def _allowed_uids() -> set[int]:
 
 # Action names retired in v0.4.0 -> the new name to point users at (config help).
 _RETIRED_ACTIONS = {
-    "aur_ioc_scan": "removed in v0.73.0 (use pkg-audit / -P)",
+    "aur_ioc_scan": "removed in v0.73.0 (use pkg-audit / -P)",  # stale-flag-ok
     "rebuilds": "rebuild-check",
     "python_rebuild": "python-rebuild-check",
     "firmware": "firmware-check",

@@ -508,7 +508,7 @@ works, and it says so when you run it — but `-P` reports the same facts and mo
 > across every ecosystem. It had already been dropped from the default set because running
 > both fetched the AUR RPC and the IoC feeds twice and reported each finding twice;
 > retiring the flag finished that. `fettle -I` now tells you where the capability went.
-> The feed-coverage reporting that `-I` uniquely had — *"the scan matched nothing, but the
+> The feed-coverage reporting that the retired `-I` uniquely had — *"the scan matched nothing, but the
 > lists were never read"* — moved into `-P` as part of the retirement, because losing it
 > would have reintroduced the exact bug its QA sweep fixed.
 
@@ -990,6 +990,21 @@ hashing pass.*
 ## System supply-chain — `sys-audit`
 
 A port of the Eclypsium firmware/boot-chain cheat-sheet. Most checks need root, so
+**chipsec is configured, not auto-detected.** It ships as a git checkout
+(`python3 /opt/chipsec/chipsec_main.py`), as a distro package (`/usr/bin/chipsec_main`),
+and as a pip entry point wherever that interpreter keeps scripts — three layouts whose
+*invocations* differ, so a path alone would not be enough. fettle used to search only for
+the checkout and reported "not found" on a machine where chipsec was installed and
+working. Set it once:
+
+```toml
+[secure]
+chipsec_cmd = ["/usr/bin/chipsec_main"]
+# ...or, for a git checkout:  ["python3", "/opt/chipsec/chipsec_main.py"]
+```
+
+Unset, the `firmware` category says plainly that it did not run, and names the setting.
+
 **Exit status:** `1` when the scan found something needing attention, `0` otherwise —
 so it is usable in cron and CI. A *warning* (Secure Boot disabled, no TPM, an optional
 tool absent) does **not** fail the run: those are facts about the machine you may have
@@ -1021,7 +1036,7 @@ sudo/`--all` for the fullest results — many checks only produce real output as
 |---|---|
 | `secureboot` | Secure Boot state + the **2026 Microsoft cert-expiry matrix** (2011 vs 2023 KEK/db certs, migration status) |
 | `bios` | BIOS/UEFI vendor, version, date; motherboard info |
-| `firmware` | chipsec — Intel ME manufacturing mode, BIOS write-protection (needs chipsec + root) |
+| `firmware` | chipsec — Intel ME manufacturing mode, BIOS write-protection (needs `[secure] chipsec_cmd` + root) |
 | `fwupd` | firmware devices, available updates, HSI security attributes |
 | `intel-me` | MEI device, ME firmware version, ME PCI controller |
 | `microcode` | CPU microcode revision + `/sys` vulnerability mitigations |

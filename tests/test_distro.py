@@ -100,7 +100,7 @@ def test_rhel_backend_never_claims_other_families_actions():
     ("everything claimed is really implemented") is enforced for every backend by
     test_action_registry."""
     from fettle.backends.rhel import RhelBackend
-    for absent in ("aur_audit", "aur_ioc_scan", "python_rebuild_check"):
+    for absent in ("aur_audit", "aur_ioc_scan", "python_rebuild_check"):  # stale-flag-ok
         assert absent not in RhelBackend.supported
 
 

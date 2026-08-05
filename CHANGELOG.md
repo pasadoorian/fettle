@@ -10,6 +10,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.84.0] — chipsec is configured, and the stale-flag sweep grew teeth
+
+**`[secure] chipsec_cmd`.** chipsec ships in at least three layouts — a git checkout run
+as `python3 /opt/chipsec/chipsec_main.py`, a distro package at `/usr/bin/chipsec_main`,
+and a pip entry point wherever that interpreter keeps scripts — and their *invocations*
+differ, so a path alone is not enough. fettle searched only for the checkout, so on the
+QA host (chipsec 2.0.7, packaged) it reported *"Not found — install from github"*: advice
+for a problem the user did not have. It is configured now, and unset it says plainly that
+it did not run, naming the setting. `sys-audit` reads config at all for the first time.
+
+**The example config was as stale as anyone's.** `fettle.toml.example` is dated the same
+day as the QA host's live config and was missing `[clean]`, `[containers]`,
+`[advisories]`, `[supplychain]`, `[updaters.rhel]`, `refresh_mirrors` and `stale_days` —
+and its `default_actions` example still listed the retired `aur-ioc-scan`. Now complete,
+with each block verified to parse.
+
+## The sweep, widened — and three live bugs it found
+
+v0.82.1's sweep only looked near the word "fettle". Widening it to retired *names*
+anywhere found three references that had survived every previous pass:
+
+- `out.next_step("check AUR packages before the next build: fettle -A -I")` — printed
+  after **every AUR upgrade**.
+- `"foreign (AUR/manual) packages saved to … (vet with -A/-I)"`.
+- `fettle/aur/audit.py`'s docstring pointing at the removed `aur-ioc-scan` module.
+
+And the reason the first one survived: **a test asserted it.**
+`test_update_extras_hint_uses_current_aur_flags` pinned `"fettle -A -I"`, so correcting
+the message would have failed a test, and the obvious response to that is to put the
+message back. That test had already been wrong once before, for the v0.4.0 rename. It now
+asserts the current spelling and rejects both historical ones.
+
+Legitimate mentions — the routing table that catches the retired flag, the message
+explaining where it went, report types still on disk under the old name, and the
+regression tests whose subject is the rename — carry an explicit `stale-flag-ok` marker
+rather than being matched by a heuristic. Twenty of them, each one a deliberate act.
+
+Also: the sweep was scanning `venv-fettle-web/`, where pip's own source uses `-I`. It
+skips any virtualenv now, not just the one that existed when it was written.
+
 ## [0.83.0] — multi-environment findings expand to their paths
 
 An advisory affecting several Python environments rendered as `44 environments` with the

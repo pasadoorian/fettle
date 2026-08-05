@@ -3,7 +3,8 @@
 Reproduces ``update.sh``'s ``aur_audit``: a per-package metrics table (age,
 votes, out-of-date, orphan, recently-changed), a not-found-in-AUR list, and the
 maintainer-change (re-adoption) section — printed and saved to ``~/aur-audit.txt``.
-Provenance/health only; malicious/IOC cross-references live in ``aur-ioc-scan``.
+Provenance/health only; malicious/IOC cross-references live in ``pkg-audit``
+(they were ``aur-ioc-scan``'s until it was retired in v0.73.0).
 """
 
 from __future__ import annotations

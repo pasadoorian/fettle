@@ -1,3 +1,4 @@
+# stale-flag-ok: these tests describe renames, so they name the old spellings.
 from unittest.mock import patch
 
 from fettle.backends.base import Context

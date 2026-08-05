@@ -152,9 +152,9 @@ def envelope(name: str, host: str, ts: str, *, data=None, body: str = "") -> dic
 
 
 # report basenames that used to be written straight into $HOME (pre-0.11).
-_LEGACY_NAMES = ("aur-audit", "aur-ioc-scan", "pkg-audit", "hardening-audit",
+_LEGACY_NAMES = ("aur-audit", "aur-ioc-scan", "pkg-audit", "hardening-audit",  # stale-flag-ok
                  "upgrade-check", "alien-pkgs", "obsolete-pkgs", "sys-audit",
-                 "advisory-check")
+                 "advisory-check")  # stale-flag-ok: historical filenames
 
 
 def maybe_legacy_note(ctx) -> None:

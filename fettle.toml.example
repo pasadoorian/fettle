@@ -8,7 +8,7 @@
 # var and leave the key out of the file entirely.
 
 # Actions to run when you invoke `fettle` with no action flags / words.
-#default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "auto-updates", "firmware-check", "pkg-audit", "aur-ioc-scan"]
+#default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "auto-updates", "firmware-check", "pkg-audit"]
 
 # Offer to rebuild packages with outdated deps (instead of only listing them).
 #auto_rebuild = false
@@ -55,7 +55,10 @@
 # to ~/.fettle/logs/<host>/ — timestamped, 0600, and rotated to the newest `keep`
 # per host + type. <host> is `local` locally or the target of `fettle remote <host>`.
 #[reports]
-#keep = 5                # how many of each report/log to keep per host
+#keep = 10               # how many of each report/log to keep per host -- also the
+                         # depth of the dashboard's "what changed" history
+#stale_days = 7          # a host whose newest report is older than this is flagged
+                         # on the dashboard: at fleet scale, no data is not good news
 #dir = "~/.fettle"       # base dir override (reports/ and logs/ live under it)
 #log = true              # record a per-run transcript (false disables the run-log)
 #json = true             # write a .json sibling per report/log (feeds `fettle report`)
@@ -71,11 +74,68 @@
 #[remote.groups]
 #arch-boxes = ["mjolnir", "wopr"]              # shorthand form
 
+# Cache cleaning (`fettle -c`). Cached packages that are no longer installed are
+# always removed -- they have no rollback value. This is about the ones still installed.
+#[clean]
+#keep_versions = 2       # versions of each INSTALLED package to keep (0 = none;
+                         # frees the most, leaves no offline rollback). Arch only --
+                         # apt and dnf keep no version history to trim.
+
+# Container images (`fettle -C`, and pkg-audit's container provider). Every installed
+# runtime is used (docker AND podman), and images built here are never offered: they
+# have no registry to refresh from.
+#[containers]
+#auto_update   = "ask"   # "ask" | "always" | "never" -- OVERRIDES both lists below.
+                         # An unrecognised value is reported, not silently ignored.
+#never_update  = ["cvetool", "pyemba-*"]   # globs, matched on "repo:tag" and the bare repo
+#always_update = ["python"]
+#max_age_days  = 90      # pkg-audit: an image is frozen at build time, so age is the risk
+#ignore        = ["scratch*"]              # name globs pkg-audit skips entirely
+
+# Security advisories / CVE tracking (`fettle advisory-check`). Two different things
+# are checked: installed SYSTEM packages against your distro's tracker, and the
+# language environments the distro does NOT manage -- which means fettle walks your
+# filesystem. venv_roots/venv_depth bound that walk; every run prints what it looked at.
+#[advisories]
+#cache_ttl = 21600       # seconds before the SQLite cache is refreshed on a run
+#severity_threshold = "" # "" = all, else Critical | High | Medium | Low
+#exclude_packages = ["linux-firmware"]     # name globs
+#exclude_classes  = ["unimportant", "no-dsa"]   # distro status/class tags to hide
+#venv_roots = ["~/src"]  # where to hunt for virtualenvs / uv / pipx environments
+#venv_depth = 5          # how deep to walk them (an unbounded $HOME walk is too slow)
+#ubuntu_pending = false  # opt in to Ubuntu "no fix yet" (a real box has ~1300, mostly negligible)
+#ubuntu_pending_severity = "high"          # floor for the above: low|medium|high|critical
+
+# Package supply chain (`fettle -P`). Every provider is offered on every distro, and
+# absent ones are REPORTED -- so a blind spot is never mistaken for a clean result.
+# List the ones you knowingly do not use to silence that notice.
+#[supplychain]
+#skip_sources = ["snap", "flatpak"]
+#[supplychain.hosts.some-server]           # per-machine override for a shared config
+#skip_sources = ["containers"]
+
+# sys-audit (`fettle -S`). chipsec is NOT auto-detected: it ships as a git checkout
+# (`python3 /opt/chipsec/chipsec_main.py`), as a distro package (`/usr/bin/chipsec_main`),
+# and as a pip entry point wherever that interpreter keeps scripts -- three layouts
+# whose invocations differ. fettle reporting "not found" while chipsec was installed
+# and working was worse than asking, so it asks. Absent = the firmware check says
+# plainly that it did not run.
+#[secure]
+#chipsec_cmd = ["/usr/bin/chipsec_main"]
+# ...or, for a git checkout:  ["python3", "/opt/chipsec/chipsec_main.py"]
+
 # Per-distro tool selection (schema finalized as each backend lands). Example:
 #[updaters.arch]
 #system_updater = "pacman"   # pacman | pamac
 #aur_updater = "yay"         # yay | pamac | none
+#refresh_mirrors = true      # Manjaro: regenerate /etc/pacman.d/mirrorlist before
+                             # -u/-O. ON by default -- a stale mirrorlist is a common
+                             # cause of failed upgrades. It changes system config, so
+                             # fettle says when it does it.
 #[updaters.debian]
 #system_updater = "apt"      # apt | nala | none
 #flatpak_updater = "flatpak" # flatpak | none
 #snap_updater = "snap"       # snap | none
+#[updaters.rhel]
+#system_updater = "dnf"      # dnf | none
+

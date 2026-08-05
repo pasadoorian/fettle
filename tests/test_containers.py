@@ -1,5 +1,6 @@
 """`fettle container-update` (-C) — per-image decisions and the confirmation gates."""
 
+# stale-flag-ok: these tests describe renames, so they name the old spellings.
 import json
 from unittest.mock import patch
 

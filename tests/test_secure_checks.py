@@ -8,13 +8,14 @@ from fettle.secure import checks
 from fettle.secure.base import Scan
 
 
-def _scan(root, *, tools=(), responses=None, verbose=False):
-    return _Harness(root, set(tools), responses or {}, verbose)
+def _scan(root, *, tools=(), responses=None, verbose=False, config=None):
+    return _Harness(root, set(tools), responses or {}, verbose, config)
 
 
 class _Harness:
-    def __init__(self, root, tools, responses, verbose):
-        self.scan = Scan(output=Output(color=False, verbose=verbose), root=root, verbose=verbose)
+    def __init__(self, root, tools, responses, verbose, config=None):
+        self.scan = Scan(output=Output(color=False, verbose=verbose), root=root,
+                         verbose=verbose, config=config)
         self.tools, self.responses = tools, responses
 
     def __enter__(self):
@@ -128,9 +129,14 @@ def test_fwupd_absent(tmp_path, capsys):
 # check printed NOTHING AT ALL -- and a missing line reads to a human as "no
 # problem here". An un-run check is now a finding.
 def _chipsec_scan(tmp_path, responses):
-    (tmp_path / "opt/chipsec").mkdir(parents=True)
-    (tmp_path / "opt/chipsec/chipsec_main.py").write_text("")
-    return _scan(tmp_path, tools=(), responses=responses)
+    """A scan configured to find chipsec. Since v0.84.0 the command comes from
+    `[secure] chipsec_cmd` rather than a filesystem search — chipsec ships in three
+    layouts whose invocations differ, so fettle asks instead of guessing."""
+    from fettle.config import Config
+    cfg = Config()
+    cfg.secure = {"chipsec_cmd": ["python3",
+                                  str(tmp_path / "opt/chipsec/chipsec_main.py")]}
+    return _scan(tmp_path, tools=(), responses=responses, config=cfg)
 
 
 def _chipsec_cmd(tmp_path, module):
@@ -257,3 +263,47 @@ def test_clean_scan_says_so(capsys):
     _summary_of([{"category": "c", "sub": "", "label": "Secure Boot",
                   "value": "Enabled", "level": "ok"}])
     assert "nothing flagged" in capsys.readouterr().out
+
+
+def test_chipsec_command_is_configured_not_guessed(tmp_path, capsys):
+    """Measured on the QA host: chipsec 2.0.7 installed as a distro package at
+    /usr/bin/chipsec_main, and fettle reported "Not found" because it only looked for
+    a git checkout at /opt/chipsec/chipsec_main.py. Searching harder would have traded
+    one wrong guess for another -- the three layouts need three different invocations,
+    so a path alone is not enough."""
+    from fettle.config import Config
+    cfg = Config()
+    cfg.secure = {"chipsec_cmd": ["/usr/bin/chipsec_main"]}
+    responses = {("/usr/bin/chipsec_main", "-m", "common.me_mfg_mode"):
+                 "[+] PASSED: ME not in mfg mode",
+                 ("/usr/bin/chipsec_main", "-m", "common.bios_wp"):
+                 "[+] PASSED: BIOS is write protected"}
+    with patch("os.geteuid", return_value=0), \
+            _scan(tmp_path, responses=responses, config=cfg) as scan:
+        checks.firmware(scan)
+    out = capsys.readouterr().out
+    assert "Chipsec: /usr/bin/chipsec_main" in out
+    assert "ME Manufacturing Mode: Disabled (PASSED)" in out
+
+
+def test_unconfigured_chipsec_says_what_to_write(tmp_path, capsys):
+    """"Not found - install from github" was advice for a problem the user did not
+    have: chipsec WAS installed. The message has to name the setting."""
+    with _scan(tmp_path) as scan:
+        checks.firmware(scan)
+    cap = capsys.readouterr()
+    out = cap.out + cap.err
+    assert "not configured — firmware was NOT audited" in out
+    assert "[secure]" in out and "chipsec_cmd" in out
+
+
+def test_a_string_chipsec_cmd_is_accepted(tmp_path, capsys):
+    """`chipsec_cmd = "/usr/bin/chipsec_main"` is the natural thing to write for a
+    single-word command; accepting only a list would fail with no explanation."""
+    from fettle.config import Config
+    cfg = Config()
+    cfg.secure = {"chipsec_cmd": "/usr/bin/chipsec_main"}
+    with patch("os.geteuid", return_value=0), \
+            _scan(tmp_path, config=cfg) as scan:
+        checks.firmware(scan)
+    assert "Chipsec: /usr/bin/chipsec_main" in capsys.readouterr().out

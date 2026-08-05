@@ -1,3 +1,4 @@
+# stale-flag-ok: these tests describe renames, so they name the old spellings.
 import sys
 from pathlib import Path
 from unittest.mock import patch

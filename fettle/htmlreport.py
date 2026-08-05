@@ -620,7 +620,8 @@ def _render_advisories(data: dict) -> str:
 
 _RENDERERS = {
     "hardening-audit": _render_hardening,
-    "pkg-audit": _render_findings, "aur-ioc-scan": _render_findings,
+    # Reports written before v0.73.0 are on disk forever and must still render.
+    "pkg-audit": _render_findings, "aur-ioc-scan": _render_findings,  # stale-flag-ok
     "upgrade-check": _render_upgrade, "aur-audit": _render_aur_audit,
     "alien-pkgs": _render_pkglist, "obsolete-pkgs": _render_pkglist,
     "sys-audit": _render_sysaudit, "advisory-check": _render_advisories,
@@ -649,7 +650,7 @@ def _render_entry_body(entry: dict) -> str:
 def _is_empty(entry: dict) -> bool:
     """True when a report/log carries no meaningful content (nothing to show).
 
-    A clean `obsolete-pkgs` with no packages, an `aur-ioc-scan` with no
+    A clean `obsolete-pkgs` with no packages, a stored `aur-ioc-scan` with no   # stale-flag-ok
     indicators, a blank backfilled text report, etc. — hidden from the dashboard.
     """
     if entry.get("schema") == "fettle.log/1" or "transcript" in entry:
@@ -660,7 +661,7 @@ def _is_empty(entry: dict) -> bool:
     if set(data) == {"text"}:                       # wrapper / backfilled / fallback
         return not data["text"].strip()
     tool = entry.get("tool")
-    if tool in ("pkg-audit", "aur-ioc-scan"):
+    if tool in ("pkg-audit", "aur-ioc-scan"):        # stale-flag-ok: stored reports
         return not data.get("findings")
     if tool in ("obsolete-pkgs", "alien-pkgs", "hardening-audit"):
         return not data.get("packages")
@@ -696,7 +697,7 @@ _SECTION_LABELS = {
     "hardening-audit": "Binary Hardening Audit",
     "pkg-audit": "Package Supply-Chain Audit",
     "aur-audit": "AUR Package Health",
-    "aur-ioc-scan": "AUR Threat Scan",
+    "aur-ioc-scan": "AUR Threat Scan",           # stale-flag-ok: stored reports
     "alien-pkgs": "Foreign / AUR Packages",
     "obsolete-pkgs": "Obsolete Packages",
     "upgrade-check": "AI Upgrade Check",

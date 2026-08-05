@@ -1,5 +1,7 @@
 """RH1: HTML dashboard build + one-off JSON backfill."""
 
+# stale-flag-ok: `aur-ioc-scan` is a stored REPORT type that still renders,
+# even though the command was retired in v0.73.0.
 import json
 import os
 from types import SimpleNamespace

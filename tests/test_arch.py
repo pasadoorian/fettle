@@ -1,3 +1,4 @@
+# stale-flag-ok: these tests describe renames, so they name the old spellings.
 from pathlib import Path
 from unittest.mock import patch
 
@@ -121,16 +122,23 @@ def test_update_skips_pacman_mirrors_when_absent():
 
 
 def test_update_extras_hint_uses_current_aur_flags():
-    # v0.4.0: AUR IoC scan is -I (-S is now sys-audit). The post-update hint must
-    # point at `-A -I`, not the old `-A -S`.
+    """The post-update hint must name flags that still exist.
+
+    It has been wrong twice. v0.4.0 renamed the IoC scan to `-I` and the hint still
+    said `-A -S`; v0.73.0 retired `-I` into `-P` and the hint still said `-A -I` --
+    and THIS TEST asserted the stale spelling, so correcting the message would have
+    failed a test and the obvious move is to put the message back. A guard that pins
+    a bug is worse than no guard.
+    """
     _, fake = _recorder()
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True):
         ctx = _ctx()
         ArchBackend().update_extras(ctx)
     steps = ctx.output._next_steps
-    assert any("fettle -A -I" in s for s in steps)
-    assert not any("-A -S" in s for s in steps)
+    assert any("fettle -A -P" in s for s in steps)
+    assert not any("-A -S" in s for s in steps)     # v0.4.0 spelling
+    assert not any("-A -I" in s for s in steps)     # v0.73.0 spelling
 
 
 def test_pending_upgrades_via_checkupdates():

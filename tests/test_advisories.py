@@ -1,5 +1,6 @@
 """Distro advisory / CVE tracking (PLAN.md §19) — DB cache, Arch provider, check."""
 
+# stale-flag-ok: these tests describe renames, so they name the old spellings.
 import json
 from types import SimpleNamespace
 from unittest.mock import patch

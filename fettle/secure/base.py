@@ -21,6 +21,9 @@ class Scan:
     output: "object"           # fettle.output.Output
     root: Path = Path("/")     # injected so /sys, /proc, /dev reads are testable
     verbose: bool = False
+    # sys-audit read no config at all until v0.84.0. It needs one now: chipsec's
+    # packaging varies so much per distro that guessing was worse than asking.
+    config: "object" = None
     # accumulated for the persisted report (in addition to live terminal output)
     records: list = field(default_factory=list)   # [{category, sub, label, value, level}]
     lines: list = field(default_factory=list)      # plain-text report body
