@@ -18,6 +18,7 @@ from ..aur import meta as aur_meta
 from .base import (
     KNOWN_BAD,
     STALE_OR_ABANDONED,
+    UNVERIFIABLE,
     UNVERIFIED_PUBLISHER,
     Finding,
     Severity,
@@ -27,7 +28,9 @@ from .base import (
 
 class AURSource(SourceProvider):
     source = "aur"
-    coverage = "orphan / out-of-date / stale / known-bad via AUR RPC + lenucksi IOC feed"
+    coverage = ("orphan / out-of-date / stale / known-bad via AUR RPC + lenucksi IOC "
+                "feeds; reports when a feed could not be read, so a quiet result is "
+                "never mistaken for a clean one")
 
     def is_present(self, ctx) -> bool:
         return bool(aur_common.foreign_packages(ctx))
@@ -79,6 +82,23 @@ class AURSource(SourceProvider):
         for name, path in aur_common.js_cache_hits(ioc.bad_npm(), ctx.user_home):
             out.append(Finding(Severity.CRIT, self.source, name, KNOWN_BAD,
                                f"malicious JS package trace under {path}"))
+
+        # Coverage of the IoC half, inherited from `aur-ioc-scan` when that action was
+        # retired in v0.73.0. Without it, folding -I into -P would have silently
+        # undone the fix -I's QA sweep landed: the malware check reporting "nothing
+        # matched" while the feeds it matches against were never read. -P runs on
+        # every `fettle -a`, so this is the copy that matters.
+        if ioc.unavailable:
+            out.append(Finding(
+                Severity.WARN, self.source, "ioc-feeds", UNVERIFIABLE,
+                "could not be fetched: " + ", ".join(sorted(set(ioc.unavailable)))
+                + " — a package compromised in a campaign published since would NOT "
+                "have been seen"))
+        if ioc.stale:
+            out.append(Finding(
+                Severity.WARN, self.source, "ioc-feeds", UNVERIFIABLE,
+                "served from an out-of-date cache: "
+                + ", ".join(sorted(set(ioc.stale)))))
 
         # Maintainer-change / re-adoption tell (state diff across runs).
         out.extend(self._maintainer_changes(by_name, ctx))

@@ -540,7 +540,7 @@ def cmd_ssh(conf, args) -> int:
 # absolutely do — `-u` consumes the very pending upgrades `-O` exists to report, and an
 # `-o` that removed a package changes what `-P` sees. Without that isolation the sweep
 # would silently measure whatever the previous action left behind.
-READ_ONLY_ACTIONS = ["-P", "-H", "-d", "-x", "-r", "-k", "-f", "-O", "-A", "-I"]
+READ_ONLY_ACTIONS = ["-P", "-V", "-H", "-d", "-x", "-r", "-k", "-f", "-O", "-A"]
 MUTATING_ACTIONS = ["-c", "-o", "-u"]
 
 # `--yes` on the mutating ones is deliberate. Without a tty `ctx.confirm` returns its safe

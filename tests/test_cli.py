@@ -52,7 +52,6 @@ def _actions_for(argv):
 
 
 def test_new_short_flags_route_to_renamed_actions():
-    assert _actions_for(["-I"]) == ["aur_ioc_scan"]   # was -S
     assert _actions_for(["-d"]) == ["config_drift"]   # was -p/--pacnew
     assert _actions_for(["-P"]) == ["pkg_audit"]      # new flag
     assert _actions_for(["-r"]) == ["rebuild_check"]
@@ -65,7 +64,6 @@ def test_update_upgrade_aliases_and_long_options():
     assert _actions_for(["upgrade"]) == ["update"]   # bare word alias
     assert _actions_for(["update"]) == ["update"]
     assert _actions_for(["--config-drift"]) == ["config_drift"]
-    assert _actions_for(["--aur-ioc-scan"]) == ["aur_ioc_scan"]
     assert _actions_for(["--pkg-audit"]) == ["pkg_audit"]
 
 
@@ -224,7 +222,7 @@ def test_unsupported_action_is_skipped(capsys):
 def test_default_set_includes_the_supply_chain_audit():
     """`pkg_audit` covers every ecosystem, including all three AUR IoC checks.
 
-    `aur_ioc_scan` is deliberately absent: it is a strict subset of pkg-audit's AUR
+    `aur_ioc_scan` is gone entirely (v0.73.0): it was a strict subset of pkg-audit's AUR
     provider, so having both meant every routine run fetched the AUR RPC and the IOC
     feeds twice and reported each finding twice. It stays available on its own.
     """
@@ -264,15 +262,24 @@ def test_aur_gate_flags_wire_into_context():
 
 
 def test_default_set_silently_skips_unsupported(capsys):
-    # bare run on Debian: aur-ioc-scan is Arch-only and now in the default set,
+    # bare run on Debian: python-rebuild-check is Arch-only and in the default set,
     # but it must NOT print a skip note (that would be default-set noise).
     main(["--distro", "debian", "--dry-run"])
-    assert "skipping 'aur_ioc_scan'" not in capsys.readouterr().out
+    assert "skipping 'python_rebuild_check'" not in capsys.readouterr().out
 
 
 def test_explicitly_named_unsupported_still_warns(capsys):
-    main(["--distro", "debian", "--dry-run", "aur-ioc-scan"])
-    assert "skipping 'aur_ioc_scan'" in capsys.readouterr().out
+    main(["--distro", "debian", "--dry-run", "aur-audit"])
+    assert "skipping 'aur_audit'" in capsys.readouterr().out
+
+
+def test_retired_action_explains_where_it_went(capsys):
+    """argparse would say "unrecognized arguments: -I", which tells you nothing about
+    where the capability went — and it did not go away, it moved into -P."""
+    for token in ("-I", "--aur-ioc-scan", "aur-ioc-scan"):
+        assert main([token]) == 2
+        err = capsys.readouterr().err
+        assert "retired in v0.73.0" in err and "pkg-audit" in err
 
 
 def test_bare_action_words_work(capsys):

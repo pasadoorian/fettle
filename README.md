@@ -90,7 +90,7 @@ fettle has four feature families:
    third-party repos/PPAs, publishers, staleness, sandbox permissions, and (for
    the AUR) live malware-IOC feeds. Exposed as `pkg-audit`, plus `pkg-integrity`
    (do the installed *files* still match the package?), the Arch-specific
-   `aur-audit` / `aur-ioc-scan`, and the install-time yay hook.
+   `aur-audit`, and the install-time yay hook (`aur-precheck`).
 3. **System Supply Chain** — *the machine's firmware/boot/hardware posture*:
    Secure Boot, BIOS/UEFI, TPM, Intel ME, CPU microcode, hardware and storage
    firmware. Exposed as `sys-audit`, runnable locally or over SSH.
@@ -112,7 +112,7 @@ CLI: "where did this software come from / is it tampered?" → **Package**
 | RHEL family | `rhel` | dnf + rpm + podman | `rhel`, `centos`, `rocky`, `almalinux`, `ol` |
 
 **RHEL support is complete**, at parity with Debian: every action except the three that
-are Arch-only by nature (`aur-audit`, `aur-ioc-scan`, and `python-rebuild-check`, which dnf
+are Arch-only by nature (`aur-audit`, `aur-precheck`, and `python-rebuild-check`, which dnf
 handles itself). Fedora is deliberately not claimed as a *distro*: it shares dnf, but its
 advisories come from Bodhi as `FEDORA-*` rather than Red Hat's `RHSA-*` (`--distro rhel`
 still works there, and is how the dnf5 code path is tested).
@@ -139,7 +139,7 @@ the at-a-glance "will it run on my box" view.
 | Container image updates | `-C` | ● | ● | ● | |
 | Python rebuild check | `-y` | ● | — | — | ✔︎ |
 | AUR health census | `-A` | ● | — | — | |
-| AUR compromise (IoC) scan | `-I` | ● | — | — | ✔︎ |
+| AUR compromise (IoC) scan | `-P` | ● | — | — | ✔︎ |
 | | | **15/15** | **12/15** | **12/15** | |
 
 The three gaps are the same on Debian and RHEL and are Arch-only by nature — there is no
@@ -385,7 +385,6 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-I` | `aur-ioc-scan` *(arch)* | scan installed AUR pkgs for IoCs → `~/.fettle/reports/` | — | — |
 | `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
@@ -471,18 +470,20 @@ determined"* rather than as a clean result — the distinction matters most here
 
 ### Three AUR checks, and which to reach for
 
-Three actions look at AUR packages and they deliberately overlap. `fettle -P` includes the
-AUR checks because a supply-chain audit that skipped your most-privileged install channel
-would be misleading; the other two are focused views of the same data.
+Three actions look at AUR packages. The clearest way to tell them apart is **when you run
+them**, not what they query — they share most of their queries on purpose.
 
-| | `-P` pkg-audit | `-A` aur-audit | `-I` aur-ioc-scan |
+| | `-P` pkg-audit | `-A` aur-audit | `-p` aur-precheck |
 |---|---|---|---|
-| **scope** | every ecosystem: AUR, apt, flatpak, snap, containers, editor + shell extensions | AUR only | AUR only |
-| not in the AUR any more | ● | ● | |
-| orphaned / flagged out-of-date / stale | ● | ● | |
+| **when** | routine, after the fact | after the fact | **before an install** |
+| **scope** | every ecosystem: AUR, apt, flatpak, snap, containers, editor + shell extensions | AUR only | the package names you give it |
+| **output** | findings, for reading | a census table | `CRIT`/`WARN` lines, for a hook to parse |
+| not in the AUR any more | ● | ● | ● |
+| orphaned / flagged out-of-date / stale | ● | ● | ● |
 | on a known-malicious package list | ● | | ● |
 | maintained by a known-malicious account | ● | | ● |
-| malicious JS dependency trace | ● | | ● |
+| malicious JS dependency trace | ● | | |
+| an IoC feed could not be read | ● | | |
 | maintainer changed since last run | ● | ● | |
 | votes, reverse dependents, removal candidates | | ● | |
 | **in the default `-a` set** | ● | | |
@@ -490,16 +491,26 @@ would be misleading; the other two are focused views of the same data.
 **Which one do I want?**
 
 - **`-P`** — the routine one, and the only one in the default set. Everything below, plus
-  every other install channel on the box.
+  every other install channel on the box, plus the one thing no other view has: it tells
+  you when an IoC feed **could not be read**, so a quiet result is never mistaken for a
+  clean one.
 - **`-A`** — *"what should I clean up or stop trusting?"* The full census: age, votes,
   maintainer, and the reverse-dependency analysis that finds AUR packages nothing on the
   system needs any more. Only `-A` tells you what is safe to remove.
-- **`-I`** — *"is anything I installed known to be malicious?"* Nothing else; fastest of
-  the three. Useful on its own after news of a campaign breaks.
+- **`-p PKG …`** — the **gate**, not an audit: it runs *before* a package is built, and
+  its output is a line contract for the yay hook and for `-u`'s pre-upgrade check. Run it
+  by hand when you are about to install something and want a second opinion.
 
-**`-I` is not in the default set**, because `-P` performs all three of its checks. Running
-both meant every routine run fetched the AUR RPC and the IoC feeds twice and reported each
-finding twice.
+Bare `fettle -p` (no package names) points the gate at everything already installed. It
+works, and it says so when you run it — but `-P` reports the same facts and more.
+
+> **`-I` / `aur-ioc-scan` was retired in v0.73.0.** Every check it performed is in `-P`,
+> across every ecosystem. It had already been dropped from the default set because running
+> both fetched the AUR RPC and the IoC feeds twice and reported each finding twice;
+> retiring the flag finished that. `fettle -I` now tells you where the capability went.
+> The feed-coverage reporting that `-I` uniquely had — *"the scan matched nothing, but the
+> lists were never read"* — moved into `-P` as part of the retirement, because losing it
+> would have reintroduced the exact bug its QA sweep fixed.
 
 They keep **separate** maintainer-change baselines. Sharing one meant whichever action ran
 first consumed the difference and rewrote the file, so a maintainer takeover was reported
@@ -624,7 +635,7 @@ the subcommand form for their own options.
 update, rebuild-check, python-rebuild-check, config-drift, auto-updates,
 firmware-check, and — last, read-only — **pkg-audit** (`-P`), so a full run also
 reports where your packages came from and whether any of them matches a
-known-compromise feed. `-I` is **not** in the default set: `-P` already runs all
+known-compromise feed. `-I` was **retired** in v0.73.0: `-P` already runs all
 three of its checks (see [Three AUR checks](#three-aur-checks-and-which-to-reach-for)).
 Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-H`.
 
@@ -646,14 +657,13 @@ not fettle's ────`) so you can always tell fettle's messages from the to
 ## Package supply-chain
 
 Four commands touch package provenance/safety and are easy to confuse. Rule of
-thumb: **`-P` is the broad, all-ecosystem one; `-A`/`-I`/`-p` are AUR-only and each
+thumb: **`-P` is the broad, all-ecosystem one; `-A`/`-p` are AUR-only and each
 answers a different question.**
 
 | Command | What it answers | Use it when | Output |
 |---|---|---|---|
 | `fettle -P` / `pkg-audit` | Across **all** ecosystems (AUR/APT/Flatpak/Snap): where did my installed software come from, and has it been tampered with? | you want one whole-system supply-chain report | findings → `~/.fettle/reports/` |
 | `fettle -A` / `aur-audit` *(arch)* | AUR **health census**: age, votes, out-of-date, orphan, recently-changed, maintainer-change (re-adoption tell), **reverse-dependents** (`NO-DEPENDENTS`/`NO-HARD-DEPS`, `LIB` for unused libraries — nothing on the system needs it) + removal candidates | you want to vet how well-maintained your AUR pkgs are — and spot leftovers | table → `~/.fettle/reports/` |
-| `fettle -I` / `aur-ioc-scan` *(arch)* | AUR **threat sweep**: do any installed AUR pkgs match known-compromise feeds (bad package names, malicious maintainers, malicious JS-cache traces)? | you want a known-compromise check (lenucksi IoC feed) | findings → `~/.fettle/reports/` |
 | `fettle -p` / `aur-precheck` *(arch)* | AUR **pre-install / quick sweep**: is this package (or every installed AUR pkg) risky right now — orphaned, out-of-date, stale, compromised name, malicious maintainer? | before building an AUR pkg (the yay hook), or a fast all-installed check | `CRIT`/`WARN` lines |
 
 `pkg-audit` runs each provider whose package manager is present and reports one
@@ -776,9 +786,9 @@ legacy `aur-precheck.sh`).
 
 How it differs from the others: `aur-precheck` is the fast, self-contained,
 env-driven per-package gate (no config/TOML load, silent when clean — built for the
-hook); `aur-audit` is the detailed health *report*; `aur-ioc-scan` is the pure
-threat/IoC sweep; `pkg-audit` is the cross-ecosystem umbrella that folds AUR
-health+IoC in alongside APT/Flatpak/Snap.
+hook); `aur-audit` is the detailed health *report*; `pkg-audit` is the
+cross-ecosystem umbrella that folds AUR health+IoC in alongside APT/Flatpak/Snap.
+(`aur-ioc-scan` was retired in v0.73.0 — `pkg-audit` runs everything it did.)
 
 ### Pre-upgrade gate
 
@@ -794,7 +804,7 @@ too (the prompt comes over the `ssh -t` session). Under `--yes` a **CRITICAL**
 finding still aborts unattended — pass `--force-aur` to override; `--no-aur-precheck`
 (or `aur_precheck_on_update = false` in config) turns the gate off. It covers the
 `yay -Qua` upgrade set; `--devel`/`-git` rebuilds that don't bump a version stay
-covered by the yay hook and the post-update `aur-ioc-scan`.
+covered by the yay hook and the post-update `pkg-audit`.
 
 ### Binary hardening audit — `-H` / `hardening-audit`
 
@@ -1187,7 +1197,7 @@ holds a secret. Action names accept hyphens or underscores.
 ```toml
 # ~/.config/fettle/config.toml  (all keys optional; values shown are the defaults)
 
-default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "firmware-check", "pkg-audit", "aur-ioc-scan"]
+default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "auto-updates", "firmware-check", "pkg-audit"]
 auto_rebuild    = false
 exclude_foreign = ["brave-bin", "google-chrome"]   # names or globs; skip in reports
 keep_orphans    = ["downgrade", "nvchecker"]        # never offer these for removal
@@ -1442,8 +1452,11 @@ fettle elevates **lazily and by itself** — you never need to type `sudo fettle
 
 - **Maintenance actions** re-exec under `sudo` only when a selected action will
   actually change the system. Read-only work — `pkg-audit` (`-P`), `aur-audit`
-  (`-A`), `aur-ioc-scan` (`-I`), `config-drift` (`-d`) — runs unprivileged and
+  (`-A`), `hardening-audit` (`-H`), `config-drift` (`-d`) — runs unprivileged and
   never prompts. `--dry-run` never elevates.
+- **`pkg-integrity` (`-V`) is the exception**: read-only, but it *does* elevate,
+  because unprivileged it cannot read a large share of the files it must hash.
+  "Read-only" and "needs no root" are different questions.
 - **`sys-audit`** elevates itself too (most checks need root); pass `--user` to
   stay unprivileged. `--list` and `remote` don't elevate.
 
@@ -1534,7 +1547,7 @@ curated command set.
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
-| **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `aur-ioc-scan`, `aur-precheck` |
+| **AUR IoC scan + install-time pre-flight** | ❌ | ✅ `pkg-audit`, `aur-precheck` |
 | **Package-file integrity verification** | ❌ | ✅ via `pkg-integrity` (paccheck / debsums / rpm -Va) |
 | **Security advisories / CVE tracking** (incl. *vulnerable, no fix released yet*) | ❌ | ✅ `advisory-check` (distro feeds + OSV for Python/Node/Rust) |
 | **AI pre-upgrade advisor** | ❌ | ✅ `upgrade-check` (local **and** remote) |

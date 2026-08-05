@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.73.0] — four AUR views become three, and each one says when to use it
+
+Four commands looked at AUR packages and printed overlapping answers. Reading the code
+rather than the docstrings: **`pkg-audit` already reported everything `aur-ioc-scan` did,
+and everything bare `aur-precheck` did** except the JS-cache trace.
+
+**`-I` / `aur-ioc-scan` is retired.** It had already been dropped from the default set
+(running both fetched the AUR RPC and the IoC feeds twice and reported each finding twice);
+this finishes the thought. `fettle -I` now explains where the capability went instead of
+argparse's "unrecognized arguments".
+
+**A precondition, not a detail: `-P` had to inherit `-I`'s coverage reporting first.**
+`-I`'s QA sweep fixed a malware check that said *"nothing matched"* while the lists it
+matches against were never fetched. `-P`'s AUR provider never had that guard — it called
+the feed and used the results without asking whether they loaded. Retiring `-I` as-is would
+have deleted the fix and left it missing from the one action that runs on every `fettle -a`.
+`-P` now reports feeds that could not be fetched, and feeds served from a stale cache.
+
+**The remaining three are distinguished by *when*, not by what they query** — the help and
+README now lead with that:
+
+- **`-P` pkg-audit** — routine, after the fact, every ecosystem. **Where it came from.**
+- **`-A` aur-audit** — after the fact, AUR only. The census: age, votes, maintainer, and
+  what nothing depends on any more. The only one that tells you what is safe to remove.
+- **`-p` aur-precheck** — **before an install**, on package names you give it, emitting
+  `CRIT`/`WARN` lines for a hook to parse. This is what the yay hook and `-u`'s pre-upgrade
+  gate call.
+
+Bare `fettle -p` points the install-time gate at what is already installed — a different
+job from the one it was built for. It still works, and now says so, naming `-P` and `-A`.
+
+Also: the README claimed `pkg-integrity` "runs unprivileged and never prompts", left over
+from before v0.72.1 made it elevate. Corrected, with the read-only-but-needs-root
+distinction stated where the elevation rules are documented.
+
 ## [0.72.1] — `fettle -V` now actually elevates
 
 **Correction to 0.72.0.** Its notes said pkg-integrity "elevates, because unprivileged it

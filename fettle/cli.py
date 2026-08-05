@@ -46,7 +46,6 @@ AUDIT_ACTIONS = [
     (("-P", "--pkg-audit"), "pkg_audit"),
     (("-V", "--pkg-integrity"), "pkg_integrity"),
     (("-A", "--aur-audit"), "aur_audit"),
-    (("-I", "--aur-ioc-scan"), "aur_ioc_scan"),
     (("-H", "--hardening-audit"), "hardening_audit"),
 ]
 FLAG_ACTIONS = MAINTENANCE_ACTIONS + AUDIT_ACTIONS
@@ -60,8 +59,8 @@ SHORTCUT_HELP = [
      "firmware/boot/hardware security scan — the deepest one fettle has; "
      "self-elevates; exits 1 on findings (`fettle sys-audit --list`)"),
     (("-p", "--aur-precheck"), "aur_precheck",
-     "pre-install check for AUR packages (RPC + IoC); bare = every installed one "
-     "(`fettle aur-precheck PKG …`)"),
+     "BEFORE installing: gate one or more named AUR packages (RPC + IoC). Also "
+     "the yay hook (`fettle aur-precheck PKG …`)"),
     (("-U", "--upgrade-check"), "upgrade_check",
      "[experimental] AI pre-upgrade safety check; needs ANTHROPIC_API_KEY "
      "(`fettle upgrade-check --effort high`)"),
@@ -72,7 +71,7 @@ SHORTCUT_HELP = [
 WORD_ALIASES = {"upgrade": "update"}
 
 # Actions that never MUTATE the system.
-READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "aur_ioc_scan", "config_drift",
+READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
                      "auto_updates", "hardening_audit", "pkg_integrity"}
 
 # "Read-only" and "needs no root" are different questions, and they come apart in
@@ -117,11 +116,10 @@ ACTION_HELP = {
                        "than \"up to date\" if the daemon cannot be reached"),
     "kernel": ("list kernels and offer to purge old ones (the running one AND "
                "the next-boot one are always protected)"),
-    "aur_audit": ("AUR health census: flags packages that are orphaned, "
-                  "out-of-date, or GONE from the AUR -> ~/.fettle/reports/"),
-    "aur_ioc_scan": ("scan installed AUR pkgs vs known-compromise feeds; says so "
-                     "if coverage was incomplete -> ~/.fettle/reports/"),
-    "pkg_audit": "cross-ecosystem supply-chain audit (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
+    "aur_audit": ("AFTER installing: census of every AUR package you have — age, "
+                  "votes, maintainer, and what nothing depends on any more "
+                  "-> ~/.fettle/reports/"),
+    "pkg_audit": "WHERE your software came from, every ecosystem (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
     "pkg_integrity": "do installed files still match what the package shipped? (paccheck/debsums/rpm -Va) -> ~/.fettle/reports/",
@@ -144,18 +142,20 @@ other commands:
   fettle web [--port N]                   serve the web UI (localhost; needs
                                           the 'web' extra: pip install fettle[web])
 
-which package check? (-S is separate: it scans firmware/boot/hardware, not packages)
-  -P  pkg-audit     WHERE your packages came from, across ALL ecosystems (AUR/APT/
-                    Flatpak/Snap/containers/extensions). INCLUDES everything -I
-                    checks; the only one in the default set.
-  -V  pkg-integrity WHETHER the installed FILES still match what the package shipped
-                    (paccheck / debsums / rpm -Va). Detects change after install;
-                    it is a tripwire, not proof the package was authentic.
-  -A  aur-audit     AUR census: age, votes, maintainer + what nothing depends on
-                    any more (only -A tells you what is safe to remove)
-  -I  aur-ioc-scan  AUR threat scan only — the same IoC checks -P runs, on their
-                    own and faster. Not in the default set (-P covers it).
-  -p  aur-precheck  per-package pre-install check (RPC + IoC); bare = all installed
+which package check? each answers a different question (-S scans firmware, not packages)
+  -P  pkg-audit     WHERE it came from — provenance + known-bad feeds, every
+                    ecosystem. The only one in the default set; a superset of what
+                    -p reports, plus JS-cache traces and maintainer changes.
+  -V  pkg-integrity WHETHER the FILES still match what the package shipped
+                    (paccheck / debsums / rpm -Va). A tripwire for change after
+                    install; not proof the package was authentic.
+  -A  aur-audit     AFTER installing, AUR only — the census: age, votes, maintainer,
+                    and what nothing depends on any more. Only -A tells you what is
+                    safe to remove.
+  -p  aur-precheck  BEFORE installing, AUR only — the gate. Takes package NAMES and
+                    prints CRIT/WARN lines for a hook to parse; this is what the yay
+                    hook and `-u`'s pre-upgrade check call. Bare, it scans everything
+                    installed, which -P already does better.
 
 Actions/commands tagged [arch]/[debian] are specific to that distro; untagged
 ones work everywhere. fettle runs only what your distro's backend supports and
@@ -908,7 +908,27 @@ def main(argv: list[str] | None = None) -> int:
             _nontty_log.close()
 
 
+# Retired spellings -> what replaced them. argparse would say "unrecognized
+# arguments: -I", which tells you nothing about where the capability went.
+_RETIRED = {
+    "-I": "aur-ioc-scan", "--aur-ioc-scan": "aur-ioc-scan",
+    "aur-ioc-scan": "aur-ioc-scan", "aur_ioc_scan": "aur-ioc-scan",
+}
+_RETIRED_NOTE = {
+    "aur-ioc-scan": (
+        "retired in v0.73.0 — `fettle -P` (pkg-audit) runs every check it did, on "
+        "every ecosystem, and now also reports when an IoC feed could not be read."),
+}
+
+
 def _main(argv: list[str]) -> int:
+    retired = next((t for t in argv if t in _RETIRED), None)
+    if retired is not None:
+        name = _RETIRED[retired]
+        shown = retired if retired == name else f"{retired} ({name})"
+        print(f"fettle: {shown} is {_RETIRED_NOTE[name]}", file=sys.stderr)
+        return 2
+
     # ``aur-precheck`` is a standalone, unprivileged helper (called per-package by
     # the yay install hook), not one of the maintenance actions — route it before
     # the flag parser so it bypasses config load, root elevation, and section UI.

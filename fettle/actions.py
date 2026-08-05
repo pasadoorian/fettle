@@ -25,7 +25,6 @@ TITLES = {
     "firmware_check": "Firmware",
     "kernel": "Kernel management",
     "aur_audit": "AUR audit",
-    "aur_ioc_scan": "AUR IoC scan",
     "pkg_audit": "Package supply-chain audit",
     "hardening_audit": "Binary hardening audit",
     "pkg_integrity": "Package file integrity",
@@ -324,7 +323,6 @@ HANDLERS = {
     # -A and -S are distinct AUR-specific commands (not pkg-audit aliases):
     # -A is the health/metrics table; -S is the installed-package IoC scan.
     "aur_audit": lambda b, c: _aur_audit(c),
-    "aur_ioc_scan": lambda b, c: _aur_ioc_scan(c),
     "hardening_audit": lambda b, c: _hardening_audit(b, c),
     "pkg_integrity": lambda b, c: _pkg_integrity(b, c),
     "container_update": lambda b, c: _container_update(c),
@@ -349,11 +347,6 @@ def _pkg_integrity(backend: "PackageBackend", ctx: "Context") -> None:
 def _aur_audit(ctx: "Context") -> None:
     from .aur import audit
     audit.run(ctx)
-
-
-def _aur_ioc_scan(ctx: "Context") -> None:
-    from .aur import ioc_scan
-    ioc_scan.run(ctx)
 
 
 def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:

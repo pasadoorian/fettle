@@ -171,6 +171,17 @@ def main(argv) -> int:
     if not installed:
         print("no foreign/AUR packages installed to check.")
         return 0
+    # This is the install-time gate pointed at what is already installed, which is a
+    # different job from the one it was built for. Everything below is also reported
+    # by `fettle -P`, in a form meant to be read rather than parsed, so say so once
+    # instead of leaving two tools looking like duplicates of each other.
+    print("note: this is the install-time gate, run over what is already installed.")
+    print("      `fettle -P` is the audit built for that and covers more "
+          "(every ecosystem,")
+    print("      maintainer changes, JS-cache traces); `fettle -A` adds votes and "
+          "what is safe")
+    print("      to remove. Use this form for a quick AUR-only pass.")
+    print()
     print(f"scanning {len(installed)} installed AUR/foreign package(s) "
           "for supply-chain issues...")
     findings: list[str] = []

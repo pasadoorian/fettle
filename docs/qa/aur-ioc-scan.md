@@ -1,3 +1,11 @@
+> **RETIRED in v0.73.0.** `-I` / `aur-ioc-scan` no longer exists — `pkg-audit`
+> (`-P`) runs every check it did, across every ecosystem. This sweep's findings
+> are still live: the fixes were in `fettle/aur/ioc.py` (the shared feed layer),
+> and the one that lived in the action itself — *"matched nothing, but the lists
+> were never read"* — was ported into `-P`'s AUR provider as a precondition of
+> retiring the flag. Without that port, folding `-I` into `-P` would have
+> reintroduced the exact bug this document records.
+
 # QA — `aur-ioc-scan` (`-I`)
 
 **Purpose as advertised:** *"scan installed AUR pkgs vs known-compromise feeds"*.

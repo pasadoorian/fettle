@@ -9,8 +9,10 @@ from fettle.supplychain.base import KNOWN_BAD, STALE_OR_ABANDONED, UNVERIFIED_PU
 
 
 class FakeIOC:
-    def __init__(self, *, packages=None, accounts=None, npm=None, **_):
+    def __init__(self, *, packages=None, accounts=None, npm=None,
+                 unavailable=(), stale=(), **_):
         self._p, self._a, self._n = packages or set(), accounts or set(), npm or set()
+        self.unavailable, self.stale = list(unavailable), list(stale)
 
     def bad_packages(self):
         return self._p
@@ -85,3 +87,35 @@ def test_maintainer_change_detected(tmp_path):
 def test_clean_system_no_findings(tmp_path):
     results = [{"Name": "good", "Maintainer": "bob", "LastModified": 9_999_999_999}]
     assert _run(tmp_path, foreign=["good"], results=results) == []
+
+
+# -- coverage of the IoC half (inherited from -I when it was retired) ---------
+def test_unreadable_ioc_feed_is_reported(tmp_path):
+    """`aur-ioc-scan`'s QA sweep fixed exactly this: a malware check saying "nothing
+    matched" while the lists it matches against were never fetched. Folding -I into
+    -P without carrying this across would have reintroduced it in the action that
+    runs on every `fettle -a`.
+    """
+    findings = _run(tmp_path, foreign=["pkg"],
+                    results=[{"Name": "pkg", "Maintainer": "bob",
+                              "LastModified": 9_999_999_999}],
+                    ioc=FakeIOC(unavailable=["aur-infected"]))
+    feeds = [f for f in findings if f.package == "ioc-feeds"]
+    assert feeds, "an unreadable IoC feed must not pass silently"
+    assert feeds[0].severity == Severity.WARN
+    assert "would NOT have been seen" in feeds[0].detail
+
+
+def test_stale_ioc_cache_is_reported(tmp_path):
+    findings = _run(tmp_path, foreign=["pkg"],
+                    results=[{"Name": "pkg", "Maintainer": "bob",
+                              "LastModified": 9_999_999_999}],
+                    ioc=FakeIOC(stale=["chaos-rat"]))
+    assert any("out-of-date cache" in f.detail for f in findings)
+
+
+def test_healthy_feeds_add_no_noise(tmp_path):
+    findings = _run(tmp_path, foreign=["pkg"],
+                    results=[{"Name": "pkg", "Maintainer": "bob",
+                              "LastModified": 9_999_999_999}])
+    assert not [f for f in findings if f.package == "ioc-feeds"]

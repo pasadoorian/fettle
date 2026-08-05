@@ -28,11 +28,11 @@ DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuild_check",
                    "python_rebuild_check", "config_drift", "auto_updates",
                    "firmware_check",
                    "pkg_audit"]  # security audits last (read-only)
-# `aur_ioc_scan` is deliberately NOT in the default set: `pkg_audit` runs every check it
-# does — the malicious-package list, the malicious-account list and the JS-cache trace —
-# and does so across every ecosystem. Having both meant each routine run fetched the AUR
-# RPC and the IOC feeds twice and reported every finding twice. `-I` remains available on
-# its own as the fast AUR-only threat scan.
+# `aur_ioc_scan` was retired in v0.73.0. `pkg_audit` ran every check it did — the
+# malicious-package list, the malicious-account list and the JS-cache trace — across
+# every ecosystem, so keeping both meant a routine run fetched the AUR RPC and the IOC
+# feeds twice and reported every finding twice. Dropping it from the default set
+# (v0.24.x) fixed the duplication; retiring the flag finished the thought.
 
 
 @dataclass
@@ -127,6 +127,7 @@ def _allowed_uids() -> set[int]:
 
 # Action names retired in v0.4.0 -> the new name to point users at (config help).
 _RETIRED_ACTIONS = {
+    "aur_ioc_scan": "removed in v0.73.0 (use pkg-audit / -P)",
     "rebuilds": "rebuild-check",
     "python_rebuild": "python-rebuild-check",
     "firmware": "firmware-check",
