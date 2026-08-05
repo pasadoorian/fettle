@@ -192,7 +192,8 @@ summary:hover::before{text-shadow:0 0 8px currentColor}
 .grow{display:flex;gap:.6rem;align-items:baseline;padding:.15rem .2rem;font-size:.82rem}
 .cmdtag{font-family:var(--mono);font-size:.72rem;color:var(--cyan)}
 .cmdtag::before{content:"$ ";color:var(--dim)}
-.body{padding:.3rem .7rem .75rem}
+.body{padding:.3rem .7rem .75rem;overflow-x:auto}
+table{min-width:max-content}
 table{border-collapse:collapse;width:100%;font-size:.8rem}
 th,td{text-align:left;padding:.28rem .55rem;border-bottom:1px solid #14212e}
 th{color:var(--dim);font-weight:600;text-transform:lowercase}
@@ -448,11 +449,14 @@ def _render_advisories(data: dict) -> str:
                 for fs in groups.values()]
 
     def _row(f: dict, envs: list) -> str:
-        sev = str(f.get("severity", "Unknown"))
-        badge = f'<span class="badge b-{_esc(sev)}">{_esc(sev)}</span>'
+        # The CVSS vector is reference detail, not something read at a glance -- and
+        # at 44 monospace characters it forced this column wide enough to push
+        # package, version, CVEs and the link out of a container that could not
+        # scroll. Into the badge's tooltip.
+        sev = _sev(f.get("severity"))
         cvss = f.get("cvss")
-        if cvss:
-            badge += f'<br><span class=muted style="font-size:.68rem" title="CVSS">{_esc(str(cvss))}</span>'
+        tip = f' title="CVSS {_esc(str(cvss))}"' if cvss else ""
+        badge = f'<span class="badge b-{_esc(sev)}"{tip}>{_esc(sev)}</span>'
         ver = _esc(str(f.get("installed_version", "")))
         fx = f.get("fixed_version")
         ver += f" &rarr; {_esc(str(fx))}" if fx else ""

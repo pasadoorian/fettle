@@ -497,3 +497,31 @@ def test_severity_filter_is_offered(tmp_path):
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert 'id="sevf"' in text and "High and above" in text
     assert 'data-sev="3"' in text                          # entry tagged for the filter
+
+
+def test_wide_report_content_can_be_reached(tmp_path):
+    """Reported from a real run: the "Fix available" table showed only the severity
+    badge and the CVSS vector — package, versions, CVEs and links were all present in
+    the HTML but unreachable, because `section.host` clips and nothing scrolled. The
+    44-character CVSS vector was what forced the first column that wide.
+
+    Content that exists but cannot be reached is the layout form of the bug this whole
+    QA pass is about.
+    """
+    _write_report_json(tmp_path, "h1", "advisory-check", "20260805-120000",
+                       {"findings": [{"source": "osv", "package": "cryptography",
+                                      "installed_version": "41.0.7",
+                                      "fixed_version": "42.0.0", "severity": "High",
+                                      "cves": ["CVE-2023-50782"], "status": "fixable",
+                                      "environment": "/home/p/src/x/venv",
+                                      "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+                                      "url": "https://osv.dev/x", "group_id": "GHSA-x"}]})
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    # the vector is reference detail: available on hover, not eating a column
+    assert 'title="CVSS CVSS:3.1/' in text
+    assert "<br><span class=muted" not in text
+    # and a body that overflows can be scrolled rather than silently clipped
+    assert ".body{padding:.3rem .7rem .75rem;overflow-x:auto}" in text
+    for cell in ("cryptography", "41.0.7", "42.0.0", "CVE-2023-50782",
+                 "/home/p/src/x/venv"):
+        assert cell in text

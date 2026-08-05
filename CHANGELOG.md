@@ -10,6 +10,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.81.1] — advisory tables were losing every column but the first
+
+Reported from a real run: the dashboard's **Fix available** section showed only the
+severity badge and a CVSS vector — package, versions, CVEs and links were missing.
+
+The data was never missing. It was all in the HTML and unreachable: `section.host` clips
+its content and no table could scroll, so anything wider than the pane simply had no way
+to be seen. The **44-character CVSS vector** was what forced the first column that wide.
+
+- The vector moves into the badge's tooltip. It is reference detail, not something read
+  at a glance, and it was the single widest thing in the row.
+- Report bodies scroll horizontally (`overflow-x:auto`), so no future wide content can
+  hide data again. That is the general fix; the CVSS change just makes the common case
+  fit without scrolling at all.
+
+Content that exists but cannot be reached is the layout form of the bug this whole QA
+pass is about.
+
 ## [0.81.0] — what changed since you last looked, and a severity filter
 
 **The delta.** Each host card now carries `+11 new, -47 resolved since 2026-07-24`, and
