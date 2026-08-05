@@ -41,7 +41,7 @@ def test_sideloaded_vsix_is_flagged(tmp_path):
     f = _run(tmp_path)
     assert len(f) == 1
     assert f[0].package == "vscodium:ms-vscode.cpptools"
-    assert f[0].question == UNOFFICIAL_SOURCE and f[0].severity == Severity.WARN
+    assert f[0].question == UNOFFICIAL_SOURCE and f[0].severity == Severity.MEDIUM
     assert "bypassed the registry" in f[0].detail
     assert "Microsoft" in f[0].detail          # the claimed publisher is surfaced
 

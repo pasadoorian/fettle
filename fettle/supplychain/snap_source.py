@@ -37,15 +37,15 @@ class SnapSource(SourceProvider):
                 continue
             name, publisher, notes = cols[0], cols[4], cols[5]
             if publisher in ("-", ""):
-                out.append(Finding(Severity.WARN, self.source, name, UNOFFICIAL_SOURCE,
+                out.append(Finding(Severity.MEDIUM, self.source, name, UNOFFICIAL_SOURCE,
                                    "sideloaded snap (no Store publisher)"))
             elif not ("✓" in publisher or "**" in publisher):
                 out.append(Finding(Severity.LOW, self.source, name, UNVERIFIED_PUBLISHER,
                                    f"unverified publisher '{publisher}'"))
             if "classic" in notes:
-                out.append(Finding(Severity.WARN, self.source, name, OVER_PRIVILEGED,
+                out.append(Finding(Severity.MEDIUM, self.source, name, OVER_PRIVILEGED,
                                    "classic confinement (runs outside the sandbox)"))
             if "devmode" in notes:
-                out.append(Finding(Severity.WARN, self.source, name, OVER_PRIVILEGED,
+                out.append(Finding(Severity.MEDIUM, self.source, name, OVER_PRIVILEGED,
                                    "devmode (sandbox enforcement disabled)"))
         return out

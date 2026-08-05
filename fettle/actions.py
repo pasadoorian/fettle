@@ -216,9 +216,9 @@ def _preview_transaction(backend: "PackageBackend", ctx: "Context", *,
 def _emit(out, finding) -> None:
     from .supplychain.base import Severity
     line = f"[{finding.source}] {finding.package}: {finding.detail}"
-    if finding.severity >= Severity.CRIT:
+    if finding.severity >= Severity.CRITICAL:
         out.alert(line)
-    elif finding.severity == Severity.WARN:
+    elif finding.severity == Severity.MEDIUM:
         out.warn(line)
     else:
         out.note(line)
@@ -279,7 +279,7 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
     else:
         for f in findings:
             _emit(out, f)
-        crit = sum(1 for f in findings if f.severity >= Severity.CRIT)
+        crit = sum(1 for f in findings if f.severity >= Severity.CRITICAL)
         msg = f"{len(findings)} supply-chain finding(s)"
         if crit:
             # A known-malicious package is not a to-do item. This is the one read-only

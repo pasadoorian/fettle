@@ -181,7 +181,7 @@ class ContainerSource(SourceProvider):
             # nothing here would look identical to "no problems found".
             why = (proc.stderr or proc.stdout).strip().splitlines()
             return [Finding(
-                Severity.WARN, self.source, runtime, UNVERIFIABLE,
+                Severity.MEDIUM, self.source, runtime, UNVERIFIABLE,
                 f"could not list images (exit {proc.returncode}"
                 + (f": {why[0][:120]}" if why else "")
                 + ") — images were NOT audited")]
@@ -206,7 +206,7 @@ class ContainerSource(SourceProvider):
 
             if tag == "latest":
                 out.append(Finding(
-                    Severity.WARN, self.source, label(ref), MUTABLE_REFERENCE,
+                    Severity.MEDIUM, self.source, label(ref), MUTABLE_REFERENCE,
                     # Not "pulled by": QA found this text on locally-built images,
                     # which were never pulled at all. The tag is mutable either way —
                     # a re-pull or a rebuild both move it — so say that instead.
@@ -221,7 +221,7 @@ class ContainerSource(SourceProvider):
                     # still gets distro updates, whereas an image is frozen at build
                     # time and carries every CVE published since.
                     out.append(Finding(
-                        Severity.WARN, self.source, label(ref), STALE_OR_ABANDONED,
+                        Severity.MEDIUM, self.source, label(ref), STALE_OR_ABANDONED,
                         f"built {age} days ago (over {max_age}); an image is frozen at "
                         "build time, so everything published since is still inside it"))
 

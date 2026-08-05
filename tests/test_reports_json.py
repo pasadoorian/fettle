@@ -114,7 +114,8 @@ def test_log_json_envelope(tmp_path):
 
 def test_finding_to_dict():
     from fettle.supplychain.base import KNOWN_BAD, Finding, Severity, finding_to_dict
-    f = Finding(Severity.CRIT, "aur", "evil-pkg", KNOWN_BAD, "matches feed X")
-    assert finding_to_dict(f) == {"severity": "CRIT", "source": "aur",
+    f = Finding(Severity.CRITICAL, "aur", "evil-pkg", KNOWN_BAD, "matches feed X")
+    # One scale with the advisory side (v0.80.0): CRIT -> Critical, WARN -> Medium.
+    assert finding_to_dict(f) == {"severity": "Critical", "source": "aur",
                                   "package": "evil-pkg", "question": KNOWN_BAD,
                                   "detail": "matches feed X"}

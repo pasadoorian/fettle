@@ -90,7 +90,7 @@ class GnomeSource(SourceProvider):
         if listing.returncode != 0:
             why = (listing.stderr or listing.stdout).strip().splitlines()
             return [Finding(
-                Severity.WARN, self.source, _TOOL, UNVERIFIABLE,
+                Severity.MEDIUM, self.source, _TOOL, UNVERIFIABLE,
                 f"could not list extensions (exit {listing.returncode}"
                 + (f": {why[0][:120]}" if why else "")
                 + ") — extensions were NOT audited")]
@@ -125,7 +125,7 @@ class GnomeSource(SourceProvider):
             where = "in your home directory" if path.startswith(home) else \
                     "in a system directory but owned by no package"
             out.append(Finding(
-                Severity.WARN if enabled else Severity.LOW, self.source, uuid,
+                Severity.MEDIUM if enabled else Severity.LOW, self.source, uuid,
                 UNOFFICIAL_SOURCE,
                 ("ENABLED and unattributed" if enabled else "installed but disabled")
                 + f" — {where}; extension code runs inside the gnome-shell process "

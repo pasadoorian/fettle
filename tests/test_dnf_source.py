@@ -74,7 +74,7 @@ def test_gpgcheck_zero_on_an_enabled_repo_is_flagged(tmp_path):
                 and "gpgcheck=0" in x.detail]
     assert {x.package for x in unsigned} == {"centos-stream-baseos",
                                              "centos-stream-appstream"}
-    assert all(x.severity == Severity.WARN for x in unsigned)
+    assert all(x.severity == Severity.MEDIUM for x in unsigned)
 
 
 def test_absent_gpgcheck_inherits_the_global_default(tmp_path):

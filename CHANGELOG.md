@@ -10,6 +10,37 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.80.0] — the dashboard card now says what is actually wrong
+
+UX pass on `fettle report` (and therefore on `fettle web`, which serves the same page).
+
+**The card led with the least actionable number.** It showed `hardening-audit` bands and
+nothing else — an opt-in audit that every real desktop has bands in — so a host with files
+failing integrity, unpatched Critical CVEs or Secure Boot disabled displayed **no chip at
+all**, while one with a routine hardening tally looked alarming. Underneath it counted
+*reports* per type, answering "how much data do I have" rather than "what is wrong".
+
+Each card is now a **verdict across every audit**: the worst severity in the newest report
+of each type, then the two or three findings that drove it. Hardening is capped at Medium,
+for the same reason `-H` does not fail a run — its "Critical" is a scoring band, not a
+compromised machine, and letting it dominate teaches you to ignore the colour.
+
+**One severity scale.** Supply-chain findings used `INFO/LOW/WARN/CRIT` while advisories
+used `Critical/High/Medium/Low`, and the dashboard showed both — `LOW: 38` and `Low: 510`
+side by side meaning different things, so nothing could sort or filter across them.
+Unified to `Critical / High / Medium / Low / Info` in the terminal and in the JSON
+(`CRIT`→Critical, `WARN`→Medium). Reports written before this release are normalised on
+read, since they are on disk forever.
+
+**A host that stopped reporting is now a finding** — `has not reported in 13 days`,
+threshold `[reports] stale_days` (default 7). It is the fleet-level form of the invariant
+this whole QA pass is about: a silent host looked exactly like one that reported clean
+this morning.
+
+Also fixed while measuring the new card against real data: five retained advisory-check
+reports put the same 770 CVEs on one card five times, and `770 package with a known CVEs`
+did not agree with itself about plurals.
+
 ## [0.79.0] — one machine was showing up as three hosts
 
 QA pass on `fettle report`, against a real tree: 27 report directories, 20 log

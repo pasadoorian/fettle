@@ -111,7 +111,7 @@ class AptSource(SourceProvider):
                     out.append(Finding(Severity.LOW, self.source, label, INSECURE_TRANSPORT,
                                        f"third-party repository over http (no TLS): {uri} ({src})"))
             if opts.get("trusted") == "yes":
-                out.append(Finding(Severity.WARN, self.source, label, INSECURE_TRANSPORT,
+                out.append(Finding(Severity.MEDIUM, self.source, label, INSECURE_TRANSPORT,
                                    f"[trusted=yes] disables signature checks: {uri} ({src})"))
         out.extend(self._integrity())
         return out
@@ -121,5 +121,5 @@ class AptSource(SourceProvider):
             return []
         changed = [ln.strip() for ln in
                    command.run(["debsums", "-c"], capture=True).stdout.splitlines() if ln.strip()]
-        return [Finding(Severity.WARN, self.source, "debsums", INTEGRITY_DRIFT,
+        return [Finding(Severity.MEDIUM, self.source, "debsums", INTEGRITY_DRIFT,
                         f"modified packaged file: {ln}") for ln in changed]

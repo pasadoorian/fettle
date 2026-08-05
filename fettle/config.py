@@ -68,7 +68,9 @@ class Config:
     # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
     # type per host to retain, default 5), dir (base dir override, default
     # ~/.fettle), log (bool, run-log on/off), json (bool, write a .json sibling for
-    # each report/log — default on; the `fettle report` HTML dashboard reads them).
+    # each report/log — default on; the `fettle report` HTML dashboard reads them),
+    # stale_days (int, default 7 — a host whose newest report is older than this is
+    # flagged on the dashboard: at fleet scale, no data is not good news).
     # Reports live under <dir>/reports/<host>/, run-logs under <dir>/logs/<host>/.
     reports: dict = field(default_factory=dict)
     # Remote host groups (fettle/remote.py). `[remote.groups.<name>]` tables map a

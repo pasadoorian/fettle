@@ -162,6 +162,8 @@ main{padding:1.3rem 1.1rem;max-width:1180px;margin:0 auto}
 .b-High{color:var(--amber);border-color:var(--amber)}
 .b-Medium{color:var(--yellow);border-color:var(--yellow)}
 .b-Low{color:var(--green);border-color:var(--green)}
+.b-Info{color:var(--dim);border-color:var(--dim)}
+.b-ok{color:var(--green);border-color:var(--green)}
 section.host{background:var(--panel);border:1px solid var(--border);border-radius:6px;margin:1rem 0;overflow:hidden}
 section.host>h2{margin:0;padding:.6rem .9rem;background:var(--panel2);font-size:1.02rem;
   border-bottom:1px solid var(--border);color:var(--green)}
@@ -587,25 +589,125 @@ def _cmd_tag(entry: dict) -> str:
     return f'<span class="cmdtag" title="command that produced this report">{_esc(cmd)}</span>'
 
 
-def _host_summary(host: dict) -> str:
-    """The dashboard card body: latest hardening bands, per-type counts, latest run."""
-    chips = ""
-    for e in host["reports"]:
-        if e.get("tool") == "hardening-audit":
-            tally = (e.get("data") or {}).get("band_tally") or {}
-            chips = "".join(f'<span class="chip b-{b}">{tally.get(b,0)} {b}</span>'
-                            for b in _BANDS if tally.get(b))
-            break
-    types: dict[str, int] = {}
+_SEV_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0, "Unknown": 1}
+# Reports written before v0.80.0 carry the old supply-chain vocabulary. They are on
+# disk forever, so the dashboard normalises on read rather than pretending otherwise.
+_SEV_LEGACY = {"Crit": "Critical", "Warn": "Medium", "Info": "Info", "Low": "Low"}
+
+
+def _sev(raw) -> str:
+    name = str(raw or "Unknown").title()
+    return _SEV_LEGACY.get(name, name)
+
+
+def _worst(entries) -> tuple[int, str]:
+    return max(entries, default=(0, ""))
+
+
+def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, str]]:
+    """``(rank, one-line problem)`` for a host, worst first.
+
+    The card used to show **hardening bands only** — an opt-in audit where every real
+    desktop has bands — so a host with files failing integrity, unpatched Criticals or
+    Secure Boot off displayed no chip at all, while one with a routine hardening tally
+    looked alarming. This asks every report what it found.
+
+    Hardening is deliberately capped at Medium here for the same reason the CLI does
+    not fail on it: its "Critical" is the worst band of a scoring scheme, not a
+    compromised machine, and letting it dominate the fleet view would train you to
+    ignore the colour.
+    """
+    import datetime as _dt
+
+    out: list[tuple[int, str]] = []
+    # Newest report per type only. Five retained advisory-check reports otherwise put
+    # the same 770 CVEs on the card five times, which is noise pretending to be scale.
+    newest: dict[str, dict] = {}
     for e in host["reports"]:
         if _is_empty(e):
             continue
-        types[e.get("tool", "?")] = types.get(e.get("tool", "?"), 0) + 1
+        t = e.get("tool", "")
+        if e.get("timestamp", "") >= newest.get(t, {}).get("timestamp", ""):
+            newest[t] = e
+    for e in newest.values():
+        tool = e.get("tool", "")
+        data = e.get("data") or {}
+        if tool in ("pkg-audit", "advisory-check"):
+            tally: dict[str, int] = {}
+            for f in data.get("findings") or []:
+                sev = _sev(f.get("severity"))
+                tally[sev] = tally.get(sev, 0) + 1
+            if tally:
+                worst = max(tally, key=lambda k: _SEV_RANK.get(k, 1))
+                n = sum(tally.values())
+                what = (f"supply-chain finding{'s' if n != 1 else ''}"
+                        if tool == "pkg-audit"
+                        else f"package{'s' if n != 1 else ''} with a known CVE")
+                out.append((_SEV_RANK.get(worst, 1),
+                            f"{n} {what} ({tally[worst]} {worst})"))
+        elif tool == "hardening-audit":
+            tally = data.get("band_tally") or {}
+            n = sum(tally.values())
+            if n:
+                worst = max(tally, key=lambda k: _SEV_RANK.get(_sev(k), 1))
+                out.append((min(2, _SEV_RANK.get(_sev(worst), 1)),
+                            f"{n} package{'s' if n != 1 else ''} missing build "
+                            "hardening"))
+        elif tool in ("sys-audit", "pkg-integrity"):
+            counts = data.get("level_counts") or {}
+            label = "firmware/boot" if tool == "sys-audit" else "package file integrity"
+            if counts.get("error"):
+                out.append((3, f"{counts['error']} {label} finding(s) needing attention"))
+            elif counts.get("warn"):
+                out.append((2, f"{counts['warn']} {label} warning(s)"))
+        elif tool == "upgrade-check":
+            v = str(data.get("safety_verdict", ""))
+            if v in ("risky", "caution"):
+                out.append((3 if v == "risky" else 2, f"upgrade check: {v.upper()}")) 
+        elif tool == "aur-audit":
+            gone = data.get("not_found_in_aur") or []
+            if gone:
+                out.append((2, f"{len(gone)} AUR package(s) no longer in the AUR"))
+        elif tool in ("alien-pkgs", "obsolete-pkgs"):
+            pkgs = data.get("packages") or []
+            if pkgs:
+                out.append((1, f"{len(pkgs)} {tool.replace('-', ' ')}"))
+
+    latest = max((e.get("timestamp", "") for e in host["reports"] + host["logs"]),
+                 default="")
+    if latest:
+        try:
+            age = ((now or _dt.datetime.now())
+                   - _dt.datetime.strptime(latest[:8], "%Y%m%d")).days
+        except ValueError:
+            age = 0
+        if age >= stale_days:
+            # No data is not good news — the fleet-level form of the invariant this
+            # whole QA pass is about. A host that stopped reporting looked exactly
+            # like one that reported clean this morning.
+            out.append((2, f"has not reported in {age} days"))
+    return sorted(out, reverse=True)
+
+
+def _host_summary(host: dict, *, stale_days: int = 7, now=None) -> str:
+    """The dashboard card body: a verdict across ALL audits, then what drove it."""
+    problems = _host_problems(host, stale_days=stale_days, now=now)
+    rank = _worst(problems)[0]
+    verdict = {4: "Critical", 3: "High", 2: "Medium", 1: "Low"}.get(rank, "OK")
+    badge = (f'<span class="chip b-{verdict}">{verdict}</span>' if problems
+             else '<span class="chip b-ok">OK</span>')
+    lines = "".join(f'<div class="count">· {_esc(t)}</div>' for _r, t in problems[:3])
+    more = (f'<div class="count muted">+{len(problems) - 3} more</div>'
+            if len(problems) > 3 else "")
+    types: dict[str, int] = {}
+    for e in host["reports"]:
+        if not _is_empty(e):
+            types[e.get("tool", "?")] = types.get(e.get("tool", "?"), 0) + 1
     counts = " · ".join(f"{_esc(t)}:{n}" for t, n in sorted(types.items()))
     latest = max((e.get("timestamp", "") for e in host["reports"] + host["logs"]),
                  default="")
-    return (f'<div class="chips">{chips or "<span class=muted>no hardening scan</span>"}</div>'
-            f'<div class="count">{counts or "no reports"}</div>'
+    return (f'<div class="chips">{badge}</div>{lines}{more}'
+            f'<div class="count muted" style="margin-top:.3rem">{counts or "no reports"}</div>'
             f'<div class="count muted">latest: {_esc(_fmt_ts(latest)) or "—"}</div>')
 
 
@@ -616,7 +718,7 @@ def _has_content(entry_map: dict) -> bool:
 
 
 def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
-           groups=frozenset()) -> str:
+           groups=frozenset(), stale_days: int = 7, now=None) -> str:
     # A configured group name (e.g. `fettle remote bifrost-lab`) is NOT a host — its
     # only artifact here is the controller's orchestration run-log. Keep it out of
     # the host dashboard and show it in a separate "group runs" area; the real
@@ -635,8 +737,10 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
     host_opts = "".join(f'<option value="{_esc(h)}">{_esc(h)}</option>' for h in hosts)
     type_opts = "".join(f'<option value="{_esc(t)}">{_esc(t)}</option>' for t in all_types)
 
-    cards = "".join(f'<div class="card"><h3>{_esc(h)}</h3>{_host_summary(hostmap[h])}</div>'
-                    for h in hosts)
+    cards = "".join(
+        f'<div class="card"><h3>{_esc(h)}</h3>'
+        f'{_host_summary(hostmap[h], stale_days=stale_days, now=now)}</div>'
+        for h in hosts)
 
     sections = []
     for h in hosts:
@@ -755,8 +859,14 @@ def render_page(ctx, *, base=None, now=None) -> str:
         groups = frozenset(remote.remote_groups(getattr(ctx, "config", None)))
     except Exception:
         groups = frozenset()
+    rep = getattr(getattr(ctx, "config", None), "reports", None) or {}
+    try:
+        stale_days = int(rep.get("stale_days", 7))
+    except (TypeError, ValueError):
+        stale_days = 7
     return render(hostmap, generated_at=generated, version=__version__,
-                  user=user, groups=groups)
+                  user=user, groups=groups, stale_days=stale_days,
+                  now=(now or _dt.datetime.now()))
 
 
 def build(ctx, *, open_browser: bool = False, now=None) -> Path:

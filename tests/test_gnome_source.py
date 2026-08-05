@@ -81,7 +81,7 @@ def test_hand_installed_enabled_extension_is_flagged():
     f = _run()
     hits = [x for x in f if x.package == "sketchy@example.com"]
     assert len(hits) == 1
-    assert hits[0].question == UNOFFICIAL_SOURCE and hits[0].severity == Severity.WARN
+    assert hits[0].question == UNOFFICIAL_SOURCE and hits[0].severity == Severity.MEDIUM
     assert "ENABLED" in hits[0].detail and "gnome-shell process" in hits[0].detail
 
 

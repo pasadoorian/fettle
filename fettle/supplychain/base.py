@@ -17,10 +17,28 @@ if TYPE_CHECKING:
 
 
 class Severity(enum.IntEnum):
+    """One severity scale, shared with the advisory side.
+
+    Supply-chain findings used ``INFO/LOW/WARN/CRIT`` while advisories used
+    ``Critical/High/Medium/Low``, and the dashboard showed both at once — with
+    ``LOW: 38`` and ``Low: 510`` sitting in the same table as if they were different
+    things. Nothing could sort or filter across them, which is the one job a
+    fleet view has. Same words now, in the terminal and in the JSON.
+
+    ``INFO`` is kept as a rung below Low rather than folded into it: it marks a row
+    that is context, not a problem (a dangling image), and flattening that would
+    inflate the Low count with things nobody needs to act on.
+    """
     INFO = 0
     LOW = 1
-    WARN = 2
-    CRIT = 3
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
+
+    @property
+    def label(self) -> str:
+        """Display form — title case, matching the advisory vocabulary."""
+        return self.name.title()
 
 
 # The questions every provider answers as far as its ecosystem allows.
@@ -52,8 +70,8 @@ class Finding:
 
 
 def finding_to_dict(f: "Finding") -> dict:
-    """JSON-serializable form of a Finding (severity as its name string)."""
-    return {"severity": f.severity.name, "source": f.source, "package": f.package,
+    """JSON-serializable form of a Finding (severity as its display label)."""
+    return {"severity": f.severity.label, "source": f.source, "package": f.package,
             "question": f.question, "detail": f.detail}
 
 

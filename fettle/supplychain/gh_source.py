@@ -99,7 +99,7 @@ class GhSource(SourceProvider):
                 continue                       # ships with the CLI project itself
             if owner:
                 out.append(Finding(
-                    Severity.WARN, self.source, ext_dir.name, UNVERIFIED_PUBLISHER,
+                    Severity.MEDIUM, self.source, ext_dir.name, UNVERIFIED_PUBLISHER,
                     f"installed from github.com/{owner}/{repo} — an arbitrary "
                     "repository with no review or signing, and it runs with your "
                     "authenticated gh session, so it can act as you anywhere your "

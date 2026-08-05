@@ -114,7 +114,7 @@ class DnfSource(SourceProvider):
                 cp.read_string(path.read_text(errors="replace"))
             except (OSError, configparser.Error) as exc:
                 out.append(Finding(
-                    Severity.WARN, self.source, path.name, UNVERIFIABLE,
+                    Severity.MEDIUM, self.source, path.name, UNVERIFIABLE,
                     f"could not parse {path.name} ({exc}) — the repositories it "
                     "defines were NOT audited"))
                 continue
@@ -124,7 +124,7 @@ class DnfSource(SourceProvider):
                 enabled = sec.get("enabled", "1").strip() in ("1", "true", "True")
                 # A disabled repo is inert today but is a landmine if switched on, so
                 # it is reported at a lower severity rather than hidden.
-                sev = Severity.WARN if enabled else Severity.LOW
+                sev = Severity.MEDIUM if enabled else Severity.LOW
                 suffix = "" if enabled else " (repo is disabled)"
                 url, _kind = _url_of(sec)
 

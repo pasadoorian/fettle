@@ -50,14 +50,14 @@ class AURSource(SourceProvider):
         for name in foreign:
             r = by_name.get(name)
             if r is None:
-                out.append(Finding(Severity.WARN, self.source, name, STALE_OR_ABANDONED,
+                out.append(Finding(Severity.MEDIUM, self.source, name, STALE_OR_ABANDONED,
                                     "not present in AUR (deleted/renamed) — investigate"))
                 continue
             if r.get("Maintainer") is None:
-                out.append(Finding(Severity.WARN, self.source, name, UNVERIFIED_PUBLISHER,
+                out.append(Finding(Severity.MEDIUM, self.source, name, UNVERIFIED_PUBLISHER,
                                     "orphaned (no maintainer)"))
             if r.get("OutOfDate"):
-                out.append(Finding(Severity.WARN, self.source, name, STALE_OR_ABANDONED,
+                out.append(Finding(Severity.MEDIUM, self.source, name, STALE_OR_ABANDONED,
                                     "flagged out-of-date in the AUR"))
             last = r.get("LastModified")
             if isinstance(last, (int, float)):
@@ -71,16 +71,16 @@ class AURSource(SourceProvider):
         bad_pkgs = ioc.bad_packages()
         for name in foreign:
             if name in bad_pkgs:
-                out.append(Finding(Severity.CRIT, self.source, name, KNOWN_BAD,
+                out.append(Finding(Severity.CRITICAL, self.source, name, KNOWN_BAD,
                                    "on a known-malicious package list — REMOVE/INVESTIGATE"))
         bad_accounts = ioc.bad_accounts()
         for name, r in by_name.items():
             m = r.get("Maintainer")
             if m and m in bad_accounts:
-                out.append(Finding(Severity.CRIT, self.source, name, KNOWN_BAD,
+                out.append(Finding(Severity.CRITICAL, self.source, name, KNOWN_BAD,
                                    f"maintained by a known-malicious account ({m})"))
         for name, path in aur_common.js_cache_hits(ioc.bad_npm(), ctx.user_home):
-            out.append(Finding(Severity.CRIT, self.source, name, KNOWN_BAD,
+            out.append(Finding(Severity.CRITICAL, self.source, name, KNOWN_BAD,
                                f"malicious JS package trace under {path}"))
 
         # Coverage of the IoC half, inherited from `aur-ioc-scan` when that action was
@@ -90,13 +90,13 @@ class AURSource(SourceProvider):
         # every `fettle -a`, so this is the copy that matters.
         if ioc.unavailable:
             out.append(Finding(
-                Severity.WARN, self.source, "ioc-feeds", UNVERIFIABLE,
+                Severity.MEDIUM, self.source, "ioc-feeds", UNVERIFIABLE,
                 "could not be fetched: " + ", ".join(sorted(set(ioc.unavailable)))
                 + " — a package compromised in a campaign published since would NOT "
                 "have been seen"))
         if ioc.stale:
             out.append(Finding(
-                Severity.WARN, self.source, "ioc-feeds", UNVERIFIABLE,
+                Severity.MEDIUM, self.source, "ioc-feeds", UNVERIFIABLE,
                 "served from an out-of-date cache: "
                 + ", ".join(sorted(set(ioc.stale)))))
 
@@ -129,7 +129,7 @@ class AURSource(SourceProvider):
         for name, maint in current.items():
             old = previous.get(name)
             if old is not None and old != maint:
-                changes.append(Finding(Severity.WARN, self.source, name, UNVERIFIED_PUBLISHER,
+                changes.append(Finding(Severity.MEDIUM, self.source, name, UNVERIFIED_PUBLISHER,
                                        f"maintainer changed {old} -> {maint} (review before upgrade)"))
         if not ctx.dry_run:
             try:

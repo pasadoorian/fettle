@@ -66,7 +66,7 @@ class FlatpakSource(SourceProvider):
         for line in remotes.splitlines():
             cols = _cols(line)
             if len(cols) >= 2 and cols[1].startswith("http://"):
-                out.append(Finding(Severity.WARN, self.source, cols[0], INSECURE_TRANSPORT,
+                out.append(Finding(Severity.MEDIUM, self.source, cols[0], INSECURE_TRANSPORT,
                                    f"remote '{cols[0]}' over http: {cols[1]}"))
         return out
 
@@ -78,9 +78,9 @@ class FlatpakSource(SourceProvider):
         fs = _perm_field(perms, "Context", "filesystems")
         broad = [x for x in fs if x in _BROAD_FS or x.startswith("/")]
         if broad:
-            out.append(Finding(Severity.WARN, self.source, appid, OVER_PRIVILEGED,
+            out.append(Finding(Severity.MEDIUM, self.source, appid, OVER_PRIVILEGED,
                                f"broad filesystem access: {', '.join(broad)}"))
         if "all" in _perm_field(perms, "Context", "devices"):
-            out.append(Finding(Severity.WARN, self.source, appid, OVER_PRIVILEGED,
+            out.append(Finding(Severity.MEDIUM, self.source, appid, OVER_PRIVILEGED,
                                "full device access (devices=all)"))
         return out

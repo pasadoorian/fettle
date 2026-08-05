@@ -1310,6 +1310,27 @@ with `json = false` under `[reports]`.
 
 ### HTML report — `fettle report` *(beta)*
 
+**Each host card is a verdict across every audit**, not a hardening tally: the worst
+severity found in the newest report of each type, then the two or three findings that
+drove it. A host that has **stopped reporting** is itself a finding
+(`[reports] stale_days`, default 7) — at fleet scale, no data is not good news.
+
+```
+fettle-arch    [High]    · 2 firmware/boot finding(s) needing attention
+                         · 34 packages missing build hardening
+ec3            [Medium]  · has not reported in 13 days
+```
+
+`hardening-audit` is deliberately capped at **Medium** on the card, for the same reason
+`-H` does not fail the run: its "Critical" is the worst band of a scoring scheme that
+every real desktop lands in, and letting it dominate the fleet view teaches you to ignore
+the colour.
+
+**One severity scale** (`Critical / High / Medium / Low / Info`) across supply-chain and
+advisory findings, in the terminal and in the JSON. They used to differ — `LOW: 38` and
+`Low: 510` could appear in the same view meaning different things — which made sorting or
+filtering across them impossible. Reports written before v0.80.0 are normalised on read.
+
 `fettle report` regenerates a single self-contained **`~/.fettle/report.html`**
 (`0600`) from all the stored JSON, across **every host**: a per-host summary card
 row (latest hardening band tally, per-type counts, latest run), collapsible

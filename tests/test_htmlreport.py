@@ -381,3 +381,60 @@ def test_pkg_integrity_has_a_renderer(tmp_path):
     text = htmlreport.build(_ctx(tmp_path)).read_text()
     assert "Package file integrity" in text
     assert '"level_counts"' not in text          # not a raw JSON dump
+
+
+# -- the host card is a verdict across ALL audits, not a hardening tally ------
+def _card(tmp_path):
+    import re
+    text = htmlreport.build(_ctx(tmp_path)).read_text()
+    m = re.search(r'<div class="card"><h3>(.*?)</h3>(.*?)</div></div>', text, re.S)
+    return re.sub(r"<[^>]*>", " ", m.group(2)) if m else ""
+
+
+def test_card_verdict_covers_every_audit_not_just_hardening(tmp_path):
+    """It showed hardening bands only — an opt-in audit every desktop has bands in —
+    so a host with files failing integrity or unpatched Criticals showed no chip."""
+    _write_report_json(tmp_path, "h1", "pkg-integrity", "20260805-010101",
+                       {"categories": ["x"], "level_counts": {"error": 3},
+                        "text": "3 file(s) differ"})
+    body = _card(tmp_path)
+    assert "High" in body and "package file integrity" in body
+
+
+def test_card_uses_only_the_newest_report_of_each_type(tmp_path):
+    """Five retained advisory-check reports put the same CVEs on the card five
+    times — noise pretending to be scale."""
+    for ts in ("20260801-010101", "20260802-010101", "20260803-010101"):
+        _write_report_json(tmp_path, "h1", "advisory-check", ts,
+                           {"findings": [{"severity": "High", "package": "openssl",
+                                          "source": "arch"}]})
+    assert _card(tmp_path).count("with a known CVE") == 1
+
+
+def test_card_normalises_pre_v080_severity_names(tmp_path):
+    """Reports written before the scales were unified are on disk forever, so `WARN`
+    is normalised on read rather than rendered next to `Medium` as if different."""
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260805-010101",
+                       {"findings": [{"severity": "WARN", "package": "p",
+                                      "source": "aur", "question": "KNOWN_BAD",
+                                      "detail": "d"}]})
+    body = _card(tmp_path)
+    assert "1 Medium" in body and "Warn" not in body
+
+
+def test_card_flags_a_host_that_stopped_reporting(tmp_path):
+    """No data is not good news — the fleet-level form of the invariant. A silent
+    host looked exactly like one that reported clean this morning."""
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20200101-010101",
+                       {"findings": [{"severity": "Low", "package": "p",
+                                      "source": "aur", "question": "q",
+                                      "detail": "d"}]})
+    assert "has not reported in" in _card(tmp_path)
+
+
+def test_a_clean_host_says_OK(tmp_path):
+    _write_report_json(tmp_path, "h1", "sys-audit", "20260805-010101",
+                       {"categories": ["Secure Boot"], "level_counts": {"ok": 4},
+                        "text": "[ok] Secure Boot: Enabled"})
+    body = _card(tmp_path)
+    assert "OK" in body

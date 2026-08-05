@@ -63,7 +63,7 @@ def test_third_party_extension_is_flagged_with_its_owner(tmp_path):
     _binary_ext(tmp_path, "gh-dash", "dlvhdr")
     f = _run(tmp_path)
     assert len(f) == 1
-    assert f[0].question == UNVERIFIED_PUBLISHER and f[0].severity == Severity.WARN
+    assert f[0].question == UNVERIFIED_PUBLISHER and f[0].severity == Severity.MEDIUM
     assert "github.com/dlvhdr/gh-dash" in f[0].detail
     assert "act as you" in f[0].detail          # the token exposure is the point
 

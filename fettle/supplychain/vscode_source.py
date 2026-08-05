@@ -107,7 +107,7 @@ class VSCodeSource(SourceProvider):
                 text = path.read_text(errors="replace")
             except OSError as exc:
                 out.append(Finding(
-                    Severity.WARN, self.source, label, UNVERIFIABLE,
+                    Severity.MEDIUM, self.source, label, UNVERIFIABLE,
                     f"could not read {path.name} ({exc.strerror or exc}) — "
                     f"{label} extensions were NOT audited"))
                 continue
@@ -116,7 +116,7 @@ class VSCodeSource(SourceProvider):
             if exts is None:
                 # Unreadable format is a blind spot, not an empty editor.
                 out.append(Finding(
-                    Severity.WARN, self.source, label, UNVERIFIABLE,
+                    Severity.MEDIUM, self.source, label, UNVERIFIABLE,
                     f"{path.name} was not in the expected format — {label} "
                     "extensions were NOT audited"))
                 continue
@@ -127,7 +127,7 @@ class VSCodeSource(SourceProvider):
                     claimed = (f", claiming publisher '{ext['publisher']}'"
                                if ext["publisher"] else "")
                     out.append(Finding(
-                        Severity.WARN, self.source, name, UNOFFICIAL_SOURCE,
+                        Severity.MEDIUM, self.source, name, UNOFFICIAL_SOURCE,
                         f"installed from a local .vsix file{claimed} — it bypassed the "
                         "registry entirely, so no namespace or publisher check applied; "
                         "extensions run unsandboxed with your full user privileges. "

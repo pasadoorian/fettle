@@ -1095,7 +1095,7 @@ class RhelBackend(PackageBackend):
         gate and the audit can never disagree — and the provider already resolves an
         *absent* ``gpgcheck`` against ``[main]`` in ``dnf.conf``, which is the part that
         is easy to get wrong (treating absence as disabled flags every repo on every
-        box). ``Severity.WARN`` is what marks a finding as an *enabled* repo; the
+        box). ``Severity.MEDIUM`` is what marks a finding as an *enabled* repo; the
         provider reports disabled ones at LOW, and those install nothing today.
         """
         try:
@@ -1107,7 +1107,7 @@ class RhelBackend(PackageBackend):
             return sorted({f.package for f in src.findings(ctx)
                            if f.question == INSECURE_TRANSPORT
                            and "gpgcheck=0" in f.detail
-                           and f.severity == Severity.WARN})
+                           and f.severity == Severity.MEDIUM})
         except Exception:      # never let the audit path break a routine upgrade
             return []
 

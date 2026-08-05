@@ -47,7 +47,7 @@ def _run(images, *, rc=0, stderr="", tools=("docker",), **containers):
 def test_latest_tag_is_flagged():
     f = _run([_img("cvetool", "latest")])
     assert any(x.question == MUTABLE_REFERENCE and x.package == "cvetool:latest"
-               and x.severity == Severity.WARN for x in f)
+               and x.severity == Severity.MEDIUM for x in f)
 
 
 def test_only_latest_counts_as_mutable():
@@ -109,7 +109,7 @@ def test_daemon_failure_reports_loudly_instead_of_returning_nothing():
     f = _run([], rc=1, stderr="permission denied while trying to connect to the "
                               "Docker daemon socket")
     assert len(f) == 1
-    assert f[0].question == UNVERIFIABLE and f[0].severity == Severity.WARN
+    assert f[0].question == UNVERIFIABLE and f[0].severity == Severity.MEDIUM
     assert "NOT audited" in f[0].detail and "permission denied" in f[0].detail
 
 

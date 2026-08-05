@@ -59,7 +59,7 @@ def test_known_bad_package_is_critical(tmp_path):
     results = [{"Name": "evil", "Maintainer": "bob", "LastModified": 9_999_999_999}]
     ioc = FakeIOC(packages={"evil"})
     findings = _run(tmp_path, foreign=["evil"], results=results, ioc=ioc)
-    crit = [f for f in findings if f.severity >= Severity.CRIT and f.question == KNOWN_BAD]
+    crit = [f for f in findings if f.severity >= Severity.CRITICAL and f.question == KNOWN_BAD]
     assert crit and crit[0].package == "evil"
 
 
@@ -67,7 +67,7 @@ def test_malicious_maintainer_account(tmp_path):
     results = [{"Name": "pkg", "Maintainer": "eviluser", "LastModified": 9_999_999_999}]
     ioc = FakeIOC(accounts={"eviluser"})
     findings = _run(tmp_path, foreign=["pkg"], results=results, ioc=ioc)
-    assert any(f.severity >= Severity.CRIT and "malicious account" in f.detail for f in findings)
+    assert any(f.severity >= Severity.CRITICAL and "malicious account" in f.detail for f in findings)
 
 
 def test_not_found_in_aur(tmp_path):
@@ -102,7 +102,7 @@ def test_unreadable_ioc_feed_is_reported(tmp_path):
                     ioc=FakeIOC(unavailable=["aur-infected"]))
     feeds = [f for f in findings if f.package == "ioc-feeds"]
     assert feeds, "an unreadable IoC feed must not pass silently"
-    assert feeds[0].severity == Severity.WARN
+    assert feeds[0].severity == Severity.MEDIUM
     assert "would NOT have been seen" in feeds[0].detail
 
 
