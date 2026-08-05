@@ -153,6 +153,40 @@ Two things would have made the new exit status noise:
   coverage gap (`warn`); a tool that ran and failed is an error. The package manager
   itself stays an error: `rpm` missing on an RPM system is genuinely broken.
 
+## After the sweep — two more, both reported from real use
+
+### S-08 — chipsec was searched for, in one of its three layouts. FIXED v0.84.0
+The `firmware` category looked for `<dir>/chipsec/chipsec_main.py` under `/opt`,
+`/usr/share` and `$HOME` — the **git-checkout** layout — and ran it as
+`python3 <path>`. On the QA host chipsec was installed as a **distro package**:
+`/usr/bin/chipsec_main` (chipsec 2.0.7) with the module in site-packages. fettle
+reported *"Not found — install from github"*: advice for a problem the user did not have.
+
+There is also a pip layout, whose entry point lands wherever that interpreter keeps
+scripts. The three need **different invocations**, so a path alone is not enough — which
+is why the fix is `[secure] chipsec_cmd` (a full argv) and **not** a wider search.
+Unconfigured, the check now says it did not run and names the setting.
+
+This gave `sys-audit` its first reason to read config at all — which is how S-09 happened.
+
+### S-09 — `fettle -S` read root's config. FIXED v0.84.2
+Reported one release later: `-S firmware` still said *"not configured"* on a machine
+whose config had just been given `chipsec_cmd`.
+
+`-S` **elevates itself**; sudo sets `HOME=/root`; `DEFAULT_CONFIG` was
+`Path.home() / ".config/fettle/config.toml"`. The elevated process read `/root`'s
+config, found nothing, and silently used defaults.
+
+**This is the project's own Phase 9 bug, in a new place.** Its notes name it as the
+highest-impact one they found, fixed then by making the maintenance sudo re-exec carry
+`--config`. `sys-audit` elevates by a different route, so it walked straight in the
+moment it learned to read config — and the correct pattern was *in the same file*
+(`_write_report` already does the `SUDO_USER` lookup) and went unused.
+
+Fixed at the constant, not the call site: `DEFAULT_CONFIG` resolves from the invoking
+user's home, covering all eight consumers — including `sudo fettle advisory-check` /
+`report` / `upgrade-check`, which had the same bug and nobody had hit yet.
+
 ## Open / not fixed here
 
 - **The summary prints warnings before failures**, so `!` lines appear above `✗` ones.
