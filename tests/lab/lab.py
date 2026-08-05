@@ -607,11 +607,19 @@ MUTATING_ACTIONS = ["-c", "-o", "-u"]
 # `--yes` on the mutating ones is deliberate. Without a tty `ctx.confirm` returns its safe
 # default, so the action would decline and "pass" without doing anything — the sweep would
 # be green and meaningless. The guests are disposable and reverted afterwards.
-_ACTION_NAMES = {"-P": "pkg-audit", "-H": "hardening", "-d": "config-drift",
+# Every action in the two lists above needs a column label. `-V` was added to
+# READ_ONLY_ACTIONS in v0.73.0 and not here, which crashed `lab.py matrix` with a
+# KeyError -- and went unnoticed because that was the last time the matrix ran. The
+# assertion below turns "the sweep tool is broken" into an import-time error rather
+# than a traceback forty minutes into a run.
+_ACTION_NAMES = {"-P": "pkg-audit", "-V": "pkg-integ", "-H": "hardening",
+                 "-d": "config-drift",
                  "-x": "auto-updates", "-r": "rebuild-chk", "-k": "kernel",
                  "-f": "firmware", "-O": "only-update", "-A": "aur-audit",
                  "-c": "clean",
                  "-o": "orphans", "-u": "update"}
+_missing = [a for a in READ_ONLY_ACTIONS + MUTATING_ACTIONS if a not in _ACTION_NAMES]
+assert not _missing, f"lab.py: no column label for {_missing} — add it to _ACTION_NAMES"
 
 # Substrings that mean "this did not run", not "this ran and found nothing". Keeping them
 # in one place is the point: the whole sweep is worthless if a check that could not look

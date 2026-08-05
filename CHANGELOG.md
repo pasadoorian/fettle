@@ -10,6 +10,27 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.87.0] — `fettle web` is marked EXPERIMENTAL and put on hold
+
+Every other feature has now been swept feature-by-feature against real hosts and the VM
+lab — 23 of 24, recorded in [`docs/qa/`](docs/qa/README.md). The web UI has not, and it is
+the one surface that both serves a page **and** runs privileged actions from a password
+typed into a browser. Labelling it accurately is the honest thing to do while its sweep
+waits.
+
+Marked in the README, in `fettle -h`, in `fettle web --help`, in the module docstring,
+and — because documentation is not what someone reads at 2am — **at run time**:
+
+```
+fettle web is EXPERIMENTAL — unlike the rest of fettle it has not been through the
+QA sweep in docs/qa/.
+  It serves reports AND runs actions (some under sudo). Localhost-only by default;
+  keep it that way.
+```
+
+The CLI it drives is the tested part; what has not been examined is the layer between a
+browser and that CLI.
+
 ## [0.86.0] — remote failures now say what went wrong, and where
 
 QA pass on `fettle remote`, against the lab: single hosts, a three-host group with one

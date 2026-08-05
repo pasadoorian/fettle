@@ -66,7 +66,7 @@ real unit-test coverage the bash originals never had.
 - [Configuration](#configuration)
   - [Reports & run logs](#reports--run-logs)
   - [HTML report — `fettle report` (beta)](#html-report--fettle-report-beta)
-  - [Web UI — `fettle web` (beta, optional)](#web-ui--fettle-web-beta-optional)
+  - [Web UI — `fettle web` (experimental, optional)](#web-ui--fettle-web-experimental-optional)
 - [Security advisories / CVE tracking — `advisory-check` (opt-in)](#security-advisories--cve-tracking--advisory-check-opt-in)
 - [Previewing an upgrade](#previewing-an-upgrade)
 - [Common options](#common-options)
@@ -1431,7 +1431,14 @@ fettle report --backfill-json # one-off: give pre-0.12 .txt reports a JSON sibli
 > It reads whatever JSON is currently retained (the `keep` window), so run it after
 > your scans; for older text-only reports, run `--backfill-json` once.
 
-### Web UI — `fettle web` *(beta, optional)*
+### Web UI — `fettle web` *(experimental, optional)*
+
+> **Experimental, and the one part of fettle the QA pass has not reached.** Every other
+> feature has been swept feature-by-feature against real hosts and the VM lab
+> ([`docs/qa/`](docs/qa/README.md)); the web UI has not, and it is the surface that both
+> serves a page **and** runs privileged actions with a password you type into a browser.
+> Treat its output as unverified and its action buttons as unaudited until that sweep
+> happens. The CLI it drives is the tested part.
 
 A browser interface over the same data and actions, built on **NiceGUI**. It's an
 **opt-in extra** so the CLI core stays pure-stdlib (the stdlib-only remote zipapp is

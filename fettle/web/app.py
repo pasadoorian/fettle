@@ -1,4 +1,4 @@
-"""The web application for ``fettle web``.
+"""[EXPERIMENTAL] The web application for ``fettle web``.
 
 Two surfaces:
 - **Dashboard** (`/`, `/report.html`): serves the *same* live-generated HTML as

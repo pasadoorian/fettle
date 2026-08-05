@@ -147,8 +147,8 @@ other commands:
                                           over ssh (safe set by default; 'remote -h')
   fettle report [--open]                  build ~/.fettle/report.html from all
                                           stored reports/logs (every host)
-  fettle web [--port N]                   serve the web UI (localhost; needs
-                                          the 'web' extra: pip install fettle[web])
+  fettle web [--port N]                   [experimental] serve the web UI (localhost;
+                                          needs: pip install fettle[web])
 
 which package check? each answers a different question (-S scans firmware, not packages)
   -P  pkg-audit     WHERE it came from — provenance + known-bad feeds, every
@@ -634,7 +634,7 @@ def _run_web(argv: list[str]) -> int:
     optional `web` extra; the core stays pure-stdlib and never imports it."""
     p = argparse.ArgumentParser(
         prog="fettle web",
-        description="Serve the fettle web UI (a browser dashboard over your stored "
+        description="[EXPERIMENTAL] Serve the fettle web UI (a browser dashboard over your stored "
                     "reports; drives fettle actions in later phases). Localhost-only "
                     "by default. Needs the web extra: pip install 'fettle[web]'.")
     p.add_argument("--host", default="127.0.0.1",
@@ -644,6 +644,13 @@ def _run_web(argv: list[str]) -> int:
     p.add_argument("--show", action="store_true", help="open a browser on start")
     args = p.parse_args(argv)
 
+    # Said at run time, not only in the docs: this is the one surface that both
+    # serves a page and runs privileged actions from a password typed into a browser,
+    # and it is the only feature the QA pass has not reached.
+    print("fettle web is EXPERIMENTAL — unlike the rest of fettle it has not been "
+          "through the QA sweep in docs/qa/.\n  It serves reports AND runs actions "
+          "(some under sudo). Localhost-only by default; keep it that way.",
+          file=sys.stderr)
     try:
         run_web = _web_runner()
     except ImportError as exc:
