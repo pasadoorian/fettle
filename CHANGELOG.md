@@ -10,6 +10,18 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.84.1] — a top-level key documented below a table header lands in that table
+
+`fettle.toml.example` documented `ai_model` / `ai_effort` / `ai_max_web_searches` /
+`ai_api_key` **after** `#[hardening]`. In TOML a bare key belongs to whatever table
+precedes it, so uncommenting `ai_model` as shipped nested it inside `[hardening]` — where
+it is accepted without complaint, because that section is a passthrough dict, and simply
+never takes effect. Moved above the first table header.
+
+Found by diffing the *loaded* config of a proposed merge against the live one, rather
+than reading the file. Eyeballing it would not have shown this: the text looks right, and
+only the parse is wrong.
+
 ## [0.84.0] — chipsec is configured, and the stale-flag sweep grew teeth
 
 **`[secure] chipsec_cmd`.** chipsec ships in at least three layouts — a git checkout run

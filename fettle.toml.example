@@ -26,6 +26,15 @@
 #aur_ioc_cache_ttl = 21600   # seconds to cache the IOC lists on disk
 #aur_precheck_on_update = true   # IoC-check AUR pkgs before yay builds them; --no-aur-precheck skips
 
+# Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
+# STRONGLY prefer the ANTHROPIC_API_KEY env var. If you put the key here instead,
+# `chmod 600` this file — fettle does NOT refuse a world-readable config, so a 644
+# file leaks the key to every local user.
+#ai_model = "claude-sonnet-5"
+#ai_effort = "medium"          # low | medium | high — thinking depth vs cost
+#ai_max_web_searches = 5       # cap forum searches per run (bounds tokens/cost)
+#ai_api_key = "sk-ant-..."     # optional; never printed in full by --print-config
+
 # Binary hardening audit (`fettle -H` / `hardening-audit`). Results are scored and
 # ranked; the screen shows Critical/High packages, the full matrix goes to
 # ~/hardening-audit.txt. The always-on accuracy corrections (non-ELF/static-binary
@@ -41,15 +50,6 @@
 #sensitive_packages = ["openssh", "nginx", "cups", "avahi"]  # treat as privilege boundaries
 #priv_multiplier    = 3
 #weights = { canary = 3, relro = 3, pie = 2, fortify_source = 2, cfi = 1, rpath = 1, runpath = 0.5 }
-
-# Upgrade Checker (`fettle upgrade-check`) — EXPERIMENTAL, under active testing.
-# STRONGLY prefer the ANTHROPIC_API_KEY env var. If you put the key here instead,
-# `chmod 600` this file — fettle does NOT refuse a world-readable config, so a 644
-# file leaks the key to every local user.
-#ai_model = "claude-sonnet-5"
-#ai_effort = "medium"          # low | medium | high — thinking depth vs cost
-#ai_max_web_searches = 5       # cap forum searches per run (bounds tokens/cost)
-#ai_api_key = "sk-ant-..."     # optional; never printed in full by --print-config
 
 # Reports & run logs. Reports go to ~/.fettle/reports/<host>/, per-run transcripts
 # to ~/.fettle/logs/<host>/ — timestamped, 0600, and rotated to the newest `keep`
