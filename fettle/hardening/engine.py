@@ -23,7 +23,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import command
+from .. import command, util
 from .baseline import Baseline
 
 ELF_MAGIC = b"\x7fELF"
@@ -181,10 +181,49 @@ def run_checksec(paths, *, runner=None) -> list[dict]:
 
 
 def _run_checksec_v2(paths, run) -> list[dict]:
-    """checksec 2.x: `--format=json --file=<path>`, one invocation per binary."""
+    """checksec 2.x: `--format=json --file=<path>`, one invocation per binary.
+
+    **Runs unprivileged when we are root, because checksec 2.x sleeps 2 seconds per
+    invocation as root.** Measured on Rocky 9 (checksec 2.5.0): 61 ms as a user,
+    2063 ms as root. `fettle remote` elevates, so an EL9 host with ~900 binaries spent
+    over half an hour asleep and was killed by the harness timeout before it could
+    report anything. The cause is in checksec itself, at its line 6::
+
+        [ "$(env | sed -r -e '/^(PWD|SHLVL|_)=/d')" ] && exec -c "$0" "$@"
+
+    It sanitizes its environment by re-execing with an empty one, which wipes PATH —
+    and then restores `/sbin`:`/usr/sbin` **only when not root**. So as root it cannot
+    find `sysctl`, prints "Not all necessary commands found", and sleeps. Dropping
+    privileges puts us on the branch that repairs PATH. Nothing else works: the
+    environment we would fix is discarded by that re-exec, and `--listfile` does not
+    help because checksec implements it by invoking itself once per file anyway.
+
+    Output is unaffected — byte-identical as user and as root for the same binary.
+    What *is* affected is which files can be opened, so whatever the unprivileged pass
+    could not read is retried as root. Those are few (12 of 2318 bin-dir entries on
+    Rocky 9), so the sleep is affordable for them. Silently scanning fewer binaries
+    would be the exact failure this audit exists to prevent: a smaller answer that
+    looks like a cleaner one.
+
+    A file it cannot read is detected by its **absence**, not by an error entry:
+    measured, 2.x prints ``Error: No read permissions for '<f>' (run as root).`` as
+    coloured text on *stdout* and still exits 0, so the JSON parse simply fails and
+    that path yields nothing at all.
+    """
+    user = util.invoking_user() if os.geteuid() == 0 else None
+    out = _v2_pass(paths, run, user)
+    if not user:
+        return out
+    missing = [p for p in paths if p not in {e["name"] for e in out}]
+    return out + (_v2_pass(missing, run, None) if missing else [])
+
+
+def _v2_pass(paths, run, as_user: str | None) -> list[dict]:
+    """One checksec 2.x sweep over `paths`, optionally with privileges dropped."""
     out: list[dict] = []
     for path in paths:
-        proc = run(["checksec", "--format=json", f"--file={path}"], capture=True)
+        proc = run(["checksec", "--format=json", f"--file={path}"],
+                   capture=True, **({"as_user": as_user} if as_user else {}))
         try:
             payload = json.loads(proc.stdout or "{}")
         except (json.JSONDecodeError, TypeError):

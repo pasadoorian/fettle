@@ -32,6 +32,18 @@ def invoking_user_home() -> Path:
     return Path.home()
 
 
+def invoking_user() -> str | None:
+    """The name of the user who invoked fettle, or None if not running under sudo.
+
+    The companion to :func:`invoking_user_home`, for the cases that need to hand
+    privileges *back* — running a helper tool unprivileged, or chowning a file we
+    created as root.
+    """
+    import os
+
+    return os.environ.get("SUDO_USER") or None
+
+
 def matches_any(name: str, patterns) -> bool:
     """True if ``name`` equals or glob-matches any pattern (case-sensitive)."""
     return any(fnmatch.fnmatchcase(name, p) for p in patterns if p)

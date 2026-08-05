@@ -10,6 +10,58 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.88.0] — the hardening audit was asleep, not working
+
+`fettle -H` against a Rocky 9 or AlmaLinux 9 host took **over 30 minutes** and was killed
+by the lab harness before it reported anything. Both EL targets have been recorded as
+permanent SKIPs for the hardening audit since v0.48.0, for a reason that turns out to be
+wrong twice over.
+
+The cause is not fettle and not the volume of work — checksec examines ~900 binaries on
+these hosts in about a minute. It is checksec 2.x itself, at its own line 6:
+
+```sh
+[ "$(env | sed -r -e '/^(PWD|SHLVL|_)=/d')" ] && exec -c "$0" "$@"
+```
+
+It sanitizes its environment by re-execing with an **empty** one, which wipes `PATH` — and
+then restores `/sbin`:`/usr/sbin` **only when not root**. So as root it cannot find
+`sysctl`, prints "Not all necessary commands found", and calls `sleep 2`. Every
+invocation. Measured on Rocky 9: **61 ms as a user, 2063 ms as root**. `fettle remote`
+elevates, so ~900 binaries × 2 s ≈ 30 minutes, spent entirely asleep.
+
+**Fixed** by invoking checksec unprivileged when fettle is root, which puts it on the
+branch that repairs `PATH`. Nothing else works: the environment we would fix is discarded
+by that re-exec, and `--listfile` does not help because checksec implements it by
+invoking itself once per file anyway (measured — an earlier attempt at batching this
+changed nothing and was withdrawn).
+
+Coverage does not shrink, because dropping privileges wholesale would have been its own
+bug: 12 of 2318 entries in the bin directories on Rocky 9 are root-only readable. Anything
+the unprivileged pass could not open is retried as root — detected by its **absence**,
+since checksec answers an unreadable file with coloured text on stdout and exit 0 rather
+than an error entry. The elevated run reports 149 deviations where the unprivileged one
+reports 147; those 2 are exactly what the retry recovers.
+
+Measured end to end via `fettle remote`, elevated: **1800 s (timed out) → 81 s.**
+
+- **Rocky 9** — 885 binaries, 149 deviations across 35 packages: 1 Critical
+  (`grub2-tools-minimal`), 1 High (`kernel-tools`), 24 Medium, 9 Low.
+- **AlmaLinux 9** — 877 binaries, 147 deviations across 33 packages, in 76 s.
+
+The unprivileged pass sees 885/872 binaries and 147/145 deviations respectively; the
+difference in both cases is the handful of root-only files the retry recovers.
+
+Also in this release: `util.invoking_user()`, the companion to `invoking_user_home()`, for
+the cases that need to hand privileges *back* rather than resolve a path.
+
+### Still open, deliberately not fixed here
+
+`fettle remote` elevates **everything except `--dry-run`** (`sudo=not dry_run`), ignoring
+the read-only/needs-root knowledge the CLI already keeps in `_MUTATES_BUT_NO_ROOT` and
+`_READ_ONLY_BUT_NEEDS_ROOT`. That blanket elevation is what exposed this, and it is a
+larger change than one QA fix should carry.
+
 ## [0.87.0] — `fettle web` is marked EXPERIMENTAL and put on hold
 
 Every other feature has now been swept feature-by-feature against real hosts and the VM

@@ -8,6 +8,7 @@ wording checksec actually emits.
 from pathlib import Path
 from unittest.mock import patch
 
+
 from fettle import command
 from fettle.hardening import baseline as bl
 from fettle.hardening import engine
@@ -490,3 +491,64 @@ def test_deviations_are_not_reported_with_a_green_tick(tmp_path, capsys):
     # Deliberately not a failure: "Critical" here is a scoring band every real desktop
     # has, unlike pkg-audit's CRITICAL which means a known-malicious package.
     assert ctx.output.had_failures is False
+
+
+# --- checksec 2.x sleeps 2 seconds per call as root ---------------------------
+#
+# Found on Rocky 9, 2026-08-05. checksec 2.x re-execs itself with an empty
+# environment (`exec -c`) and only restores /sbin:/usr/sbin to PATH when NOT root, so
+# as root it cannot find sysctl and sleeps 2s -- every invocation. Measured: 61ms as a
+# user, 2063ms as root. At ~900 binaries that is >30 minutes, which is why the
+# elevated lab run was killed by its own timeout without ever reporting.
+
+_V2_OUT = ('{ "%s": { "relro":"full","canary":"yes","nx":"yes","pie":"yes",'
+           '"rpath":"no","runpath":"no","symbols":"no","fortify_source":"yes",'
+           '"fortified":"5","fortify-able":"17" } }')
+# Measured on Rocky 9: an unreadable file is NOT an error entry -- checksec prints
+# coloured text on stdout and exits 0, so the JSON parse fails and nothing comes back.
+_V2_UNREADABLE = "\x1b[31mError: No read permissions for '%s' (run as root).\x1b[m"
+
+
+def _v2_runner(calls, unreadable=()):
+    """checksec that answers only the 2.x interface, recording as_user per call."""
+    def fake(cmd, *, as_user=None, capture=False):
+        if "--format=json" not in cmd:
+            return command.Proc(0, "", "")            # 3.x form unsupported
+        path = next(a.split("=", 1)[1] for a in cmd if a.startswith("--file="))
+        calls.append((path, as_user))
+        tmpl = _V2_UNREADABLE if (path in unreadable and as_user) else _V2_OUT
+        return command.Proc(0, tmpl % path, "")
+    return fake
+
+
+def test_v2_drops_privileges_when_root():
+    """The fix: as root, checksec must be invoked as the invoking user."""
+    calls = []
+    with patch("os.geteuid", return_value=0), \
+         patch("fettle.util.invoking_user", return_value="paulda"):
+        engine.run_checksec(["/usr/bin/ls", "/usr/bin/cat"], runner=_v2_runner(calls))
+    assert calls and all(u == "paulda" for _, u in calls), calls
+
+
+def test_v2_stays_unprivileged_when_not_root():
+    """Already a user: no sudo -u round trip, nothing to drop."""
+    calls = []
+    with patch("os.geteuid", return_value=1000):
+        engine.run_checksec(["/usr/bin/ls"], runner=_v2_runner(calls))
+    assert calls == [("/usr/bin/ls", None)]
+
+
+def test_v2_retries_root_only_files_as_root():
+    """Coverage must not shrink. A file the user cannot read is re-checked as root.
+
+    Scanning fewer binaries and reporting the smaller result as clean is the exact
+    failure this audit exists to prevent.
+    """
+    calls = []
+    with patch("os.geteuid", return_value=0), \
+         patch("fettle.util.invoking_user", return_value="paulda"):
+        entries = engine.run_checksec(["/usr/bin/ls", "/usr/sbin/secret"],
+                                      runner=_v2_runner(calls, unreadable={"/usr/sbin/secret"}))
+    assert ("/usr/sbin/secret", None) in calls, "root retry never happened"
+    assert ("/usr/bin/ls", None) not in calls, "readable file retried needlessly"
+    assert {e["name"] for e in entries} == {"/usr/bin/ls", "/usr/sbin/secret"}

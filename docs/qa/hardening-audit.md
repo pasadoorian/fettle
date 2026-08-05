@@ -103,10 +103,66 @@ Two independent reasons, both found on 2026-08-05 when the skips were finally ch
    `packages:` as a single transaction whose failure takes every other package with it.
 
 Fixed in the spec by splitting the stages — `epel-release` in `packages`, `checksec` in
-`runcmd` — verified two-stage on the live guest (checksec 2.5.0). **The SKIPs stand until
-those two VMs are rebuilt**, which re-baselines their pinned snapshots and is therefore the
-operator's call, not a thing to do quietly in the middle of a QA sweep.
+`runcmd` — verified two-stage on the live guest (checksec 2.5.0). **The SKIPs were closed
+on 2026-08-05**, once Paul asked for the two VMs to be rebuilt — that re-baselines their
+pinned snapshots, so it was his call and not a thing to do quietly mid-sweep. See Sweep 2.
 
 The lesson, which cost a release: **a change is not a fix until it has been run.** Claiming
 coverage is exactly as harmful as the blind spots this whole plan exists to find — it is a
 `✓` over a check that never happened.
+
+
+---
+
+## Sweep 2 — v0.87.0 → v0.88.0, 2026-08-05, on Rocky 9 and AlmaLinux 9
+
+The two EL SKIPs are closed. Rebuilding the guests with the staged EPEL spec gave them
+`checksec 2.5.0`, and the audit then ran — except the first elevated attempt **took over 30
+minutes and was killed by the harness timeout**, which is why this row had never produced a
+result through `fettle remote`.
+
+**checksec 2.x sleeps 2 seconds per invocation when run as root.** Its own line 6 re-execs
+with an empty environment (`exec -c`), wiping `PATH`, and it then repairs
+`/sbin`:`/usr/sbin` **only for non-root**. As root it cannot find `sysctl`, warns "Not all
+necessary commands found", and sleeps. Measured: **61 ms as a user, 2063 ms as root** —
+and `fettle remote` elevates everything except `--dry-run`.
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| QA-HA-02 | **PASS — now durable** | 885 binaries on Rocky 9 from a rebuilt snapshot, not a by-hand install |
+| QA-HA-13 *(new)* | **FAIL → fixed** | H-05: 30+ min elevated (timed out) → 81 s |
+| QA-HA-14 *(new)* | PASS | elevated reports 149 deviations vs 147 unprivileged — the root retry recovers 2 |
+
+**Results.** Rocky 9: 885 binaries, **149 deviations across 35 packages** — 1 Critical
+(`grub2-tools-minimal`: canary and fortify_source missing on 5 binaries), 1 High
+(`kernel-tools`), 24 Medium, 9 Low, in 81 s. AlmaLinux 9: 877 binaries, **147 across 33
+packages**, same Critical and High, in 76 s. Nearly identical, as two rebuilds of the same
+EL9 base should be.
+
+The unprivileged pass sees 872 binaries / 145 deviations on AlmaLinux and 885 / 147 on
+Rocky — the gap in both cases is the root-only files the retry recovers.
+
+### H-05 — the audit was asleep, not working. FIXED v0.88.0
+Fixed by running checksec unprivileged when fettle is root. Nothing else works: the
+environment we would repair is discarded by checksec's own re-exec, and `--listfile` does
+not help because checksec implements it by invoking itself per file anyway — an earlier
+batching attempt was measured to change nothing and was withdrawn rather than shipped with
+a claim it had not earned.
+
+Coverage does not shrink, which mattered: **12 of 2318 bin-dir entries on Rocky 9 are
+root-only readable**, so dropping privileges wholesale would have quietly returned a
+smaller answer that looked like a cleaner one. Those are retried as root, detected by their
+*absence* — checksec answers an unreadable file with coloured text on stdout and exit 0,
+not an error entry.
+
+### H-06 — `fettle remote` elevates everything. OPEN
+`sudo=not dry_run`, ignoring the read-only/needs-root knowledge the CLI already keeps in
+`_MUTATES_BUT_NO_ROOT` and `_READ_ONLY_BUT_NEEDS_ROOT`. That blanket elevation is what
+exposed H-05 — a read-only audit had no need of root in the first place. Larger than one QA
+fix should carry; tracked for the `remote` row.
+
+### The lesson this row is the third example of
+A permanent SKIP is a claim, and this one was wrong twice: first that checksec could not be
+installed on EL at all, then that installing it had closed the gap. Both times the SKIP was
+believed rather than retested. **A skip needs re-earning, not inheriting** — the reason it
+was taken can expire, and nothing announces when it has.
