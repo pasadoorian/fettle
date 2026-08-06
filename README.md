@@ -62,7 +62,7 @@ real unit-test coverage the bash originals never had.
   - [Mirror refresh before upgrading — Arch family (-u)](#mirror-refresh-before-upgrading--arch-family--u)
 - [Package supply-chain](#package-supply-chain)
   - [Pre-upgrade gate](#pre-upgrade-gate)
-  - [Binary hardening audit — `-H` / `hardening-audit`](#binary-hardening-audit---h--hardening-audit)
+  - [System hardening audit — `-H` / `hardening-audit`](#system-hardening-audit---h--hardening-audit)
 - [System supply-chain — `sys-audit`](#system-supply-chain--sys-audit)
   - [Remote scanning](#remote-scanning)
 - [Remote maintenance](#remote-maintenance)
@@ -390,7 +390,7 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-H` | `hardening-audit` | flag pkgs whose binaries miss the distro's build hardening (needs `checksec`) → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-H` | `hardening-audit` | is this system hardened? binaries vs the distro's build flags (needs `checksec`) + filesystem hygiene → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
 | — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
@@ -925,7 +925,21 @@ finding still aborts unattended — pass `--force-aur` to override; `--no-aur-pr
 `yay -Qua` upgrade set; `--devel`/`-git` rebuilds that don't bump a version stay
 covered by the yay hook and the post-update `pkg-audit`.
 
-### Binary hardening audit — `-H` / `hardening-audit`
+### System hardening audit — `-H` / `hardening-audit`
+
+`-H` asks **"is this system hardened?"** along several independent axes. Each answers
+one question and reports on its own, so a tool you don't have costs you that axis and
+nothing else:
+
+| axis | question | needs |
+|---|---|---|
+| `binary` | were the installed binaries built with the distro's hardening flags? | `checksec` |
+| `filesystem` | can a local user tamper with shared directories? | nothing |
+
+Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
+An axis that **can't** look says so in its own words — it never renders as a pass.
+
+#### Binary axis — were these built hardened?
 
 **In plain terms:** when a program is compiled it can be given built-in *safety
 features* — protections that don't change what it does, but that make a bug much
@@ -1023,6 +1037,46 @@ weights            = { canary = 3, relro = 3, pie = 2, fortify_source = 2 }
 
 A deviation means the binary was built *differently from the distro norm* — the
 score tells you *where to look*, not that anything is exploitable.
+
+#### Filesystem axis — can a local user tamper with shared directories?
+
+**In plain terms:** `/tmp` is a shared room everyone can write in. A single mode bit
+(the *sticky bit*) is what stops one person deleting another person's things there.
+This axis checks that bit is set, and checks whether the filesystems that hold shared
+directories are mounted with the restrictions that keep a dropped file from becoming a
+running program.
+
+Two questions, both answered from `stat` and `/proc/mounts`, with **no directory walk**:
+
+1. **Is a world-writable directory missing its sticky bit?** Without it any local user
+   can delete or rename anyone's files there, regardless of ownership. This is the check
+   that finds real bugs on real machines.
+2. **Does a separate filesystem lack `nosuid` / `noexec` / `nodev`?** Only asked where
+   the path is *its own mount* — you can't set mount options on a directory that lives
+   inside `/`, so on a single-filesystem host the honest answer is "not applicable", and
+   fettle says that in one line rather than reporting four phantom defects.
+
+Checked by default: `/`, `/tmp`, `/var/tmp`, `/dev/shm`, `/home`, `/var`, `/boot`.
+Absent paths aren't findings — most containers have no `/boot`.
+
+The severities are deliberately not flat: a missing `nosuid` (a setuid binary would
+keep its privileges) and a missing `noexec` (a payload can be run where it landed) are
+**medium**; a missing `nodev` is **low**, because planting a device node already needs
+the root you'd have to have to mount the filesystem in the first place.
+
+```toml
+[hardening]
+filesystem_paths = ["/srv", "/data"]   # ADDED to the built-in list, not a replacement
+exclude_paths    = ["/var"]            # …and this is how you drop one
+```
+
+`filesystem_paths` is additive on purpose: asking fettle to also watch `/srv` should
+never silently stop it watching `/tmp`.
+
+This axis deliberately does **not** walk the filesystem looking for world-writable
+files. Lynis's equivalent test does, and on the machine this was written against it
+took 19 seconds and earned its own "long execution" warning inside its own findings
+list. Everything here runs in well under a second.
 
 ### Package file integrity — `-V` / `pkg-integrity`
 

@@ -27,7 +27,7 @@ TITLES = {
     "kernel": "Kernel management",
     "aur_audit": "AUR audit",
     "pkg_audit": "Package supply-chain audit",
-    "hardening_audit": "Binary hardening audit",
+    "hardening_audit": "System hardening audit",
     "pkg_integrity": "Package file integrity",
     "container_update": "Container images",
     "sys_audit": "System & firmware security audit",

@@ -65,11 +65,21 @@ class Config:
         default_factory=lambda: ["aur-infected", "chaos-rat", "russian-spam"]
     )
     aur_ioc_cache_ttl: int = 21600
-    # Binary hardening audit (fettle hardening-audit). Exclude lists to prune the
-    # report — all ship EMPTY, so the first run shows everything and the user
-    # narrows to taste. Keys: exclude_checks (criterion names, e.g. "runpath"),
-    # exclude_packages (name globs), exclude_paths (path globs). The always-on
-    # accuracy corrections are NOT tunable here (they fix wrong data, not taste).
+    # System hardening audit (fettle hardening-audit), across several independent
+    # axes: binary (checksec), filesystem, and more as they land.
+    #   Exclude lists — all ship EMPTY, so the first run shows everything and the user
+    #     narrows to taste. exclude_checks (criterion or check names, e.g. "runpath",
+    #     "mount-nodev"), exclude_packages (name globs), exclude_paths (path globs —
+    #     these also drop filesystem findings by subject, so `exclude_paths = ["/var"]`
+    #     stops /var being reported on). The always-on accuracy corrections are NOT
+    #     tunable here (they fix wrong data, not taste).
+    #   disable_axes (list of axis names) — switch an axis off entirely. Every axis is
+    #     on by default; a name that is not an axis is reported rather than ignored,
+    #     since a typo that silently disables nothing is the same surprise as one that
+    #     silently disables everything.
+    #   filesystem_paths (list of paths) — extra directories for the filesystem axis to
+    #     check, ADDED to its built-in list rather than replacing it. To drop a
+    #     built-in path, put it in exclude_paths.
     hardening: dict = field(default_factory=dict)
     # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
     # type per host to retain, default 10 — also the depth of the dashboard's

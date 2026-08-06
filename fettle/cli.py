@@ -201,7 +201,7 @@ ACTION_HELP = {
                   "-> ~/.fettle/reports/"),
     "pkg_audit": "WHERE your software came from, every ecosystem (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
-    "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
+    "hardening_audit": "is this system hardened? binaries vs the distro's build flags (needs checksec) + filesystem hygiene -> ~/.fettle/reports/",
     "advisory_check": "which installed packages have known CVEs — both those with a "
                       "fix you have not applied and (the distinctive part) those with "
                       "no fix released yet -> ~/.fettle/reports/",

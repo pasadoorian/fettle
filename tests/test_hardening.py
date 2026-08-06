@@ -445,11 +445,20 @@ def _run_audit(tmp_path, **patches):
 def test_missing_checksec_is_not_a_silent_skip(tmp_path, capsys):
     """It was a note with an empty summary — which is how "not audited" comes to look
     like "nothing wrong", the exact confusion the analysed-zero guard prevents in the
-    harder case."""
+    harder case.
+
+    Since the action grew axes the binary axis no longer ends the run, so the guard is
+    no longer "the whole audit says it did not run" — it is that the *binary* axis
+    names itself as unchecked, with the reason, and that nothing claims a clean binary
+    result. Those are the two halves that must never come apart.
+    """
     ctx = _run_audit(tmp_path, **{"fettle.command.which": {"return_value": None}})
     out = capsys.readouterr()
-    assert "NOT audited" in out.err
-    assert "did NOT run" in out.out          # and it reaches the summary
+    both = out.out + out.err
+    assert "Not checked" in both                      # the dedicated block, not a note
+    assert "binary hardening" in both.lower()         # and it names what went unchecked
+    assert "checksec is not installed" in both        # with the reason and the remedy
+    assert "no hardening deviations" not in both      # never renders as clean
     assert ctx.output.had_failures is False  # a missing tool is not fettle failing
 
 
@@ -458,8 +467,24 @@ def test_no_binaries_found_is_not_a_clean_result(tmp_path, capsys):
         "fettle.command.which": {"return_value": "/usr/bin/checksec"},
         "fettle.hardening.engine.default_targets": {"return_value": []},
     })
-    assert "did NOT run" in capsys.readouterr().out
+    out = capsys.readouterr()
+    both = out.out + out.err
+    assert "Not checked" in both
+    assert "binary hardening" in both.lower()
+    assert "no ELF binaries" in both
+    assert "no hardening deviations" not in both
     assert ctx.output.had_failures is False
+
+
+def test_a_dead_binary_axis_does_not_take_the_other_axes_down(tmp_path, capsys):
+    """The reason this action grew axes at all.
+
+    A missing checksec used to `return Result(ok=False)` before anything else ran, so
+    a host without checksec got no hardening answer whatsoever — including the four
+    axes that need no external tool. One missing tool must cost one axis.
+    """
+    _run_audit(tmp_path, **{"fettle.command.which": {"return_value": None}})
+    assert "Filesystem hygiene" in capsys.readouterr().out
 
 
 def test_deviations_are_not_reported_with_a_green_tick(tmp_path, capsys):

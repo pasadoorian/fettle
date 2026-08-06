@@ -13,6 +13,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.111.0] — `hardening-audit` grows axes, and finds a real `/tmp` bug
+
+Prompted by reading a Lynis run against the same machine and asking which of its 454
+tests fettle should actually have. Most of the answer was "none — fettle already answers
+that, or it is advice rather than state". This is the first of the few that survived.
+
+**`hardening-audit` is no longer only a binary scan.** It now asks *is this system
+hardened?* along independent **axes** — `binary` (checksec, as before) and `filesystem`
+(new) — each reporting on its own. Every axis is on by default; `[hardening]
+disable_axes` switches one off, and a name that is not an axis is reported rather than
+quietly ignored.
+
+**A missing tool no longer ends the whole action.** `hardening-audit` used to
+`return Result(ok=False)` the moment checksec was absent, so a host without checksec got
+*no* hardening answer at all rather than the part needing no external tool. One missing
+tool now costs one axis. An axis that raises is recorded as **blind**, never as clean,
+and cannot take the others down with it.
+
+**New filesystem axis.** Sticky bits on world-writable directories, and
+`nosuid`/`noexec`/`nodev` on the filesystems that hold them — from `stat` and
+`/proc/mounts`, with no directory walk. It found a real defect on the development
+machine: `/tmp` was a separate tmpfs at mode `0777` with **no sticky bit and no
+nosuid/nodev/noexec**, so any local user could delete another user's files there and drop
+a setuid binary. Mount options are only reported where the path is *its own mount* — on a
+single-filesystem host the four paths that inherit from `/` collapse into one note
+instead of four phantom findings, because asking for mount options on a directory that is
+not a filesystem is advice to repartition, not a defect.
+
+Configurable via `[hardening] filesystem_paths` (**added** to the built-in list, never
+replacing it — asking fettle to also watch `/srv` must not silently stop it watching
+`/tmp`) and prunable via the existing `exclude_paths` / `exclude_checks`.
+
+Findings **warn**; nothing here changes the exit status. Same reasoning as the binary
+scoring bands: every real machine has some, and an action that is red forever gets
+ignored.
+
 ## [0.110.0] — the default set updates before it inspects; `--only` rejects a typo
 
 The last three cross-cutting rows, swept together.
