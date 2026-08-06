@@ -211,6 +211,78 @@ def test_the_review_table_goes_to_the_report_not_the_screen():
     assert any("openssh" in line for line in arender.report_body([res]))
 
 
+def test_template_units_never_reach_the_batch_query():
+    """`systemctl show` fails the ENTIRE batch on a template name — exits 1 and prints
+    nothing — and `list-unit-files --state=enabled` returns `getty@.service` on an
+    ordinary desktop. See the consequence test below."""
+    assert services.is_template("getty@.service")
+    assert services.is_template("user@.service")
+    assert not services.is_template("user@1000.service")   # an instance, not a template
+    assert not services.is_template("sshd.service")
+
+
+def test_a_blanked_attribution_does_not_turn_every_service_into_a_finding():
+    """The failure this axis exists to avoid, reached from the other direction.
+
+    If the owner lookup comes back empty, every service at high exposure looks
+    unpackaged — eighteen false findings on the reference machine, from the one axis
+    built to not do that. So a batch that returns nothing is retried per unit.
+    """
+    calls = []
+
+    def which(name):
+        return f"/usr/bin/{name}"
+
+    def run(cmd, *, as_user=None, capture=False):
+        argv = list(cmd)
+        if argv[:2] == ["systemd-analyze", "security"]:
+            tail = [a for a in argv[2:] if not a.startswith("-")]
+            return command.Proc(0, "[]" if tail else _security_json(
+                [("sshd.service", 9.6, "UNSAFE"), ("cups.service", 9.6, "UNSAFE")]), "")
+        if argv[:2] == ["systemctl", "list-units"]:
+            return command.Proc(0, "sshd.service loaded active running x\n"
+                                   "cups.service loaded active running y\n", "")
+        if argv[:2] == ["systemctl", "list-unit-files"]:
+            return command.Proc(0, "", "")
+        if argv[:2] == ["systemctl", "show"]:
+            units = [a for a in argv[2:] if a.endswith(".service")]
+            calls.append(tuple(units))
+            if len(units) > 1:            # the batch: aborted, as systemd really does
+                return command.Proc(1, "", "Failed to get properties")
+            u = units[0]
+            return command.Proc(0, f"Id={u}\nFragmentPath=/usr/lib/systemd/system/{u}\n",
+                                "")
+        return command.Proc(0, "", "")
+
+    owners = {f"/usr/lib/systemd/system/{u}": p
+              for u, p in (("sshd.service", "openssh"), ("cups.service", "cups"))}
+    with patch("fettle.command.which", side_effect=which), \
+         patch("fettle.command.run", side_effect=run):
+        res = services.run(_Backend(owners), _ctx())
+
+    assert res.findings == []                 # both are packaged, and were seen to be
+    assert len(calls) == 3                    # one failed batch, then one per unit
+
+
+def test_the_per_unit_fallback_only_runs_when_the_batch_failed():
+    """It is a recovery path, not the normal one — 37 extra subprocesses per run would
+    be a real cost to pay for nothing."""
+    calls = []
+
+    def run(cmd, *, as_user=None, capture=False):
+        argv = list(cmd)
+        calls.append(tuple(argv))
+        return command.Proc(0, "Id=a.service\nFragmentPath=/lib/systemd/system/a.service\n"
+                               "\nId=b.service\nFragmentPath=/lib/systemd/system/b.service\n",
+                            "")
+
+    with patch("fettle.command.run", side_effect=run):
+        out = services._fragment_paths(["a.service", "b.service"])
+
+    assert len(out) == 2
+    assert len(calls) == 1
+
+
 def test_a_long_unit_name_does_not_wrap_one_word_per_line():
     """Measured: a 56-character unit name pushed the detail into a four-column gutter
     and rendered one word per line for twenty lines."""

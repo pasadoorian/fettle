@@ -53,12 +53,35 @@ def _run(argv: list[str]) -> tuple[int, str]:
     return proc.returncode, (proc.stdout or "")
 
 
+def is_template(unit: str) -> bool:
+    """``getty@.service`` — a pattern for making units, not a unit.
+
+    Worth its own function because getting this wrong is expensive in a way that is not
+    obvious: ``systemctl show`` **fails the entire batch** on a template name, exits 1
+    and prints nothing, so a single one anywhere in the list blanks every unit's owner.
+    Every service at high exposure then looks unpackaged, which is a wall of false
+    findings from the one axis built to avoid exactly that. And ``list-unit-files
+    --state=enabled`` returns ``getty@.service`` on an ordinary desktop.
+    """
+    name, _, _ = unit.partition(".")
+    return name.endswith("@")
+
+
 def _active_units() -> set[str]:
     """Units that are running, plus units enabled to start at boot.
 
     Both halves matter and neither implies the other: a socket-activated daemon may be
     enabled and not currently running, and a hand-started one may be running and not
     enabled. Exposure applies to either.
+
+    ``list-unit-files --state=enabled`` costs about **1.4 s** because it stats every
+    unit file on disk, and it is kept anyway. ``systemctl show '*.service'`` answers in
+    149 ms and was tried — but its glob only matches units systemd has **loaded**, so
+    a service that is enabled and has never started is simply absent from it. That is
+    the exact category the paragraph above exists to include, and it is not
+    hypothetical: on the machine this was written against it dropped one of the two
+    unpackaged agent units, which was a real finding. A second of wall clock is not
+    worth silently losing a class of result.
     """
     units: set[str] = set()
     for argv in (["systemctl", "list-units", "--type=service", "--state=running",
@@ -70,18 +93,12 @@ def _active_units() -> set[str]:
             continue
         for line in text.splitlines():
             parts = line.split()
-            if parts and parts[0].endswith(".service"):
+            if parts and parts[0].endswith(".service") and not is_template(parts[0]):
                 units.add(parts[0])
     return units
 
 
-def _fragment_paths(units: list[str]) -> dict[str, str]:
-    """unit -> the path of its unit file, in one call rather than one call per unit."""
-    if not units:
-        return {}
-    rc, text = _run(["systemctl", "show", "-p", "Id", "-p", "FragmentPath", *units])
-    if rc != 0:
-        return {}
+def _parse_fragments(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
     unit = ""
     for line in text.splitlines():
@@ -91,6 +108,27 @@ def _fragment_paths(units: list[str]) -> dict[str, str]:
             path = line[len("FragmentPath="):].strip()
             if path:
                 out[unit] = path
+    return out
+
+
+def _fragment_paths(units: list[str]) -> dict[str, str]:
+    """unit -> the path of its unit file, in one call rather than one call per unit.
+
+    Falls back to asking one at a time when the batch comes back empty. ``systemctl
+    show`` aborts the whole batch on a single unresolvable name, and the consequence
+    here is not a missing row — it is that *no* unit gets an owner, so every service
+    at high exposure is reported as unpackaged. A slow correct answer beats a fast
+    wall of false findings, and the fallback only runs when the batch already failed.
+    """
+    if not units:
+        return {}
+    _, text = _run(["systemctl", "show", "-p", "Id", "-p", "FragmentPath", *units])
+    out = _parse_fragments(text)
+    if out or len(units) == 1:
+        return out
+    for unit in units:
+        _, one = _run(["systemctl", "show", "-p", "Id", "-p", "FragmentPath", unit])
+        out.update(_parse_fragments(one))
     return out
 
 

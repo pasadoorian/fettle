@@ -13,6 +13,27 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.116.1] — a template unit could have blanked every service's owner
+
+Two fixes in the `services` axis, both found by profiling the finished feature rather
+than by reading it.
+
+**A single template unit blanked the entire owner lookup.** `systemctl show` aborts the
+*whole batch* on a name like `getty@.service` — exit 1, no output — and
+`list-unit-files --state=enabled` returns exactly that on an ordinary desktop. With no
+owners, every service at high exposure is reported as **unpackaged**: eighteen false
+findings on the reference machine, from the one axis specifically built not to do that.
+Template names are now filtered out, and a batch that comes back empty is retried one
+unit at a time, so no single bad name can blank the map.
+
+**A speed change was tried and reverted, which is the more useful note.**
+`list-unit-files --state=enabled` costs ~1.4 s because it stats every unit file on
+disk; `systemctl show '*.service'` answers the same question in 149 ms. But its glob
+only matches units systemd has **loaded**, so a service that is enabled and has never
+started is absent from it — and that dropped one of the two real findings here. The
+slow call is kept. A second of wall clock does not buy silently losing a class of
+result.
+
 ## [0.116.0] — certificate expiry, ignoring the 121 certificates that don't matter
 
 The sixth and last `hardening-audit` axis: **`certs`**, and the design question was
