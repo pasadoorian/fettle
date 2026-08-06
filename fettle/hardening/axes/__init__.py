@@ -73,6 +73,12 @@ class AxisResult:
     # Output.not_checked, which works out this machine's install command at print time.
     blind: list[tuple[str, str, str]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Review material that belongs in the saved report but not on screen — the same
+    # split the binary axis already makes, where the terminal shows the Critical/High
+    # packages and the full per-criterion matrix goes to the report. Printing every row
+    # is how a check becomes a wall of text nobody reads, which is precisely what makes
+    # the tool that prompted this work ignorable.
+    detail_rows: list[str] = field(default_factory=list)
     checked: int = 0                            # how many subjects were examined
     na: str = ""                                # non-empty = does not apply, and why
 
@@ -94,7 +100,7 @@ class AxisResult:
 # This tuple holds the axes that EXIST, and grows one entry per milestone. The table
 # above describes the design; listing an unbuilt axis here would make `run_all` report
 # it as blind on every host, which is a louder lie than not mentioning it.
-AXIS_NAMES = ("filesystem",)
+AXIS_NAMES = ("filesystem", "services")
 
 # The binary axis predates this module and still lives in engine/report/score. It is
 # named here so `disable_axes = ["binary"]` works and so the help can list one set.

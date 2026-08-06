@@ -390,7 +390,7 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-H` | `hardening-audit` | is this system hardened? binaries vs the distro's build flags (needs `checksec`) + filesystem hygiene → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem hygiene, service exposure → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
 | — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
@@ -935,6 +935,7 @@ nothing else:
 |---|---|---|
 | `binary` | were the installed binaries built with the distro's hardening flags? | `checksec` |
 | `filesystem` | can a local user tamper with shared directories? | nothing |
+| `services` | how much of the system can each running service reach? | systemd |
 
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
 An axis that **can't** look says so in its own words — it never renders as a pass.
@@ -1077,6 +1078,35 @@ This axis deliberately does **not** walk the filesystem looking for world-writab
 files. Lynis's equivalent test does, and on the machine this was written against it
 took 19 seconds and earned its own "long execution" warning inside its own findings
 list. Everything here runs in well under a second.
+
+#### Services axis — how much can each running service reach?
+
+**In plain terms:** systemd can put a fence around a service — no access to your home
+directory, no raw network, not running as root. `systemd-analyze security` scores how
+low that fence is, 0–10. This axis reads those scores, but it is careful about what it
+calls a *problem*.
+
+**A high score is not a defect, and this is the whole design.** `sshd` scores 9.6
+"UNSAFE" on a perfectly healthy machine — it runs as root and opens a listening socket
+because that is its job. So do `docker`, `libvirtd`, `gdm`. A check that reports
+eighteen unsafe services on a working desktop has told you nothing you can act on. So
+fettle reports two different things:
+
+- **Findings** — a service at high exposure whose unit file is owned by **no package**.
+  That is a fact rather than an opinion: something outside your package manager
+  installed a service, no packaging review ever looked at it, and it runs with wide
+  access. Each finding names the specific directives it leaves unset ("has access to
+  the host's network; runs as root user") rather than just quoting a number.
+- **Review material** — the worst running-or-enabled units with their owning package,
+  written to the saved report, not the screen.
+
+Only **running or enabled** units are considered — a unit that exists but never starts
+is not exposure. On the reference machine that is 37 units rather than the 67 Lynis
+printed, and 18 unsafe rather than 42.
+
+On a host with no systemd this axis reports **not applicable** (it isn't blindness —
+there are no unit files to be exposed). Where systemd is installed but isn't the
+running init, as in most containers, it reports that it could not look, and says why.
 
 ### Package file integrity — `-V` / `pkg-integrity`
 

@@ -26,15 +26,27 @@ def tally_line(res: AxisResult) -> str:
 
 
 def _rows(res: AxisResult, *, fix: bool) -> list[str]:
-    """One block per finding, worst first, ties broken by subject for a stable order."""
+    """One block per finding, worst first, ties broken by subject for a stable order.
+
+    A subject too wide for its column gets its own line rather than pushing the detail
+    into a four-character gutter — systemd unit names run to 56 characters and the
+    fixed-column version wrapped one word per line, which is unreadable.
+    """
     order = {s: i for i, s in enumerate(SEVERITY_ORDER)}
     lines: list[str] = []
     for f in sorted(res.findings, key=lambda x: (order.get(x.severity, 9), x.subject)):
-        head = f"{f.severity.upper():<{_LABEL}}{f.subject:<{_SUBJECT}}"
-        body = textwrap.wrap(f.detail, width=_WIDTH - len(head)) or [""]
-        lines.append(head + body[0])
-        pad = " " * len(head)
-        lines.extend(pad + more for more in body[1:])
+        label = f"{f.severity.upper():<{_LABEL}}"
+        if len(f.subject) <= _SUBJECT:
+            head = label + f"{f.subject:<{_SUBJECT}}"
+            pad = " " * len(head)
+            first, rest = head, textwrap.wrap(f.detail, width=max(20, _WIDTH - len(head)))
+            lines.append(first + (rest[0] if rest else ""))
+            lines.extend(pad + more for more in rest[1:])
+        else:
+            lines.append(label + f.subject)
+            pad = " " * (_LABEL + 2)
+            lines.extend(pad + more for more in
+                         textwrap.wrap(f.detail, width=max(20, _WIDTH - len(pad))))
         if fix and f.fix:
             lines.append(pad + f"→ {f.fix}")
     return lines
@@ -81,6 +93,9 @@ def report_body(results: list[AxisResult]) -> list[str]:
         if res.findings:
             lines.append("")
             lines.extend(_rows(res, fix=True))
+        if res.detail_rows:
+            lines.append("")
+            lines.extend(res.detail_rows)
         for note in res.notes:
             lines.append("")
             lines.extend(textwrap.wrap(f"note: {note}", width=_WIDTH))

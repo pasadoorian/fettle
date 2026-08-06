@@ -182,6 +182,13 @@ def test_the_last_mount_of_a_path_wins(tmp_path):
 # the framework
 # --------------------------------------------------------------------------
 
+def _only(root: Path, name: str) -> Context:
+    """A context running just one axis — so a framework test does not shell out to the
+    real systemd, and does not need editing every time an axis is added."""
+    others = [a for a in axes.ALL_AXIS_NAMES if a != name]
+    return _ctx(root, hardening={"disable_axes": others})
+
+
 def test_an_axis_that_raises_is_blind_not_clean(tmp_path, monkeypatch):
     """A bug in one axis must not read as that axis having nothing to report — and
     must not take the others down, which is the flaw that prompted the redesign."""
@@ -189,7 +196,7 @@ def test_an_axis_that_raises_is_blind_not_clean(tmp_path, monkeypatch):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(filesystem, "run", _boom)
-    results = axes.run_all(None, _ctx(_fake_root(tmp_path)))
+    results = axes.run_all(None, _only(_fake_root(tmp_path), "filesystem"))
 
     assert len(results) == 1
     assert results[0].findings == []
@@ -198,8 +205,11 @@ def test_an_axis_that_raises_is_blind_not_clean(tmp_path, monkeypatch):
 
 
 def test_disable_axes_switches_one_off(tmp_path):
-    ctx = _ctx(_fake_root(tmp_path), hardening={"disable_axes": ["filesystem"]})
-    assert axes.run_all(None, ctx) == []
+    root = _fake_root(tmp_path)
+    assert [r.name for r in axes.run_all(None, _only(root, "filesystem"))] == \
+        ["filesystem"]
+    every = _ctx(root, hardening={"disable_axes": list(axes.ALL_AXIS_NAMES)})
+    assert axes.run_all(None, every) == []
 
 
 def test_a_typo_in_disable_axes_is_reported(tmp_path):

@@ -13,6 +13,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.112.0] — service exposure, without the wall of text
+
+A second `hardening-audit` axis: **`services`**, reading `systemd-analyze security`.
+
+**A high exposure score is not a defect, and the design turns on that.** `sshd` scores
+9.6 "UNSAFE" on a perfectly healthy machine because it runs as root and opens a
+listening socket — as do `docker`, `libvirtd` and `gdm`. Reporting eighteen unsafe
+services on a working desktop tells the reader nothing to act on and teaches them to
+skip the section. So the axis splits its output:
+
+- **Findings** are services at high exposure whose unit file is owned by **no package**
+  — a fact rather than an opinion: something outside the package manager installed a
+  service, no packaging review looked at it, and it runs with wide access. Each finding
+  names the directives it leaves unset ("has access to the host's network; runs as root
+  user") instead of quoting a score. Found two real ones here: unpackaged agent units
+  under `/etc/systemd/system`, running as root with host networking.
+- **Review material** — the worst running-or-enabled units with their owning package —
+  goes to the saved report, not the screen. Same split the binary axis already makes.
+
+Only **running or enabled** units count; one that exists but never starts is not
+exposure. On the reference machine that is 37 units rather than 67, and 18 unsafe
+rather than 42.
+
+No systemd reports **not applicable** rather than blindness — there are no unit files
+to be exposed, and sending the reader to install something they do not want is its own
+kind of wrong answer. systemd installed but not the running init (the container case)
+reports that it could not look, with the reason.
+
+Also fixes a rendering bug the axis exposed: a 56-character unit name overflowed the
+subject column and wrapped the detail one word per line. Long subjects now take their
+own line.
+
 ## [0.111.0] — `hardening-audit` grows axes, and finds a real `/tmp` bug
 
 Prompted by reading a Lynis run against the same machine and asking which of its 454
