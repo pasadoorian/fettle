@@ -47,6 +47,11 @@ _REGENERATED = (
     # mirror lists, owned at runtime by the tool that manages them
     "/var/lib/pacman-mirrors/mirrors.json",
     "/etc/pacman.d/mirrorlist",
+    # /run is a tmpfs built fresh every boot, so nothing there survives from a package
+    # install; a package may own the directory, but its contents are always runtime
+    # state. Fedora's cloud image reports a mode difference on /run/cloud-init, which
+    # is a boot artifact rather than a change to anything shipped.
+    "/run/*",
 )
 
 

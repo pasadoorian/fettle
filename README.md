@@ -946,16 +946,29 @@ this is a **tripwire, not a proof of authenticity** — valuable because most in
 and every botched upgrade, do not think to update the manifest. It is not a substitute
 for signature verification at install time, which is what `pkg-audit` covers.
 
-**Three outcomes, deliberately not summed together:**
+**Four outcomes, deliberately not summed together:**
 
-- **`differ`** — a packaged file whose contents no longer match. *The finding.*
+- **`Package Integrity`** — a packaged file whose **contents** no longer match, or that
+  has gone missing. *The finding.*
+- **`Permission drift`** *(RHEL family)* — mode, ownership or capabilities differ while
+  the contents are untouched. True, and worth seeing — a world-writable binary matters —
+  but it is not the same event as bytes changing, so it warns rather than alarms.
 - **`Expected differences`** — files a tool rewrites after install, never a person:
   depmod's `modules.dep`/`modules.alias` index (once per installed kernel), plugin
-  caches, `ld.so.cache`, mirror lists. These differ on **every** machine, so they carry
-  no information. Counted, listed with `-v`. On RHEL this also covers rpm's own
-  `c`/`g`/`d` markers — config files you edited, ghost files, documentation.
+  caches, `ld.so.cache`, mirror lists, anything under `/run`. These differ on **every**
+  machine, so they carry no information. Counted, listed with `-v`. On RHEL this also
+  covers rpm's own `c`/`g`/`d` markers — config files you edited, ghost files,
+  documentation — and **timestamp-only** rows, since `cp`, `rsync` and every image
+  builder rewrite an mtime without touching a byte.
 - **`Not verified`** — files that could not be read, or (Debian) packages that ship no
   checksums at all. *A gap in coverage, not a finding.*
+
+**Why `rpm -Va` needs the extra split.** It compares all nine attributes, where `debsums`
+and `paccheck --sha256sum` compare content alone. Grouping all nine into one count made
+every RHEL host red on first boot: measured across three freshly built cloud images, all
+13 findings were an mtime or a directory mode and **not one was a content change**. An
+audit that is red on an untouched machine teaches you that red means nothing — and then
+the one digest mismatch that matters scrolls past with the rest.
 
 Keeping them apart is the whole point. Measured on the author's workstation, the old
 combined output reported **82 "issues"** — of which 65 were permission errors and 14

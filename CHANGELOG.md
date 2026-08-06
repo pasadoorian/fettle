@@ -10,6 +10,56 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.89.0] — package integrity stops crying wolf on a clean machine
+
+The full lab matrix (64 pass · 6 issue · 0 FAIL · 8 skip) showed `pkg-integrity`
+reporting a **red integrity error on three freshly built cloud images**. Across all 13
+findings there was **not one content change** — only file mtimes and directory modes:
+
+| guest | reported | what actually differed |
+|---|---|---|
+| Rocky 9 | `✗ 10 packaged file(s) differ` | mtime on 7 EFI/shim binaries and a grub font; mode on `/` and `/boot` |
+| AlmaLinux 9 | `✗ 1 packaged file(s) differ` | mtime on `/boot/grub2/fonts/unicode.pf2` |
+| Fedora 44 | `✗ 2 packaged file(s) differ` | mode on `/` and on **`/run/cloud-init`** |
+
+`rpm -Va` flags a content mismatch with `5`. None of these had one.
+
+This is the one check whose entire job is detecting tampering, so a red mark on an
+untouched machine is worse than useless: it teaches you that red means nothing, and the
+day a real digest mismatch appears it scrolls past with the rest. It is the mirror of the
+invariant this QA pass exists to enforce — *"could not look" must not render as "found a
+problem"* — here, "nothing meaningful changed" rendered as "found a problem".
+
+**Fixed by classifying on what differs, not how many files differ.** `rpm -Va` compares
+all nine attributes, where `debsums` and `paccheck --sha256sum` compare content alone, so
+this split is specific to the RPM path:
+
+- **content** (digest, size, symlink target, or a missing file) → the finding, `error`
+- **permission** (mode, owner, group, capabilities, device) → `warn`. True and worth
+  seeing — a world-writable binary matters — but not the same event as bytes changing.
+- **timestamp only** → expected. `cp`, `rsync` and every image builder rewrite an mtime
+  without touching a byte; rpm reports it because rpm reports everything.
+
+`/run` joins the regenerated-paths list: it is a tmpfs rebuilt every boot, so nothing
+there survives from a package install.
+
+Measured after the fix — **AlmaLinux 9 is now completely clean**, and the other two report
+zero content findings with their metadata drift shown as a warning:
+
+| guest | before | after |
+|---|---|---|
+| Rocky 9 | `✗ 10 differ` (exit 1) | `✓ no contents changed` · `! 2 permission drift` (exit 0) |
+| AlmaLinux 9 | `✗ 1 differs` (exit 1) | `✓ installed files match their packages` |
+| Fedora 44 | `✗ 2 differ` (exit 1) | `✓ no contents changed` · `! 1 permission drift` (exit 0) |
+
+A regression test plants a real digest mismatch on an unmarked packaged file and asserts
+it still alarms — the guard that proves this quieted the noise without muting the check.
+
+### Not changed
+
+Debian reports the same finding at `warn` where RHEL uses `error`. Inconsistent, noted,
+and left alone rather than widened into this fix.
+
 ## [0.88.0] — the hardening audit was asleep, not working
 
 `fettle -H` against a Rocky 9 or AlmaLinux 9 host took **over 30 minutes** and was killed

@@ -310,6 +310,41 @@ _VA_RE = re.compile(r"^(\S+)\s+(?:([cdglr])\s+)?(/.*)$")
 _EXPECTED_DRIFT = {"c": "config", "g": "ghost (runtime-created)",
                    "d": "documentation", "l": "license", "r": "readme"}
 
+# The nine attribute columns `rpm -Va` prints, in order: Size, Mode, digest(5),
+# Device, readLink, User, Group, mTime, caPabilities. `.` = the test passed,
+# `?` = the test could not be performed.
+#
+# **What differs matters more than how many files differ.** Grouping all nine into one
+# "N packaged files differ" error made every RHEL host red on first boot: measured
+# across three freshly built cloud images, all 13 findings were an mtime or a directory
+# mode and **not one was a content change**. An audit that is red on an untouched
+# machine teaches you that red means nothing, which is the one thing a tripwire cannot
+# afford — so these are split by kind.
+_VA_CONTENT = set("5SL")      # digest / size / symlink target -- the bytes moved
+_VA_PERMISSION = set("MUGPD")  # mode / owner / group / caps / device -- access moved
+# mTime alone is left over, and it means nothing: cp, rsync, and every image builder
+# rewrite mtimes without touching a byte. rpm reports it because rpm reports everything.
+
+
+def _va_class(flags: str) -> str:
+    """Classify one ``rpm -Va`` row as ``content`` / ``permission`` / ``timestamp``.
+
+    A missing file counts as content: something that was installed is gone.
+
+    Permission drift is deliberately kept **visible but not alarming**. It is a true
+    statement — the mode or owner really does differ from the package — and on a real
+    host a world-writable binary matters. It is simply not the same event as bytes
+    changing, and conflating the two is what made a pristine image look compromised.
+    """
+    if flags.startswith("missing"):
+        return "content"
+    changed = {c for c in flags if c not in ".?"}
+    if changed & _VA_CONTENT:
+        return "content"
+    if changed & _VA_PERMISSION:
+        return "permission"
+    return "timestamp"
+
 
 class RhelBackend(PackageBackend):
     name = "rhel"
@@ -1206,6 +1241,13 @@ class RhelBackend(PackageBackend):
         runtime and documentation all legitimately differ, and on a stock system they
         are the bulk of the output. Rows with no file-type marker are packaged files —
         binaries and libraries — and those are the ones worth alarming about.
+
+        **And what differs matters more than how many files differ.** Splitting by
+        attribute (see ``_va_class``) is not cosmetic: before it, three freshly built
+        cloud images each reported a red integrity error, and across all 13 findings
+        there was not one content change — only mtimes and directory modes. A tripwire
+        that is red on an untouched machine trains you to ignore it, and then the one
+        digest mismatch that matters scrolls past with the rest.
         """
         scan.sub("RPM Package Verification")
         if not scan.which("rpm"):
@@ -1228,29 +1270,44 @@ class RhelBackend(PackageBackend):
                         "verified", "error")
             return
 
-        altered, expected = [], []
+        altered, drifted, expected = [], [], []
         for line in out.splitlines():
             m = _VA_RE.match(line.rstrip())
             if not m:
                 continue
+            row = line.rstrip()
             if m.group(2) is not None or is_regenerated(m.group(3)):
-                expected.append(line.rstrip())
+                expected.append(row)
+                continue
+            kind = _va_class(m.group(1))
+            if kind == "content":
+                altered.append(row)
+            elif kind == "permission":
+                drifted.append(row)
             else:
-                altered.append(line.rstrip())
+                expected.append(row)
 
         if altered:
             scan.status("Package Integrity",
-                        f"{len(altered)} packaged file(s) differ from their package",
+                        f"{len(altered)} packaged file(s) have CHANGED CONTENT "
+                        "since installation",
                         "error")
             scan.result("\n".join(altered[:50]))
         else:
             scan.status("Package Integrity",
-                        "No packaged files altered", "ok")
+                        "No packaged file's contents have changed", "ok")
+        if drifted:
+            # True, and worth seeing — but not the tripwire. Warn, so it shows without
+            # colouring the host as compromised or failing the run.
+            scan.status("Permission drift",
+                        f"{len(drifted)} packaged file(s) differ in mode, ownership or "
+                        "capabilities — contents unchanged", "warn")
+            scan.result("\n".join(drifted[:50]))
         if expected:
             # Reported, not hidden — but as context, so it cannot drown the signal.
             scan.status("Expected differences",
-                        f"{len(expected)} config/ghost/doc or machine-regenerated "
-                        "file(s) differ (normal: you edited them, or a tool rewrote "
-                        "them after install)", "info")
+                        f"{len(expected)} config/ghost/doc, machine-regenerated or "
+                        "timestamp-only difference(s) (normal: you edited them, a tool "
+                        "rewrote them, or only the mtime moved)", "info")
             if scan.verbose:
                 scan.result("\n".join(expected[:50]))

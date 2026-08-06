@@ -113,3 +113,47 @@ hash" described the intent and not the code; it does now.
   not a prepared collision.
 - **No user-extensible expected list.** Decided against for now — a config knob to
   silence integrity findings is a knob that gets used to silence real ones.
+
+---
+
+## Sweep 2 — v0.88.0 → v0.89.0, 2026-08-05, from the full lab matrix
+
+The matrix reported `pkg-integrity` as the only action with a finding on more than one
+target — three of six, all of them freshly built cloud images that nobody had touched.
+
+**Every one was a false alarm.** Across all 13 findings there was not a single content
+change: mtimes on EFI/shim binaries and grub fonts, and mode bits on `/`, `/boot` and
+`/run/cloud-init`. `rpm -Va` flags a content mismatch with `5`; none of these had one.
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-PI-11 *(new)* | mtime-only difference is not a finding | **FAIL → fixed** (I-05) |
+| QA-PI-12 *(new)* | permission drift is visible but not an integrity error | **FAIL → fixed** (I-05) |
+| QA-PI-13 *(new)* | a real digest mismatch still alarms | PASS — the guard on the fix |
+| QA-PI-14 *(new)* | `/run` is not treated as packaged content | **FAIL → fixed** |
+
+### I-05 — a tripwire that is red on a clean machine. FIXED v0.89.0
+The count was of *rows*, not of *events*. `rpm -Va` compares all nine attributes, while
+`debsums` and `paccheck --sha256sum` compare content alone — so the RPM path, and only the
+RPM path, was summing "the mtime moved" together with "the bytes changed".
+
+Now classified by what differs: content (digest/size/symlink/missing) is the finding,
+permission drift (mode/owner/group/caps) warns, and timestamp-only is expected. `/run`
+joins the regenerated list, being a tmpfs rebuilt every boot.
+
+**Measured after the fix:** AlmaLinux 9 is completely clean; Rocky 9 and Fedora 44 report
+zero content findings with 2 and 1 permission drifts respectively, at exit 0.
+
+### Why this one mattered more than its size
+Of everything found in this pass, this is the finding most likely to have caused real harm.
+The others made fettle look broken; this one made a *clean* machine look compromised, on
+the single check whose output is meant to be believed. A user who sees a red integrity
+error on a box they built an hour ago learns, correctly, that the check is noise — and
+that lesson is still in force on the day the digest mismatch is real.
+
+### A false alarm of my own, worth recording
+While verifying, I ran `-V` against the Fedora guest without `--distro rhel` and got
+`✗ no fettle backend for this distro`. That is **not** a defect: Fedora is deliberately
+not a claimed distro (its advisories are Bodhi `FEDORA-*`, not RHSA), the lab names the
+backend explicitly, and fettle's refusal listed every distro it knows and how to override.
+Correct behaviour, clearly explained — the mistake was in my command.
