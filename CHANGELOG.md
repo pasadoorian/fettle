@@ -10,6 +10,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.95.1] — `--everything` cleans before it updates
+
+Corrects the action order shipped in 0.95.0. `clean` now runs **first**, not last:
+
+    clean, update, rebuild-check, python-rebuild-check, orphans, config-drift, …
+
+The reason 0.95.0 gave for putting it last — that cleaning first "forces a re-download" —
+was simply wrong. `clean` removes cached packages that are **no longer installed** and
+trims the rest to `keep_versions`; the upgrade downloads **new** versions that were never
+in the cache. Nothing clean removes is anything the upgrade was about to reuse, so there
+is no cost to going first, and there is a real benefit: it frees space *before* the
+upgrade needs it, which is the difference between a successful run and a failed one on a
+box with a small `/var`.
+
+`orphans` and `config-drift` also move to just after the rebuild checks, since an upgrade
+is what creates both.
+
+Checked while reordering, since the remaining audits were described as order-independent:
+they are. The only relationship worth preserving is `pkg-audit` and `aur-audit` staying
+adjacent — both query the AUR RPC, and the second benefits from the first's TTL-cached
+fetch. They keep *separate* maintainer snapshots on purpose (sharing one meant a takeover
+was reported by whichever ran first and was invisible to the other), so their order
+between themselves does not matter.
+
+**One caveat now documented:** with `keep_versions = 0`, cleaning first removes every
+cached version including the running one, so an upgrade that goes wrong leaves no offline
+rollback. The default of 2 keeps it.
+
 ## [0.95.0] — `--everything`, and two subcommands become real actions
 
 `fettle --everything` runs every action that is safe to leave running unattended, in a

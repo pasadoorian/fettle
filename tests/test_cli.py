@@ -495,11 +495,31 @@ def test_everything_excludes_only_update_as_redundant():
 def test_everything_orders_update_before_what_describes_its_result():
     """Each of these exists to describe the system the update left behind, so running
     them first would describe the machine you booted rather than the one you now have.
-    `clean` first would only force a re-download; after, it reclaims what the upgrade
-    obsoleted. `advisory-check` after reports what is STILL unfixed."""
+    The rebuild checks catch what the update made stale; orphans and config-drift are
+    both things an upgrade CREATES; pkg-integrity would otherwise verify packages about
+    to be replaced; advisory-check reports what is STILL unfixed."""
     got = _actions_for(["--everything"])
-    for later in ("rebuild_check", "clean", "pkg_integrity", "advisory_check"):
+    for later in ("rebuild_check", "python_rebuild_check", "orphans", "config_drift",
+                  "pkg_integrity", "advisory_check"):
         assert got.index("update") < got.index(later), later
+
+
+def test_everything_cleans_before_updating():
+    """clean frees space BEFORE the upgrade needs it, which is the point on a box with a
+    small /var. It costs nothing to do first: clean removes cached packages that are no
+    longer installed and trims the rest to keep_versions, while the upgrade downloads
+    NEW versions that were never in the cache. An earlier revision put clean last on the
+    stated grounds that going first 'forces a re-download' — which was simply wrong."""
+    got = _actions_for(["--everything"])
+    assert got.index("clean") < got.index("update")
+
+
+def test_everything_keeps_the_two_aur_queries_adjacent():
+    """Both hit the AUR RPC; the second benefits from the first's TTL-cached fetch.
+    Not correctness — they keep separate maintainer snapshots deliberately — but a
+    gratuitous second round trip is worth avoiding."""
+    got = _actions_for(["--everything"])
+    assert abs(got.index("pkg_audit") - got.index("aur_audit")) == 1
 
 
 def test_everything_composes_with_skip():

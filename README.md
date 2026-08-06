@@ -654,14 +654,28 @@ two that were previously only reachable as their own subcommands, **`sys-audit`*
 **`advisory-check`**. Actions your distro does not have are filtered out and reported, so
 the same command is correct everywhere; there is no per-distro list to maintain.
 
-**The order is not alphabetical, and not the order you would type them.** `update` runs
-first so everything downstream describes the system you will actually be running.
-`rebuild-check` follows it because it exists to catch what the update just made stale.
-`clean` runs *after* the update — cleaning first only forces a re-download, while cleaning
-after reclaims exactly what the upgrade obsoleted. `pkg-integrity` runs after, or it
-verifies packages that are about to be replaced. And `advisory-check` runs last, where it
+**The order is not alphabetical, and not the order you would type them.** `clean` runs
+first, because it frees space *before* the upgrade needs it — which is the whole point on
+a box with a small `/var`. It costs nothing to do first: `clean` removes cached packages
+that are no longer installed and trims the rest to `keep_versions`, while the upgrade
+downloads **new** versions that were never in the cache.
+
+`update` follows, so everything downstream describes the system you will actually be
+running rather than the one you booted. The two rebuild checks come next because they
+exist to catch what the update just made stale. `orphans` and `config-drift` follow
+because an upgrade is what *creates* both — packages left with no dependents, and
+`.pacnew`/`.rpmnew` files waiting to be merged. `pkg-integrity` runs after the update or
+it would verify packages about to be replaced. And `advisory-check` runs last, where it
 reports what is **still** unfixed rather than listing everything the update was about to
 fix anyway.
+
+The remaining audits are genuinely order-independent. `pkg-audit` and `aur-audit` are kept
+adjacent only because both query the AUR RPC and the second benefits from the first's
+TTL-cached fetch.
+
+One caveat if you have set `keep_versions = 0`: cleaning first then removes **every**
+cached version including the one you are currently running, so an upgrade that goes wrong
+leaves you no offline rollback. The default of 2 keeps the running version cached.
 
 **Two actions are deliberately absent.** `kernel` can remove your ability to boot — it is
 kept out of the default set for that reason and stays out here — and `container-update`

@@ -66,16 +66,29 @@ PIPELINE_ONLY_ACTIONS = {"sys_audit", "advisory_check"}
 # `--everything`: every action that is safe to run start-to-finish without supervision,
 # in an order chosen so each one sees the state the previous left behind.
 #
-#   update first        -- everything downstream should describe the system you will
+#   clean first         -- it frees space BEFORE the upgrade needs it, which is the
+#                          whole point on a box with a small /var. It costs nothing to
+#                          do first: `clean` removes cached packages that are no longer
+#                          installed and trims the rest to `keep_versions`, while the
+#                          upgrade downloads NEW versions that were never in the cache.
+#                          (An earlier revision of this list put clean last, on the
+#                          stated grounds that cleaning first "forces a re-download".
+#                          That was simply wrong -- nothing clean removes is anything
+#                          the upgrade was about to reuse.)
+#   update next         -- everything downstream should describe the system you will
 #                          actually be running, not the one you booted.
-#   rebuild-check after -- it exists to catch what the update just made stale.
-#   clean after         -- cleaning first only forces a re-download; cleaning after
-#                          reclaims exactly what the upgrade obsoleted.
-#   pkg-integrity after -- otherwise it verifies packages that are about to be replaced.
-#   advisory-check last of the "what is left" checks -- run after the update it reports
-#                          what is STILL unfixed, which is the actionable number. Before
-#                          the update it would mostly list things the update was about
-#                          to fix.
+#   rebuild checks after update -- they exist to catch what the update just made stale,
+#                          both the library ABI case and the Python one.
+#   orphans, then config-drift -- an upgrade is what creates both: packages left with
+#                          no dependents, and .pacnew/.rpmnew files waiting to be merged.
+#   pkg-integrity after update -- otherwise it verifies packages about to be replaced.
+#   advisory-check last -- run after the update it reports what is STILL unfixed, which
+#                          is the actionable number. Before the update it would mostly
+#                          list things the update was about to fix.
+#
+# The remaining audits are genuinely order-independent, but pkg-audit and aur-audit are
+# kept adjacent: both query the AUR RPC, and the second benefits from the first's
+# TTL-cached fetch.
 #
 # Two actions are deliberately absent. `kernel` can remove your ability to boot and is
 # excluded from the default set for that reason; `container_update` pulls images over
@@ -85,11 +98,11 @@ PIPELINE_ONLY_ACTIONS = {"sys_audit", "advisory_check"}
 # Nothing here is Arch-specific by construction: unsupported actions are filtered
 # against the backend and reported, so the same list is correct on every distro.
 EVERYTHING_ACTIONS = [
-    # -- bring the system up to date, then describe what that left behind
+    # -- make room, bring the system up to date, then describe what that left behind
+    "clean",
     "update",
     "rebuild_check",
     "python_rebuild_check",
-    "clean",
     "orphans",
     "config_drift",
     # -- posture and supply chain
