@@ -590,6 +590,8 @@ def _remote_one(host: str, ssh_args, forwarded, label: str = "") -> int:
 def _run_group(group, cli_ssh_args, cli_forwarded) -> int:
     """Run fettle on every host in ``group``, in order. Continues past a failing
     host and prints a pass/fail summary; exit code is non-zero if any host failed."""
+    from . import remote
+
     ssh_args = list(cli_ssh_args) + list(group.ssh_args)
     fwd = list(cli_forwarded)
     if not _remote_has_action(fwd) and group.actions:   # group's default actions
@@ -620,11 +622,21 @@ def _run_group(group, cli_ssh_args, cli_forwarded) -> int:
 
     print(f"\n=== group '{group.name}' summary ===")
     for h, rc in results:
-        print(f"  [{'OK  ' if rc == 0 else 'FAIL'}] {h}"
-              + (f"  (exit {rc})" if rc else ""))
-    failed = sum(1 for _, rc in results if rc != 0)
-    print(f"{len(results) - failed} ok, {failed} failed")
-    return 1 if failed else 0
+        mark = ("OK" if rc == 0 else
+                "UNREACHABLE" if rc == remote.UNREACHABLE else "FAIL")
+        detail = f"  (exit {rc})" if rc and rc != remote.UNREACHABLE else ""
+        print(f"  {'[' + mark + ']':<14}{h}{detail}")
+    unreachable = sum(1 for _, rc in results if rc == remote.UNREACHABLE)
+    failed = sum(1 for _, rc in results if rc not in (0, remote.UNREACHABLE))
+    ok = len(results) - failed - unreachable
+    # Counted apart because they are different answers. A host that failed told you
+    # something; a host you could not reach told you nothing, and the rest of this
+    # summary does not speak for it.
+    line = f"{ok} ok, {failed} failed"
+    if unreachable:
+        line += f", {unreachable} unreachable (nothing is known about those)"
+    print(line)
+    return 1 if (failed or unreachable) else 0
 
 
 def _fetch_remote_reports(host: str, ssh_args) -> None:
@@ -1218,8 +1230,28 @@ def _main(argv: list[str]) -> int:
                      f"by the {backend.name} backend: {', '.join(skipped)}")
 
     if not runnable:
-        out.warn("nothing to do (no supported actions selected).")
-        return 0
+        # Whether this is a failure depends entirely on who chose the actions.
+        #
+        # You NAMED one and this backend cannot run it: nothing happened, and saying
+        # "success" lets `fettle -A && echo audited` print a lie. That is the same shape
+        # as the unsupported-distro bug (F-11) reached by a different road — fettle
+        # declined, and the status agreed with the request rather than the outcome.
+        #
+        # The DEFAULT set dropping everything is a different statement: you asked for
+        # "whatever applies here" and the honest answer was "nothing does". Unusual, but
+        # not a failure of the run, and failing would make a bare `fettle` red on a
+        # minimal backend forever.
+        if from_default:
+            out.warn("nothing to do — none of the default actions are implemented by "
+                     f"the {backend.name} backend.")
+            out.print_summary()
+            return 0
+        out.err(f"nothing to do — the {backend.name} backend implements none of the "
+                f"action(s) you asked for: {', '.join(requested)}")
+        out.summary_fail(f"no requested action ran — {backend.name} implements none of "
+                         f"{', '.join(requested)}", kind=BLIND)
+        out.print_summary()
+        return 1
 
     # Elevate only when a selected action actually needs root. --dry-run normally stays
     # passwordless; --full-preview is the explicit opt-in to elevate anyway, because the

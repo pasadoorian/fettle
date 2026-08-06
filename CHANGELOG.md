@@ -10,6 +10,58 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.101.0] — "nothing happened" stops reporting success
+
+X4: the cross-cutting exit-code cases that had been sitting on the tracker.
+
+### An action you named that cannot run is a failure
+
+F-11 was filed against two paths and both were already fixed — an unknown `--distro` and
+a machine fettle cannot identify each exit non-zero. The same shape survived by a third
+road:
+
+    $ fettle -A --distro debian
+      skipping 'aur_audit' — not supported by the debian backend
+      ! nothing to do (no supported actions selected).
+    $ echo $?
+    0
+
+You named an action, fettle declined, nothing happened, and the status said success — so
+`fettle -A && echo audited` printed a lie. Now a failure.
+
+The **default** set finding nothing applicable is deliberately *not* a failure. That is a
+different statement: you asked for "whatever applies here" and the honest answer was
+"nothing does". Failing it would put a bare `fettle` permanently in the red on a minimal
+backend.
+
+### A host you could not reach is not a host that failed
+
+In a group run both were exit `1`, so the summary read the same for a machine that was
+audited and came back bad and one that was never contacted at all. Unreachable is now its
+own verdict, using ssh's own convention for a connection failure:
+
+    [OK]          bifrost
+    [FAIL]        ec1  (exit 2)
+    [UNREACHABLE] gibson
+    1 ok, 1 failed, 1 unreachable (nothing is known about those)
+
+It still fails the group — the work did not happen — but you can now tell which is which,
+and the phrasing says plainly that the rest of the summary does not speak for that host.
+
+### B8, settled by precedent rather than taste
+
+Under `--dry-run`, Debian and RHEL both announced *"would be saved for review"* while
+Arch said nothing, so an Arch user had no idea a review report was even part of the
+action. Announcing is what `--dry-run` does everywhere else in fettle — *"would run: …"*
+— which made Arch the outlier rather than a coin-flip. It now matches, with a test on
+both halves so the announcement cannot quietly replace the thing it announces.
+
+### Re-proved rather than assumed
+
+Remote exit propagation: a guest returning non-zero reaches the local shell, and a clean
+run returns 0. Worth re-checking because the zipapp wrapper discarded a return value once
+before.
+
 ## [0.100.0] — `fettle report` answers for itself, and a guard so the next one has to
 
 X3, and the end of a defect this QA pass found six times: *a subcommand with its own

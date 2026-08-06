@@ -7,7 +7,7 @@ Today the honest answer is "not without reading the source", and this is the row
 most accumulated evidence behind it — six instances found while sweeping individual
 features, plus one defect I knowingly left in place while shipping `--everything`.
 
-Status: **X1, X1a, X2 and X3 done.** X4-X5 planned.
+Status: **X1, X1a, X2, X3 and X4 done.** X5 (document + close) remains.
 
 ---
 
@@ -170,13 +170,30 @@ what an entry point actually is:
 
 Verified the guard fails with the fix reverted, rather than trusting that it would.
 
-### X4 — the cross-cutting cases already on the tracker
-- **F-11 / QA-M5**: an unsupported distro exits 0. It should not.
-- **B8**: `--dry-run` exit-code inconsistency between actions.
-- Remote: does a remote failure propagate? `remote.py`'s zipapp `main` discards a return
-  value via `zipapp.create_archive(main=...)` — fixed once, worth re-proving.
-- Group: `1 if any host failed` — correct, but does a host that could not be *reached*
-  count the same as one whose update failed? They are different answers.
+### X4 — the cross-cutting cases already on the tracker — **DONE**
+
+- **F-11 (unsupported distro exits 0)** — already fixed for the two paths it was filed
+  against: an unknown `--distro` and a machine fettle cannot identify both exit non-zero.
+  But the same shape survived by a third road: a **known** distro that implements none of
+  the actions you *named* ran nothing and reported success. `fettle -A` on Debian exited
+  0, so `fettle -A && echo audited` printed a lie. Now a failure — while the **default**
+  set finding nothing applicable stays a success, because "whatever applies here" honestly
+  answering "nothing does" is a different statement, and failing it would make a bare
+  `fettle` red forever on a minimal backend.
+- **Remote propagation** — re-proved live rather than assumed: a guest returning non-zero
+  reaches the local shell, and a clean run returns 0.
+- **Group: unreachable vs failed** — they were the same `1`. They are different answers:
+  a host that failed told you something, a host you could not reach told you **nothing**,
+  and reporting them identically says a machine was audited and came back bad when it was
+  never contacted. Unreachable is now its own verdict (255, ssh's own convention),
+  counted and labelled separately: `1 ok, 1 failed, 1 unreachable (nothing is known about
+  those)`. It still fails the group — the work did not happen — but you can see which is
+  which.
+- **B8 (`--dry-run` report inconsistency)** — settled by precedent rather than taste.
+  Debian and RHEL both announced *"would be saved for review"*; Arch alone said nothing,
+  so an Arch user had no idea a review report was part of the action. Announcing is what
+  `--dry-run` does everywhere else in fettle (`would run: …`), so Arch was the outlier and
+  now matches.
 
 ### X5 — document and close
 A short table in the README saying what each exit code means, per invocation. Then the

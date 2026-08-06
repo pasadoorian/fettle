@@ -839,3 +839,39 @@ def test_arch_missing_running_module_tree_is_warned(tmp_path, capsys):
                  {"6.16.0-arch1-1": "linux"})
     text = "".join(capsys.readouterr())
     assert "has no module tree on disk" in text
+
+
+def test_dry_run_announces_the_review_report_it_would_write(capsys):
+    """B8: Debian and RHEL both said "would be saved for review" under --dry-run and
+    Arch said nothing at all, so an Arch user had no idea a review report was even part
+    of this action. Announcing matches what --dry-run does everywhere else in fettle:
+    say what a real run would do, do none of it."""
+    def query(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["pacman", "-Qm"]:
+            return command.Proc(0, "yay-bin 12.0-1\nsome-pkg 1.0-1\n", "")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(dry_run=True)
+    with patch("fettle.command.run", side_effect=query), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_foreign_orphans(ctx)
+    text = "".join(capsys.readouterr())
+    assert "2 foreign (AUR/manual) package(s) would be saved for review" in text
+    assert "saved to" not in text          # and it wrote nothing
+
+
+def test_a_real_run_writes_the_review_report_instead(capsys, tmp_path):
+    """The other half: the announcement must not replace the thing it announces."""
+    def query(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["pacman", "-Qm"]:
+            return command.Proc(0, "yay-bin 12.0-1\n", "")
+        return command.Proc(0, "", "")
+
+    ctx = _ctx(dry_run=False)
+    ctx.user_home = tmp_path
+    with patch("fettle.command.run", side_effect=query), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().check_foreign_orphans(ctx)
+    text = "".join(capsys.readouterr())
+    assert "would be saved" not in text
+    assert "saved to" in text

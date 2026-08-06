@@ -55,6 +55,15 @@ def _str_list(value) -> list[str]:
         if isinstance(value, (list, tuple)) else []
 
 
+# "Could not reach the host at all", as distinct from "the run failed on the host".
+# They are different answers: one says something bad happened and you know what, the
+# other says you learned NOTHING about that machine — and in a group run, reporting them
+# identically means a host that was never contacted reads like a host that was audited
+# and came back bad. 255 is ssh's own code for its connection failures, so it is the
+# conventional value and it survives being passed through unchanged.
+UNREACHABLE = 255
+
+
 def remote_groups(cfg) -> dict[str, RemoteGroup]:
     """Parse `[remote.groups]` into ``{name: RemoteGroup}``.
 
@@ -217,7 +226,7 @@ def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
     print(f"Remote target: {host}  (sudo={'on' if sudo else 'off'})")
     remote_name = _upload_zipapp(host, runner, ssh_args)
     if remote_name is None:
-        return 1
+        return UNREACHABLE
     # -t allocates a PTY for interactive sudo/prompts + ANSI; skip it for
     # unattended runs (a non-TTY stdin would otherwise warn).
     ssh_cmd = ["ssh", *(["-t"] if tty else []), *ssh_args, host,

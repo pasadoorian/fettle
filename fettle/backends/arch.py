@@ -604,6 +604,13 @@ class ArchBackend(PackageBackend):
                          "for review (vet with -A / -P)")
             except OSError as exc:
                 out.warn(f"could not write alien-pkgs report: {exc}")
+        elif kept:
+            # B8: Debian and RHEL both announce this under --dry-run and Arch said
+            # nothing, so an Arch user had no idea a review report was even part of this
+            # action. Announcing matches what --dry-run does everywhere else in fettle
+            # ("would run: ..."): say what a real run would do, do none of it.
+            out.note(f"{len(kept)} foreign (AUR/manual) package(s) would be saved for "
+                     "review")
         suppressed = len(foreign) - len(kept)
         if suppressed:
             out.note(f"{suppressed} foreign package(s) suppressed by exclude_foreign")

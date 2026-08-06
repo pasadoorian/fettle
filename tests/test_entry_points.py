@@ -112,3 +112,49 @@ def test_report_counts_the_hosts_it_covered(tmp_path, capsys):
          patch.object(htmlreport, "collect", return_value={"a": {}, "b": {}}):
         cli._run_report(["--no-config"])
     assert "report for 2 host(s)" in capsys.readouterr().out
+
+
+# -- "nothing to do" is not always success -------------------------------------
+#
+# F-11 reached by a different road. The unsupported-DISTRO case was fixed (fettle exits
+# non-zero when it cannot identify the machine), but a known distro that implements none
+# of the actions you NAMED still reported success having done nothing.
+
+def _nothing_runnable(argv, supported):
+    """Run the pipeline against a backend that supports only `supported`."""
+    from fettle import cli as _cli
+
+    class Stub:
+        name = "stub"
+        supported = set()
+        extra_no_root = set()
+
+        def supports(self, a):
+            return a in supported
+
+    with patch.object(_cli, "detect", return_value=Stub()):
+        return _cli.main(argv)
+
+
+def test_naming_an_action_the_backend_cannot_run_is_a_failure(capsys):
+    """You asked for it, nothing happened. `fettle -A && echo audited` must not print."""
+    rc = _nothing_runnable(["-A", "--dry-run"], supported=set())
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "implements none of the action(s) you asked for" in out.out + out.err
+
+
+def test_the_default_set_finding_nothing_applicable_is_not_a_failure(capsys):
+    """A different statement: you asked for "whatever applies here" and the honest
+    answer was "nothing does". Failing would make a bare `fettle` red forever on a
+    minimal backend."""
+    rc = _nothing_runnable(["-a", "--dry-run"], supported=set())
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "none of the default actions are implemented" in out.out + out.err
+
+
+def test_an_unknown_distro_still_fails():
+    """The original F-11: a cron job must not see a successful maintenance run on a
+    machine fettle never touched."""
+    assert cli.main(["--distro", "nosuchdistro", "-d", "--dry-run"]) == 1

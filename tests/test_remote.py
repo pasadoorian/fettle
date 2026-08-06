@@ -77,7 +77,10 @@ def test_run_scp_failure_aborts_and_says_why(capsys):
                stderrs={"scp": "ssh: Could not resolve hostname badhost: "
                                "Name or service not known\nlost connection\n"})
     rc = remote.run("badhost", ["clean"], runner=rec)
-    assert rc == 1 and not any(c[0] == "ssh" for c in rec.calls)
+    # UNREACHABLE, not a plain 1: "could not reach the host" and "the run failed on the
+    # host" are different answers, and a group summary that prints them identically says
+    # a machine was audited and came back bad when it was never contacted.
+    assert rc == remote.UNREACHABLE and not any(c[0] == "ssh" for c in rec.calls)
     err = capsys.readouterr().err
     assert "could not copy fettle to badhost" in err
     assert "Could not resolve hostname" in err
@@ -485,7 +488,7 @@ def test_group_continues_past_failure_and_summarizes(capsys):
         rc = cli_main(["remote", "g", "-a"])
     out = capsys.readouterr().out
     assert rc == 1                                        # a host failed
-    assert "[OK  ] a" in out and "[FAIL] b" in out and "[OK  ] c" in out
+    assert "[OK]" in out and "[FAIL]" in out and " a" in out and " b" in out
     assert "2 ok, 1 failed" in out
 
 
@@ -622,3 +625,35 @@ def test_a_broken_fetch_back_is_reported_not_swallowed(capsys, tmp_path, monkeyp
     monkeypatch.setattr(cli.Path, "home", staticmethod(lambda: tmp_path))
     cli._fetch_remote_reports("h1", [])          # must not raise
     assert "Could not fetch reports from h1" in capsys.readouterr().err
+
+
+# -- unreachable is not the same news as failed --------------------------------
+def test_group_distinguishes_unreachable_from_failed(capsys):
+    """A host that failed told you something; a host you could not reach told you
+    NOTHING, and the rest of the summary does not speak for it. Reporting both as FAIL
+    reads as "audited, came back bad" for a machine that was never contacted."""
+    from unittest.mock import patch
+
+    from fettle import cli, remote
+
+    codes = {"good": 0, "broken": 2, "offline": remote.UNREACHABLE}
+    with patch.object(cli, "_remote_one",
+                      side_effect=lambda h, *a, **k: codes[h]):
+        rc = cli._run_group(_grp("g", list(codes))["g"], [], ["--yes"])
+    out = capsys.readouterr().out
+    assert "[OK]" in out and "[FAIL]" in out and "[UNREACHABLE]" in out
+    assert "1 ok, 1 failed, 1 unreachable (nothing is known about those)" in out
+    assert rc == 1
+
+
+def test_group_of_only_unreachable_hosts_still_fails(capsys):
+    """The case that would otherwise be worst: every host down, nothing learned about
+    anything, and a summary that says nothing failed."""
+    from unittest.mock import patch
+
+    from fettle import cli, remote
+
+    with patch.object(cli, "_remote_one", return_value=remote.UNREACHABLE):
+        rc = cli._run_group(_grp("g", ["a", "b"])["g"], [], ["--yes"])
+    assert rc == 1
+    assert "2 unreachable" in capsys.readouterr().out
