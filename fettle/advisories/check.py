@@ -301,7 +301,11 @@ def run(ctx) -> None:
         except OSError as exc:
             out.warn(f"could not write advisory-check report: {exc}")
     counts = data["counts"]
-    line = (f"advisories: {counts['pending']} pending, "
+    # No "advisories:" prefix — the pipeline puts the command name on every summary
+    # line now, and hand-writing one here produced "advisory-check: advisories: 34
+    # pending". This is a NEAR-MISS of the action name, which is why the guard that
+    # catches hand-written prefixes did not see it.
+    line = (f"{counts['pending']} pending, "
             f"{counts['fixed_available']} fix-available")
     crit = [f for f in findings
             if f.status != base.PENDING_FIX and base.severity_rank(f.severity) >= 4]

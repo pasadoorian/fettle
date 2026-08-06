@@ -34,7 +34,12 @@ def test_every_action_has_a_title():
 
 
 def test_every_action_is_supported_by_some_backend():
-    orphans = ACTION_NAMES - _BACKEND_SUPPORT
+    """Universal actions count. `sys_audit` and `advisory_check` go through no package
+    manager, so they are supported by every backend without appearing in any backend's
+    own set — requiring each one to list them is how the one that forgot would silently
+    drop the action."""
+    universal = set(PackageBackend.UNIVERSAL_ACTIONS)
+    orphans = ACTION_NAMES - _BACKEND_SUPPORT - universal
     assert not orphans, f"actions no backend supports: {orphans}"
 
 

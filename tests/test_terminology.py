@@ -67,9 +67,14 @@ def test_summary_lines_do_not_hand_write_an_action_prefix():
     """The pipeline adds the prefix now. A hand-written one either doubles up or, worse,
     disagrees — which is how `advisory-check` came to announce itself as `advisories:`
     and `container-update` as `containers:`."""
+    # Both the exact command name AND near-misses of it. "advisories:" is not an action
+    # name, so an exact-match guard sailed past it and shipped
+    # "advisory-check: advisories: 34 pending" — the doubling it was written to prevent.
     names = {a.replace("_", "-") for a in HANDLERS}
+    stems = {n.split("-")[0] for n in names} | names
     offenders = [f"{p}:{ln} — {t!r}" for p, ln, t in _summary_lines()
-                 if any(t.startswith(f"{n}:") for n in names)]
+                 if any(t.startswith(f"{s}:") or t.startswith(f"{s}s:")
+                        for s in stems)]
     assert not offenders, offenders
 
 
@@ -96,3 +101,56 @@ def test_the_long_flag_spells_the_action_the_same_way():
         if action.replace("_", "-") not in longs:
             mismatched.append(f"{action} -> {longs}")
     assert not mismatched, mismatched
+
+
+# -- the help itself -----------------------------------------------------------
+#
+# `--help` is the only documentation most people will ever read, and it drifts silently:
+# nothing breaks when an action is added without an entry, or an option ships with no
+# description at all.
+
+def test_every_option_has_help_text():
+    """Four shipped with none: -v, -q, --no-color and --config. A user reading --help
+    learned nothing about them."""
+    from fettle.cli import build_parser
+
+    bare = [", ".join(a.option_strings) for a in build_parser()._actions
+            if a.option_strings and not a.help]
+    assert not bare, bare
+
+
+def test_every_action_flag_has_real_help_not_its_own_name():
+    """`-D, --advisory-check  advisory_check` is what you get when an action is added to
+    the flag table but not to the help table."""
+    from fettle.cli import ACTION_HELP, FLAG_ACTIONS
+
+    lazy = [a for _, a in FLAG_ACTIONS
+            if ACTION_HELP.get(a, a) in (a, a.replace("_", "-"))]
+    assert not lazy, lazy
+
+
+def test_every_runnable_action_appears_in_help():
+    """An action you can run but cannot find is invisible: advisory-check was a real
+    pipeline action for eight releases with no flag and no entry in the audit list."""
+    from fettle.cli import FLAG_ACTIONS, PIPELINE_ONLY_ACTIONS
+
+    flagged = {a for _, a in FLAG_ACTIONS}
+    for name in HANDLERS:
+        assert name in flagged or name in PIPELINE_ONLY_ACTIONS, (
+            f"{name} can be run but appears in no help section")
+
+
+def test_help_mentions_everything_and_the_audit_commands():
+    from fettle.cli import build_parser
+
+    text = build_parser().format_help()
+    for needle in ("--everything", "advisory-check", "advisory-update", "sys-audit",
+                   "aur-precheck"):
+        assert needle in text, needle
+
+
+def test_the_longform_block_does_not_claim_they_all_take_options():
+    """It said "for the ones that take options" while listing two that take none."""
+    from fettle.cli import _LONGFORM_TITLE
+
+    assert "take options" not in _LONGFORM_TITLE

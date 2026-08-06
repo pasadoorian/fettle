@@ -3,7 +3,7 @@
 **The stated top priority of this pass**, and the row most likely to drift: nothing breaks
 when a new summary line invents its own vocabulary, so nothing catches it.
 
-Status: **swept — 4 findings fixed, 1 open question for Paul.**
+Status: **swept — 9 findings fixed, 1 open question for Paul.**
 
 ---
 
@@ -57,6 +57,25 @@ The action is `firmware_check` everywhere — including the prefix its summary l
 carry — but the flag was `--firmware`. `--firmware-check` is now the canonical spelling,
 with `--firmware` kept as an alias, because it is what has been documented and typed since
 the beginning and breaking it buys nothing.
+
+### T-05 — the CVE check was invisible in `--help`. FIXED
+`advisory-check` became a real action in v0.95.0 but had no flag, and the audit section
+lists flags — so the one place a user scans for security checks did not mention it. Now
+`-D`, listed with the other audits.
+
+### T-06 — the long-form block was below the options, and its title was untrue. FIXED
+It sat in the epilog under ~25 lines of options, and claimed to be "for the ones that take
+options" while listing two that take none. Moved directly under the audits; retitled.
+
+### T-07 — four options had no help text at all. FIXED
+`-v`, `-q`, `--no-color`, `--config`. Now tested against.
+
+### T-08 — the examples omitted `--everything`. FIXED
+A headline feature absent from the examples block. Added, with `-D` and a remote example.
+
+### T-09 — a doubled prefix the automatic-prefix change created. FIXED
+`advisory-check: advisories: 34 pending`. The guard from T-02 only caught an exact action
+name; this said `advisories:`, a near-miss. The guard now catches stems and plurals.
 
 ## The naming rule, written down
 

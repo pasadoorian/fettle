@@ -59,13 +59,17 @@ AUDIT_ACTIONS = [
     (("-V", "--pkg-integrity"), "pkg_integrity"),
     (("-A", "--aur-audit"), "aur_audit"),
     (("-H", "--hardening-audit"), "hardening_audit"),
+    # -D for aDvisory. It became a real pipeline action in v0.95.0 (it runs under
+    # --everything) but had no flag, so the one section a user scans for audits did not
+    # list it at all — you had to already know the subcommand existed.
+    (("-D", "--advisory-check"), "advisory_check"),
 ]
 # Pipeline actions with no flag of their own: each already has a subcommand
 # (`fettle sys-audit`, `fettle advisory-check`), and they became pipeline actions so
 # `--everything` can fold their findings into the ONE summary and one exit code rather
 # than printing a second and third digest of its own. Declared here so the registry
 # guard still catches a genuinely unreachable handler.
-PIPELINE_ONLY_ACTIONS = {"sys_audit", "advisory_check"}
+PIPELINE_ONLY_ACTIONS = {"sys_audit"}
 
 # `--everything`: every action that is safe to run start-to-finish without supervision,
 # in an order chosen so each one sees the state the previous left behind.
@@ -193,18 +197,27 @@ ACTION_HELP = {
     "pkg_audit": "WHERE your software came from, every ecosystem (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
     "hardening_audit": "flag pkgs whose binaries miss the distro's build hardening (needs checksec) -> ~/.fettle/reports/",
+    "advisory_check": "which installed packages have known CVEs — both those with a "
+                      "fix you have not applied and (the distinctive part) those with "
+                      "no fix released yet -> ~/.fettle/reports/",
     "pkg_integrity": "do installed files still match what the package shipped? (paccheck/debsums/rpm -Va) -> ~/.fettle/reports/",
 }
 
-_EPILOG = """
-audit & security (continued) — subcommands, for the ones that take options:
+# Sits directly under the audit flags as its own group, because that is where someone
+# is already looking. It used to be in the epilog, BELOW positional arguments and ~25
+# lines of options, so the two commands most people want next were the last thing on the
+# page. The old title also claimed these were "for the ones that take options", which was
+# untrue of advisory-check and advisory-update — neither takes any.
+_LONGFORM_TITLE = "the same audits as commands, where some take further arguments"
+_LONGFORM_HELP = """\
   fettle sys-audit [CATS] [--all|--list]  == -S, but lets you pick categories
   fettle aur-precheck [PKG ...]           == -p, for named packages [arch]
   fettle upgrade-check [--effort ...]     == -U, with model/effort options
-  fettle advisory-check                   installed pkgs with known CVEs (fix
-                                          available, or no fix yet)
-  fettle advisory-update                  refresh the advisory cache
+  fettle advisory-check                   == -D (takes no further options)
+  fettle advisory-update                  refresh the advisory cache — the only
+                                          one here that is not read-only"""
 
+_EPILOG = """
 other commands:
   fettle remote HOST|GROUP [actions]      run maintenance on a remote host/group
                                           over ssh (safe set by default; 'remote -h')
@@ -234,6 +247,7 @@ skips the rest with a note.
 
 examples:
   fettle                       run the default maintenance set
+  fettle --everything          every action that is safe unattended, in order
   fettle clean update          actions as words (== `fettle -c -u`)
   fettle upgrade               upgrade packages (synonym of `update` / -u)
   fettle -a --dry-run          preview the whole default set; change nothing
@@ -241,6 +255,8 @@ examples:
   fettle -S                    full security scan (sys-audit --all; self-elevates)
   fettle sys-audit --list      the security categories -S would run
   fettle -U                    AI pre-upgrade safety check
+  fettle -D                    installed packages with known CVEs
+  fettle remote web1 -a        the default set on another host, over ssh
 """
 
 
@@ -271,7 +287,8 @@ def _reorder_help_groups(p: argparse.ArgumentParser) -> None:
     stock order if argparse ever renames the built-ins.
     """
     groups = list(p._action_groups)
-    front = [g for want in ("maintenance actions", "audit & security")
+    front = [g for want in ("maintenance actions", "audit & security",
+                            "the same audits")
              for g in groups if (g.title or "").startswith(want)]
     if not front:  # titles changed; leave argparse's own ordering alone
         return
@@ -309,8 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     audit = p.add_argument_group(
         "audit & security actions  (all read-only; · = runs under -a)",
-        "these only look — none of them changes the system. -S/-p/-U also have "
-        "subcommand forms that take further options; see below.")
+        "these only look — none of them changes the system.")
     for opts, action in AUDIT_ACTIONS:
         _add(audit, opts, action, ACTION_HELP.get(action, action))
     for opts, action, help_text in SHORTCUT_HELP:
@@ -318,6 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
         # before argparse ever sees them.
         audit.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"  {help_text}")
+    # A group with a description and no flags of its own: argparse still renders the
+    # title and body, which is what puts this directly under the audits instead of
+    # below the options where the epilog had it.
+    p.add_argument_group(_LONGFORM_TITLE, _LONGFORM_HELP)
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
     p.add_argument("--host-label", metavar="NAME", default="",
                    help="label every section with NAME — set automatically by "
@@ -337,9 +357,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="with --yes, install AUR pkgs despite a CRITICAL pre-check finding [arch]")
     p.add_argument("actions", nargs="*", help="action names (same as the flags above)")
     p.add_argument("--distro", metavar="NAME", help="override distro detection")
-    p.add_argument("-v", "--verbose", action="store_true")
-    p.add_argument("-q", "--quiet", action="store_true")
-    p.add_argument("--no-color", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="show the raw tool output each check is reading, not just "
+                        "its verdict")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="suppress section headers and the end-of-run summary; "
+                        "errors still print")
+    p.add_argument("--no-color", action="store_true",
+                   help="plain text with no ANSI colour (also honoured when output "
+                        "is not a terminal)")
     p.add_argument("--dry-run", action="store_true", help="show what would run; change nothing")
     p.add_argument("--no-sync", action="store_true",
                    help="dry-run preview: use cached repo data instead of a fresh sync")
@@ -350,7 +376,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="restrict to these actions (repeatable)")
     p.add_argument("--skip", metavar="ACTION", action="append", default=[],
                    help="skip these actions (repeatable)")
-    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
+    p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG,
+                   help=f"read settings from PATH instead of {DEFAULT_CONFIG}")
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
     p.add_argument("--print-config", action="store_true", help="print effective config and exit")
     p.add_argument("--version", action="version", version=f"fettle {__version__}")
@@ -857,8 +884,12 @@ def _run_upgrade_check(argv: list[str]) -> int:
     p.add_argument("--effort", choices=["low", "medium", "high"], help="thinking depth vs cost")
     p.add_argument("-v", "--verbose", action="store_true",
                    help="explain why the AI step failed (HTTP status, errors)")
-    p.add_argument("-q", "--quiet", action="store_true")
-    p.add_argument("--no-color", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="suppress section headers and the end-of-run summary; "
+                        "errors still print")
+    p.add_argument("--no-color", action="store_true",
+                   help="plain text with no ANSI colour (also honoured when output "
+                        "is not a terminal)")
     p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
     # Internal transport flag: emit the (redacted) snapshot as JSON and exit — no
@@ -1011,9 +1042,15 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
     p.add_argument("--no-web", action="store_true")
     p.add_argument("--model", metavar="ID")
     p.add_argument("--effort", choices=["low", "medium", "high"])
-    p.add_argument("-v", "--verbose", action="store_true")
-    p.add_argument("-q", "--quiet", action="store_true")
-    p.add_argument("--no-color", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="show the raw tool output each check is reading, not just "
+                        "its verdict")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="suppress section headers and the end-of-run summary; "
+                        "errors still print")
+    p.add_argument("--no-color", action="store_true",
+                   help="plain text with no ANSI colour (also honoured when output "
+                        "is not a terminal)")
     p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--no-config", action="store_true")
     args, _unknown = p.parse_known_args(uc_flags)

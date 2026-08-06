@@ -10,6 +10,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.104.0] — `--help` sweep: the CVE check was invisible in it
+
+Reported by Paul: `advisory-check` does not appear under "audit & security actions".
+
+It was worse than a missing line. **`advisory-check` became a real action in v0.95.0** —
+it runs under `--everything`, `--only` and by name — but it had no flag, and the audit
+section lists flags. So the one place a user scans for security checks did not mention
+the CVE check at all; you had to already know the subcommand existed to find it.
+
+It now has `-D` (aDvisory), sits with the other audits, and works in all three forms
+(`-D`, `--advisory-check`, `advisory-check`).
+
+### The rest of the sweep
+
+- **The subcommand block moved above positional arguments**, directly under the audits
+  where you are already reading. It used to be in the epilog, below ~25 lines of options,
+  so the two commands most people want next were the last thing on the page.
+- **Its title was untrue.** "subcommands, for the ones that take options" listed
+  `advisory-check` and `advisory-update`, neither of which takes any. Now: *"the same
+  audits as commands, where some take further arguments"*, and `advisory-update` is
+  marked as the only entry there that is not read-only.
+- **Four options shipped with no help text at all** — `-v`, `-q`, `--no-color`,
+  `--config`. A user reading `--help` learned nothing about them.
+- **`--everything` was missing from the examples** despite being a headline feature, as
+  were `-D` and a remote example.
+
+### A doubled prefix the previous release created
+
+`advisory-check: advisories: 34 pending, 142 fix-available`. The automatic prefixes added
+in 0.103.0 removed the hand-written ones, but the guard only caught lines starting with an
+exact action name — and this one said `advisories:`, a near-miss. The guard now catches
+stems and plurals too, which is the shape it should have had.
+
+### Kept honest by test
+
+Four new checks: every option has help text; no action flag falls back to printing its own
+name as its description; every runnable action appears somewhere in `--help`; and the
+long-form block cannot claim its entries take options. `--help` is the only documentation
+most people read, and nothing breaks when it drifts — which is exactly why it had.
+
 ## [0.103.0] — every summary line says which check produced it
 
 The terminology row, and the stated top priority of this QA pass.
