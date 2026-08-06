@@ -105,3 +105,58 @@ in the digest from one that found nothing.
 `none (or first run - baseline saved)` — so on the run that matters most, the first one, the
 user cannot tell whether the baseline was just created or genuinely nothing moved. Now
 distinguished.
+
+---
+
+## Sweep 2 — v0.89.0 → v0.92.0, 2026-08-06
+
+Prompted by a plain user question rather than a sweep: *"how would I know if something I
+have installed was pulled upstream?"* — with `claude-desktop-bin`, a 404 on the AUR, as the
+worked example. Answering it exposed a defect in this action and a gap in two others.
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-AA-08 *(new)* | Summary mark matches the summary text | **FAIL → fixed** (A-04) |
+| QA-AA-09 *(new)* | A disappearance is distinguishable from a package that was never there | **FAIL → fixed** (A-05) |
+| QA-AA-10 *(new)* | A disappearance is still reported on later runs | PASS — the snapshot retains it |
+| QA-AA-11 *(new)* | The snapshot cannot grow without bound | PASS — uninstalled packages drop out |
+
+### A-04 — a green tick over nine removed packages. FIXED v0.90.0
+Measured on wopr:
+
+```
+✓ AUR audit of 79 package(s) — 9 no longer in the AUR, 7 flagged out-of-date
+EXIT=0
+```
+
+The body carried a `!` warning, but the summary — the part people read, and the part the
+dashboard and exit code key off — was green. An earlier fix had corrected the summary
+*text* to say what was found and left the *mark* alone; the comment above the code still
+says "say what was FOUND, not merely that the audit ran". **Fixing the words is not fixing
+the mark**, and that is why it survived.
+
+### A-05 — "absent" is a standing state, and standing states make bad alarms. FIXED v0.92.0
+The count stood at **9 every single run** on wopr, most of them work packages built
+in-house that were never in the AUR at all. A warning that is permanently on is one nobody
+reads — the same failure as a red tripwire on a clean machine, arrived at from the opposite
+direction.
+
+Now split: **vanished since the last run** warns (it was there when fettle last looked —
+that is what deletion for malware looks like), while *not in the AUR and never seen there*
+is listed quietly. "Installed from elsewhere" and "deleted before fettle first ran" are
+genuinely indistinguishable, so it does not pretend otherwise. The vanished entry is
+retained while the package stays installed, or the alarm would fire once — on a run nobody
+reads — and then silently downgrade itself forever.
+
+**The cost, recorded rather than glossed:** on an existing host the alarm starts empty. The
+snapshot only ever recorded packages that *were* in the AUR, so anything that disappeared
+before v0.92.0 — including the `claude-desktop-bin` that prompted all this — is in the
+quiet bucket and cannot be recovered. yay's build cache was checked as an alternative
+provenance record and holds one entry. This alarm is prospective by nature.
+
+### What the question exposed elsewhere
+Of fettle's eight install channels, **only the AUR was asked this question at all.** Flatpak
+and Snap gained it in v0.91.0, against the app's own remote rather than flathub by
+assumption. GNOME, VS Code and `gh` extensions are still not asked — tracked as item G in
+the matrix follow-up plan, VS Code first, since Microsoft pulls malicious extensions from
+the Marketplace and that removal *is* the signal.
