@@ -10,6 +10,45 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.106.0] — `--dry-run` was deleting your run history
+
+The `--dry-run` row. Its promise is *change nothing*, and it was breaking that in the worst
+possible direction: not by creating something, but by **deleting** something.
+
+### A dry run removed real run-logs
+
+Writing a run-log rotates the directory to `keep` entries, so a dry run evicted older
+**real** logs. Measured on a seeded tree: **eleven real run-logs before a single
+`fettle -d --dry-run`, nine after.**
+
+Quiet, too — rotation prints nothing and the evicted logs are the oldest ones nobody is
+watching. The one command you type *because* it is safe was destroying history.
+
+Dry runs are no longer recorded. That is right on a second ground as well: a dry run
+showing up in `fettle report` as a run is misleading by itself, since the dashboard would
+report maintenance on a host where nothing was touched. A preview belongs on your terminal.
+
+### Two audits wrote reports under `--dry-run`
+
+`-V` wrote two files; `-P` and `-A` wrote none — so `pkg-integrity` was the outlier rather
+than the convention. And `sys-audit`, which has no `--dry-run` flag of its own, became
+reachable through `--everything --dry-run` when it turned into a pipeline action, where it
+would have written a report inside a command that promised no changes.
+
+Both now announce *"report would be saved to ~/.fettle/reports/"*, matching what
+`--dry-run` does everywhere else and what `orphans` was fixed to do last release.
+
+### What held up
+
+The execution gate itself is sound. Every mutating verb across pacman, apt, dnf, yay,
+flatpak, snap, docker and podman goes through it; the only direct calls outside are
+read-only. Prompts do not appear, privilege-dropped commands are gated too, and the
+failed-command list stays empty so the exit code cannot key off work that never happened.
+
+**The shape worth noting:** every finding was state fettle keeps about *itself* — reports,
+logs, rotation. The gate around the dangerous operations has been solid since it was
+written. What leaked was the bookkeeping nobody thinks of as "changing the system".
+
 ## [0.105.0] — the summary is a checklist: one line per action
 
 Six actions ran against a test host and **two** appeared in the summary, because an action

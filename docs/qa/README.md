@@ -125,7 +125,7 @@ Status of each feature's QA pass. `—` = not started.
 | Area | QA file | Status |
 |---|---|---|
 | Default action set (`-a` / bare `fettle`) | — | — |
-| `--dry-run` semantics across all actions | — | — |
+| `--dry-run` semantics across all actions | [dry-run.md](dry-run.md) | **swept — 3 fixed, incl. a dry run DELETING run-logs** |
 | `--yes` semantics across all actions | — | — |
 | `--only` / `--skip` selection | — | — |
 | Privilege escalation and the sudo re-exec | — | — |

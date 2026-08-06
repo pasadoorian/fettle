@@ -341,6 +341,11 @@ HANDLERS = {
 def _sys_audit(ctx: "Context") -> None:
     """Run every sys-audit category into the SHARED output.
 
+    Honours ``--dry-run`` by not writing its report, which the standalone
+    `fettle sys-audit` never had to think about — it has no --dry-run flag. As a
+    pipeline action it is reachable through `--everything --dry-run`, where writing a
+    report would be a change made by a command that promised none.
+
     `fettle sys-audit` builds its own `Output` and prints its own summary, which is
     right for a standalone run and wrong inside a pipeline — the digest would be
     printed twice and the exit code computed from only one of them. Here the same
@@ -363,7 +368,10 @@ def _sys_audit(ctx: "Context") -> None:
     try:
         out._step_cur = 0
         sysaudit.run(list(sysaudit.CATEGORIES), scan, summarize=False)
-        sysaudit._write_report(scan, out)
+        if ctx.dry_run:
+            out.note("report would be saved to ~/.fettle/reports/")
+        else:
+            sysaudit._write_report(scan, out)
     finally:
         out.step_total, out._step_cur = total, cur
 

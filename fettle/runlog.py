@@ -68,7 +68,21 @@ _NO_RECORD = frozenset({"web"})
 
 
 def _skip(argv=()) -> bool:
+    """Whether this invocation should NOT be recorded.
+
+    ``--dry-run`` is in here for two reasons, and the first is a data-loss bug measured
+    on a real tree: writing a run-log rotates the directory to ``keep`` entries, so a
+    dry run **deletes older real run-logs**. Eleven real logs went to nine after a single
+    `fettle -d --dry-run`. The one command whose entire promise is "change nothing"
+    was destroying history.
+
+    The second is that a dry run appearing in `fettle report` as a run is misleading in
+    its own right: the dashboard would show maintenance happening on a host where
+    nothing was touched. Its output is on your terminal, which is where a preview
+    belongs.
+    """
     return (is_active() or os.environ.get("FETTLE_TEST") == "1"
+            or "--dry-run" in tuple(argv)
             or bool(argv) and argv[0] in _NO_RECORD)
 
 

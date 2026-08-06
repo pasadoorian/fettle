@@ -81,6 +81,14 @@ def _write_report(scan, ctx: "Context") -> None:
     from . import reports
     if not scan.records:
         return
+    if getattr(ctx, "dry_run", False):
+        # `--dry-run` means change nothing, and a report is a change. Every sibling
+        # audit already behaves this way — measured, `-P` and `-A` write nothing under
+        # --dry-run and this one wrote two files — so it was the outlier rather than the
+        # convention. Announcing what a real run would do matches what --dry-run does
+        # everywhere else ("would run: ...").
+        ctx.output.note("report would be saved to ~/.fettle/reports/")
+        return
     try:
         path = reports.write_report("pkg-integrity", scan.report_text(), ctx,
                                     data=scan.report_data())
