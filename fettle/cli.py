@@ -529,10 +529,19 @@ def _run_remote_maintenance(argv: list[str]) -> int:
     if _in_test() or "--no-config" in argv:
         cfg = Config()
     else:
+        # A config that could not be READ must not look like a config with no groups.
+        # This silently swallowed both the warnings and the exception, so a stray line
+        # in the file meant `fettle remote fleet` quietly treated the group name as a
+        # hostname and reported "could not resolve hostname fleet" — a true statement
+        # about the wrong thing, with the actual cause (invalid TOML at line 80) known
+        # and discarded. The local path has always printed these.
         try:
-            cfg, _ = load(DEFAULT_CONFIG)
-        except Exception:
-            cfg = Config()
+            cfg, cfg_warnings = load(DEFAULT_CONFIG)
+        except Exception as exc:
+            cfg, cfg_warnings = Config(), [f"{DEFAULT_CONFIG}: could not be read "
+                                           f"({exc}); using defaults."]
+        for w in cfg_warnings:
+            print(f"  ! {w}", file=sys.stderr)
     groups = remote.remote_groups(cfg)
     if host in groups:
         return _run_group(groups[host], ssh_args, forwarded)

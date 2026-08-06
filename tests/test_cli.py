@@ -582,3 +582,27 @@ def test_everything_exit_code_answers_did_it_complete_not_is_it_clean():
     # A single action keeps the stricter rule.
     with patch("fettle.actions.run", side_effect=fake_run):
         assert cli.main(["-d", "--dry-run"]) == 1
+
+
+def test_remote_reports_a_config_it_could_not_read(capsys, tmp_path, monkeypatch):
+    """A config that could not be READ must not look like a config with no groups.
+
+    Measured: a stray unquoted line in config.toml made the whole file invalid, so
+    `fettle remote fleet` treated the group name as a hostname and reported "could not
+    resolve hostname fleet" — a true statement about the wrong thing, while the real
+    cause was known and thrown away. The local path always printed these.
+    """
+    from unittest.mock import patch
+
+    from fettle import cli
+
+    bad = tmp_path / "config.toml"
+    bad.write_text('[remote.groups.fleet]\nhosts = ["a"]\nthis is not toml\n')
+    monkeypatch.setattr(cli, "DEFAULT_CONFIG", bad)
+    with patch.object(cli, "_in_test", return_value=False), \
+         patch.object(cli, "_remote_one", return_value=0) as one:
+        cli._run_remote_maintenance(["fleet"])
+    err = capsys.readouterr().err
+    assert "invalid TOML" in err or "could not be read" in err, err
+    # and it still falls through to treating the name as a host, as before
+    assert one.called

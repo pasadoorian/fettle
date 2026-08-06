@@ -10,6 +10,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.95.2] — `fettle remote` says so when it could not read your config
+
+A stray line in `config.toml` made the whole file invalid, so `[remote.groups.fleet]`
+was never seen and `fettle remote fleet` treated the group name as a hostname:
+
+    Error: could not copy fettle to fleet — ssh: Could not resolve hostname fleet
+
+A true statement about the wrong thing. The real cause — *invalid TOML at line 80* — was
+known at the time and thrown away: the remote path called `load()` and discarded both its
+warnings and any exception, so **a config that could not be read looked exactly like a
+config with no groups**. That is this project's governing invariant, in the one place a
+user is most likely to hit it, since a group name that silently degrades to a hostname
+produces a confident error about DNS.
+
+The local path has always printed these warnings. The remote path now does too.
+
 ## [0.95.1] — `--everything` cleans before it updates
 
 Corrects the action order shipped in 0.95.0. `clean` now runs **first**, not last:
