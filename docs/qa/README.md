@@ -130,7 +130,7 @@ Status of each feature's QA pass. `—` = not started.
 | `--only` / `--skip` selection | — | — |
 | Privilege escalation and the sudo re-exec | — | — |
 | Config file loading, safety gate, `--print-config` | — | — |
-| Reports and run-logs (paths, permissions, rotation) | — | — |
+| Reports and run-logs (paths, permissions, rotation) | [reports-logs.md](reports-logs.md) | **swept — 2 fixed (F-08 closed); 1 recorded, not changed** |
 | Output framing, colour, `--quiet`, `--verbose` | — | — |
 | **Terminology consistency across the whole CLI** | [terminology.md](terminology.md) | **swept — 10 findings fixed; naming rule written down and enforced by test** |
 | **Exit codes** | [exit-codes.md](exit-codes.md) | **swept — 5 milestones, 4 findings fixed; the last instance of the entry-point defect closed and guarded** |

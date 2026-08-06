@@ -154,6 +154,24 @@ def _ctxlike(user_home, sudo_user, config):
     return SimpleNamespace(user_home=user_home, sudo_user=sudo_user, config=config)
 
 
+def _open_private(path, mode="wb"):
+    """Create *path* owner-only from the start, never 0644-then-chmod.
+
+    A run-log is the whole terminal session — package names, hostnames, paths, whatever
+    a tool printed. It was created with the default 0644 and only chmod'd to 0600 when
+    the run FINISHED, so on a shared machine it was readable by everyone for the entire
+    duration of the run — and permanently if the run was killed, which leaves a
+    world-readable transcript behind. Found in the author's own tree: a 0-byte 0644 log
+    from an interrupted run.
+
+    O_CREAT with the mode passed to open(2) closes the window rather than narrowing it.
+    """
+    import os as _os
+
+    fd = _os.open(path, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    return _os.fdopen(fd, mode)
+
+
 def _new_log(ctxlike, host: str, now=None):
     import datetime as _dt
     directory = _reports.logs_dir(ctxlike, host)
@@ -187,8 +205,8 @@ def _write_log_json(txt_path: Path, ctxlike, *, host: str, argv, exit_code) -> N
     }
     js = txt_path.with_suffix(".json")
     try:
-        js.write_text(json.dumps(env, indent=2) + "\n")
-        os.chmod(js, 0o600)
+        with _open_private(js, "w") as fh:      # owner-only from creation, as above
+            fh.write(json.dumps(env, indent=2) + "\n")
     except OSError:
         return
     from .util import chown_to_user
@@ -231,7 +249,7 @@ def maybe_record(argv) -> int | None:
 def _run_pty(argv, path, directory, ctxlike) -> int:  # pragma: no cover - forks a real pty
     import pty
 
-    logf = open(path, "wb")
+    logf = _open_private(path)
 
     def master_read(fd):
         data = os.read(fd, 65536)
@@ -289,7 +307,7 @@ class _NonTtyLog:
     def __init__(self, path, directory, ctxlike, argv=()):
         self._path, self._dir, self._ctx = path, directory, ctxlike
         self._argv = list(argv)
-        self._logf = open(path, "wb")
+        self._logf = _open_private(path)
         self._saved = (sys.stdout, sys.stderr)
         sys.stdout = _Tee(sys.stdout, self._logf)
         sys.stderr = _Tee(sys.stderr, self._logf)

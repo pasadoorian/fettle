@@ -108,8 +108,13 @@ def test_report_says_so_when_it_contains_no_hosts(tmp_path, capsys):
 def test_report_counts_the_hosts_it_covered(tmp_path, capsys):
     from fettle import htmlreport
 
+    # Hosts with DATA. An empty host directory is left behind by a remote run that
+    # delivered nothing, and counting it overstates what the dashboard covers.
+    hosts = {"a": {"reports": [1], "logs": []},
+             "b": {"reports": [], "logs": [1]},
+             "ghost": {"reports": [], "logs": []}}
     with patch.object(htmlreport, "build", return_value=tmp_path / "report.html"), \
-         patch.object(htmlreport, "collect", return_value={"a": {}, "b": {}}):
+         patch.object(htmlreport, "collect", return_value=hosts):
         cli._run_report(["--no-config"])
     assert "report for 2 host(s)" in capsys.readouterr().out
 

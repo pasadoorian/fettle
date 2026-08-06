@@ -10,6 +10,44 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.107.0] — run-logs are owner-only from creation; `report` counts hosts, not directories
+
+The reports-and-run-logs row. Two fixes, deliberately small with the stable release
+approaching.
+
+**A run-log was world-readable while it was being written.** It was created with the
+default mode and only tightened to `0600` when the run *finished* — so it was exposed for
+the whole run, and permanently if the run was killed. There was a 0-byte `0644` log in the
+author's own tree from an interrupted run.
+
+Stated honestly: this was defence in depth rather than an open door, because every
+directory in the tree is `0700` and another user cannot traverse in to read the file. It
+matters for the cases where that is not true — a tree predating the `0700` behaviour, a
+restored backup, a `[reports] dir` pointed somewhere unusual — where the file mode is all
+that is left. Both the transcript and its JSON sibling are now created `0600`.
+
+**`fettle report` said 19 hosts on a tree with 17.** It counted host *directories*, two of
+which were empty: `fleet` — a **group** name left behind by a remote run that never
+resolved — and an empty `wopr`.
+
+### A fix that went in the wrong layer first
+
+The dashboard already hides empty hosts and prints `N empty hidden`, deliberately, so they
+do not silently disappear. The first attempt at this filtered them inside `collect()`,
+which fixed the count and broke that message — the hidden-host number became uncomputable.
+The test suite caught it. The bug was in the summary line added in v0.100.0, the only
+thing reading the raw directory list, and that is where it is fixed.
+
+### Checked and left alone
+
+Rotation removes each `.txt` with its `.json` sibling, keeps at least one entry whatever
+the config says, and sorts on a fixed-width timestamp. Ownership is handed back to the
+invoking user after an elevated run. Directory modes are `0700` at every level.
+
+One thing recorded rather than changed: the local machine writes to a host directory named
+`local` while remote runs use real hostnames, so this workstation appears twice. Renaming
+needs a migration for every existing tree — not a fix, and not minimal.
+
 ## [0.106.0] — `--dry-run` was deleting your run history
 
 The `--dry-run` row. Its promise is *change nothing*, and it was breaking that in the worst

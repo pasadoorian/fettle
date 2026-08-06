@@ -769,7 +769,13 @@ def _run_report(argv: list[str]) -> int:
         out.print_summary()
         return 1
 
-    hosts = htmlreport.collect(_reports._settings(ctx)[0])
+    # Count hosts that have DATA, not host directories. The dashboard already hides
+    # empty ones and says how many it hid ("2 empty hidden") — deliberately, so they do
+    # not silently vanish — but this count was taken from the raw directory listing, so
+    # `fettle report` claimed 19 hosts on a tree with 17. Two of them were `fleet`, a
+    # GROUP name left behind by a remote run that never resolved, and an empty `wopr`.
+    hosts = {h: d for h, d in htmlreport.collect(_reports._settings(ctx)[0]).items()
+             if d["reports"] or d["logs"]}
     if hosts:
         out.summary_add(f"report for {len(hosts)} host(s) written to {path}")
     else:
