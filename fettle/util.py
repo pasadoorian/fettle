@@ -44,6 +44,35 @@ def invoking_user() -> str | None:
     return os.environ.get("SUDO_USER") or None
 
 
+# How to install a package, per package manager. Detected from what is on PATH rather
+# than from the backend, so any code path can produce a working instruction without
+# having to be handed a distro.
+_INSTALLERS = (
+    ("pacman", "sudo pacman -S {pkg}"),
+    ("apt-get", "sudo apt install {pkg}"),
+    ("dnf", "sudo dnf install {pkg}"),
+    ("zypper", "sudo zypper install {pkg}"),
+    ("apk", "sudo apk add {pkg}"),
+)
+
+
+def install_hint(package: str) -> str:
+    """``sudo pacman -S smartmontools`` — the command that would install *package* here.
+
+    Empty when no known package manager is on PATH, because a confidently wrong install
+    command is worse than none: it sends someone to a shell prompt to be told the tool
+    does not exist, and they conclude fettle is broken rather than that the hint was.
+    """
+    from . import command
+
+    if not package:
+        return ""
+    for tool, template in _INSTALLERS:
+        if command.which(tool):
+            return template.format(pkg=package)
+    return ""
+
+
 def matches_any(name: str, patterns) -> bool:
     """True if ``name`` equals or glob-matches any pattern (case-sensitive)."""
     return any(fnmatch.fnmatchcase(name, p) for p in patterns if p)

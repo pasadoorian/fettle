@@ -19,9 +19,8 @@ from .backends.base import Context
 from .config import DEFAULT_ACTIONS, Config
 from .config import load as load_config
 from .distro import UnknownDistro, detect
-from .output import Output
+from .output import BLIND, FAILED, Output
 from .util import invoking_user_home
-from .output import BLIND
 
 # Resolved from the INVOKING user's home, not `Path.home()`. Under sudo, HOME is
 # /root, so a bare Path.home() sends every consumer of this constant -- eight of them,
@@ -1226,20 +1225,19 @@ def _main(argv: list[str]) -> int:
     actions.run(runnable, backend, ctx)
     if args.everything:
         # `--everything` answers a different question with its status than a single
-        # action does, and deliberately: **did the run complete**, not **is the machine
-        # clean**. Fourteen actions on a real host will essentially always include a
-        # finding — advisory-check alone reported 142 fix-available on the QA
-        # workstation — and a status that is red every single time is one nobody reads.
-        # Findings are in the summary; read that.
+        # action does, deliberately: **did the run complete**, not **is the machine
+        # clean**. Fourteen actions on a real host essentially always include a finding
+        # — advisory-check alone reported 142 fix-available on the QA workstation — and
+        # a status that is red every time is one nobody reads.
         #
-        # KNOWN LIMIT, stated rather than hidden: `had_failures` currently mixes three
-        # different things — a command that failed, a finding, and a check that could
-        # not look. Only the first is separable today (it is tracked per command), so a
-        # check that could not run reports itself in the summary but does not colour
-        # the exit status here. That is the wrong way round for this project's own
-        # invariant and wants the summary channels split; until then a single action
-        # (`fettle -V`) keeps the stricter rule, which is what automation should gate on.
-        return 1 if ctx.failed_commands else 0
+        # Blindness does not fail it either, which is the deliberate part. On this
+        # workstation chipsec cannot run at all (the CPU has no register definitions),
+        # so two checks report "could not run" on every single run; failing on that
+        # would put the sweep permanently in the red for a condition nobody can fix.
+        # The invariant is served by **visibility** instead — everything that could not
+        # be checked is listed under "Not checked" at the end of the run, with how to
+        # fix it where fettle knows. Read that; the exit code is about completion.
+        return 1 if out.failures_of(FAILED) else 0
     # Non-zero when an action reported a failure. The pipeline used to return 0
     # unconditionally, so a cron job could not tell a completed run from one whose
     # work was blocked — the run log said so, the exit status did not.

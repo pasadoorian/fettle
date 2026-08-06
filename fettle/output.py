@@ -54,6 +54,12 @@ class Output:
     _failures: list[str] = field(default_factory=list, init=False)
     _warnings: list[str] = field(default_factory=list, init=False)
     _next_steps: list[str] = field(default_factory=list, init=False)
+    # What the run could NOT look at. Kept apart from the summary on purpose: these are
+    # not findings and not failures, and after this release they do not change the exit
+    # status either. They are the answer to "how much of this machine did you actually
+    # see", which a summary of what WAS found can never give you — a short list of ticks
+    # reads identically whether nine checks passed or one passed and eight never ran.
+    _not_checked: list[tuple[str, str, str]] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         c = _want_color(sys.stdout, self.color)
@@ -206,6 +212,16 @@ class Output:
         """The recorded failure lines of the given kind(s)."""
         return [line for line, kind in self._failures if kind in kinds]
 
+    def not_checked(self, what: str, why: str = "", package: str = "") -> None:
+        """Record something this run could not examine.
+
+        ``package`` is the thing to install to fix it; the install command for this
+        machine is worked out at print time. Pass it whenever a missing tool is the
+        cause — "storage firmware was NOT checked" is a dead end on its own, and
+        "install smartmontools" is an action.
+        """
+        self._not_checked.append((what, why, package))
+
     def next_step(self, line: str) -> None:
         self._next_steps.append(line)
 
@@ -223,6 +239,17 @@ class Output:
                 print(f"  {self.RED}✗{self.NC} {line}")
         else:
             print(f"  {self.DIM}nothing to report{self.NC}")
+        if self._not_checked:
+            from .util import install_hint
+            print(f"\n{self.B}{self.CYN}▸ Not checked{self.NC}")
+            print(f"  {self.DIM}these were not examined, so nothing above speaks for "
+                  f"them{self.NC}")
+            for what, why, package in self._not_checked:
+                detail = f" — {why}" if why else ""
+                print(f"  {self.YLW}?{self.NC} {what}{detail}")
+                fix = install_hint(package)
+                if fix:
+                    print(f"      {self.DIM}install:{self.NC} {fix}")
         if self._next_steps:
             print()
             for line in self._next_steps:

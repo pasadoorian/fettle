@@ -10,6 +10,56 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.99.0] — exit codes mean something, and a "Not checked" list says what was missed
+
+X2 of the exit-code sweep.
+
+### The status
+
+A **single check** stays strict: `fettle -V` goes red when a packaged file's contents
+changed, `fettle -S` when a check could not run. That is the precise thing to gate a
+script on.
+
+**`--everything` fails only when an action could not do its job.** Findings do not fail
+it — fourteen checks on a real host essentially always find something, and a status that
+is red every time is one nobody reads. Nor does blindness, which is the deliberate part:
+on the development workstation chipsec cannot run at all, so two checks report "could not
+run" on every single run, and failing on that would put the sweep permanently red for a
+condition nobody can fix.
+
+The `ctx.failed_commands` stopgap from v0.95.0 is gone, and the "known limit" comment
+with it.
+
+### `Not checked`
+
+The invariant this whole pass is built on is that *a check which cannot look must never
+render identically to a clean result*. A summary of what was **found** cannot satisfy
+that — a short list of ticks reads the same whether nine checks passed or one passed and
+eight never ran.
+
+So every run now ends with what it could not examine, and how to fix it:
+
+```
+▸ Not checked
+  these were not examined, so nothing above speaks for them
+  ? hardware inventory detail — inxi is not installed
+      install: sudo apt install inxi
+  ? SPI/BIOS write protection, SMM, Secure Boot variables (chipsec) — chipsec is not
+    configured — set [secure] chipsec_cmd in your config
+  ? storage device firmware — smartctl is not installed
+      install: sudo apt install smartmontools
+```
+
+The install command is worked out from the package manager actually present, so it is
+right on the machine where it will be typed rather than on the one that asked. Where no
+known package manager is found, no command is offered at all: a confidently wrong install
+line sends someone to a shell to be told the tool does not exist, and they conclude fettle
+is broken rather than that the hint was.
+
+chipsec's unsupported-platform case is named specifically, using detection that already
+existed — *"this platform is not supported by chipsec — it has no register definitions
+for this CPU"* — rather than leaving a bare exit code the reader has to interpret.
+
 ## [0.98.0] — a check that could not run is no longer reported as a finding
 
 X1a of the exit-code sweep, and the reason X1 was done as a separate, inert step: the

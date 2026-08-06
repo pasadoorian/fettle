@@ -154,3 +154,73 @@ def test_a_wholly_blind_scan_is_not_reported_as_nothing_flagged():
     audit._summarize(scan)
     assert not [ln for ln in scan.output._summary if "nothing flagged" in ln]
     assert scan.output.failures_of(BLIND)
+
+
+# -- "Not checked": how much of the machine did you actually see? ---------------
+#
+# A summary of what WAS found cannot answer that. A short list of ticks reads identically
+# whether nine checks passed or one passed and eight never ran. Paul's call on X2 was to
+# leave the exit code alone and make the gap impossible to miss instead.
+
+def test_not_checked_block_lists_what_was_skipped_and_how_to_fix_it(capsys):
+    from unittest.mock import patch
+
+    out = Output(color=False)
+    out.summary_add("everything else was fine")
+    out.not_checked("storage device firmware", "smartctl is not installed",
+                    "smartmontools")
+    with patch("fettle.command.which", side_effect=lambda n: n == "pacman"):
+        out.print_summary()
+    text = capsys.readouterr().out
+    assert "Not checked" in text
+    assert "storage device firmware — smartctl is not installed" in text
+    assert "install: sudo pacman -S smartmontools" in text
+
+
+def test_install_hint_matches_the_package_manager_present():
+    from unittest.mock import patch
+
+    from fettle.util import install_hint
+
+    for tool, expected in (("pacman", "sudo pacman -S inxi"),
+                           ("apt-get", "sudo apt install inxi"),
+                           ("dnf", "sudo dnf install inxi")):
+        with patch("fettle.command.which", side_effect=lambda n, t=tool: n == t):
+            assert install_hint("inxi") == expected
+
+
+def test_no_install_hint_when_no_known_package_manager():
+    """A confidently wrong install command is worse than none: it sends someone to a
+    shell to be told the tool does not exist, and they conclude fettle is broken."""
+    from unittest.mock import patch
+
+    from fettle.util import install_hint
+
+    with patch("fettle.command.which", return_value=False):
+        assert install_hint("inxi") == ""
+
+
+def test_no_block_when_everything_was_checked(capsys):
+    out = Output(color=False)
+    out.summary_add("all good")
+    out.print_summary()
+    assert "Not checked" not in capsys.readouterr().out
+
+
+def test_chipsec_unsupported_platform_says_why(capsys):
+    """Paul asked specifically for this: not just that chipsec could not run, but that
+    the reason is an unsupported CPU rather than something he can fix."""
+    from fettle.output import Output as O
+    from fettle.secure import checks
+    from fettle.secure.base import Scan
+
+    scan = Scan(output=O(color=False))
+    scan.section("Firmware")
+    with_unknown = "Unsupported Platform\nUnknown Platform: results may be incorrect"
+    scan.run_text_rc = lambda cmd, **kw: (with_unknown, 32)
+    checks._chipsec_cmd = lambda s: ["chipsec_main"]
+    scan.is_root = lambda: True
+    checks.firmware(scan)
+    scan.output.print_summary()
+    text = capsys.readouterr().out
+    assert "not supported by chipsec" in text, text

@@ -559,29 +559,45 @@ def test_remote_recognises_everything_as_an_action_choice():
 
 
 def test_everything_exit_code_answers_did_it_complete_not_is_it_clean():
-    """Fourteen actions on a real host essentially always include a finding —
-    advisory-check alone reported 142 fix-available on the QA workstation — and a status
-    that is red every time is one nobody reads. A single action keeps the stricter rule,
-    which is what automation should gate on."""
+    """Fourteen checks on a real host essentially always find something, and a status
+    that is red every time is one nobody reads. So `--everything` fails only when an
+    action could not do its job.
+
+    Blindness deliberately does not fail it either: on the QA workstation chipsec cannot
+    run at all, so two checks report "could not run" on EVERY run, and failing on that
+    would put the sweep permanently red for a condition nobody can fix. The invariant is
+    served by listing it under "Not checked" instead.
+    """
     from unittest.mock import patch
 
     from fettle import cli
+    from fettle.output import BLIND, FAILED, FOUND
 
-    def fake_run(actions, backend, ctx):
-        ctx.output.summary_fail("advisories: 142 fix-available")   # a finding
+    def run_with(kind):
+        def fake(actions, backend, ctx):
+            ctx.output.summary_fail("x", kind=kind)
+        with patch("fettle.actions.run", side_effect=fake):
+            return cli.main(["--everything", "--only", "config-drift", "--dry-run"])
 
-    with patch("fettle.actions.run", side_effect=fake_run):
-        assert cli.main(["--everything", "--only", "config-drift", "--dry-run"]) == 0
+    assert run_with(FOUND) == 0, "a finding must not fail a sweep"
+    assert run_with(BLIND) == 0, "blindness is reported, not failed on"
+    assert run_with(FAILED) == 1, "an action that could not do its job must fail"
 
-    def fake_fail(actions, backend, ctx):
-        ctx.failed_commands.append("apt-get")                      # could not do its job
 
-    with patch("fettle.actions.run", side_effect=fake_fail):
-        assert cli.main(["--everything", "--only", "config-drift", "--dry-run"]) == 1
+def test_single_action_stays_strict_on_all_three():
+    """A single check is the tripwire you gate automation on: `fettle -V` must go red
+    when a packaged file's contents changed, and `fettle -S` when a check could not
+    run."""
+    from unittest.mock import patch
 
-    # A single action keeps the stricter rule.
-    with patch("fettle.actions.run", side_effect=fake_run):
-        assert cli.main(["-d", "--dry-run"]) == 1
+    from fettle import cli
+    from fettle.output import BLIND, FAILED, FOUND
+
+    for kind in (FOUND, BLIND, FAILED):
+        def fake(actions, backend, ctx, _k=kind):
+            ctx.output.summary_fail("x", kind=_k)
+        with patch("fettle.actions.run", side_effect=fake):
+            assert cli.main(["-d", "--dry-run"]) == 1, kind
 
 
 def test_remote_reports_a_config_it_could_not_read(capsys, tmp_path, monkeypatch):

@@ -19,14 +19,22 @@ def _ran(scan, label: str, rc: int, tool: str) -> bool:
     """Report (loudly) a security check whose tool failed, and return False so the
     caller skips its verdict branches.
 
-    A check that could not run is a finding, not a pass: silence — or a "no
-    problems found" verdict derived from an error message — reads to a human as
-    "this machine is fine". Callers pair this with a neutral "Unknown" for the
-    tool ran-but-reported-nothing case, so hardware where a module simply doesn't
-    apply isn't flagged red.
+    A check that could not run is not a pass: silence — or a "no problems found"
+    verdict derived from an error message — reads to a human as "this machine is fine".
+    Callers pair this with a neutral "Unknown" for the tool ran-but-reported-nothing
+    case, so hardware where a module simply doesn't apply isn't flagged red.
+
+    It is also not a *finding*, which is the distinction the exit status now turns on:
+    "chipsec failed" means you do not know, where "SPI is writable" means you do. Both
+    print the same; only one is something to go and fix.
     """
     if rc != 0:
         scan.status(label, f"UNKNOWN — {tool} failed (exit {rc})", "error", blind=True)
+        # Also on the coverage list, so the end of the run answers "how much of this
+        # machine did you actually see?". On the QA workstation two chipsec modules
+        # fail this way on every single run, and a summary of what was *found* has no
+        # way to say so.
+        scan.output.not_checked(label, f"{tool} failed (exit {rc})")
         return False
     return True
 
@@ -57,12 +65,16 @@ def bios(scan) -> None:
             scan.result(scan.run_text(["dmidecode", "-t", "0"]))
     else:
         scan.status("dmidecode", "not installed — BIOS/DMI was NOT read", "warn")
+        scan.output.not_checked("BIOS/DMI information", "dmidecode is not installed",
+                                "dmidecode")
 
     scan.sub("Machine/Motherboard Info")
     if scan.which("inxi"):
         scan.result(scan.run_text(["inxi", "-M"]))
     else:
         scan.status("inxi", "Not installed", "warn")
+        scan.output.not_checked("hardware inventory detail", "inxi is not installed",
+                                "inxi")
 
     if scan.verbose and scan.which("lshw"):
         scan.sub("Firmware Details (lshw)")
@@ -133,6 +145,9 @@ def firmware(scan) -> None:
     chipsec = _chipsec_cmd(scan)
     if chipsec is None:
         scan.status("Chipsec", "not configured — firmware was NOT audited", "warn")
+        scan.output.not_checked(
+            "SPI/BIOS write protection, SMM, Secure Boot variables (chipsec)",
+            "chipsec is not configured — set [secure] chipsec_cmd in your config")
         for line in ("Set the command in ~/.config/fettle/config.toml:",
                      "    [secure]",
                      '    chipsec_cmd = ["/usr/bin/chipsec_main"]   # packaged install',
@@ -146,6 +161,8 @@ def firmware(scan) -> None:
     if not scan.is_root():
         scan.status("Chipsec", "needs root — firmware was NOT audited "
                     "(re-run without --user)", "warn")
+        scan.output.not_checked("firmware audit (chipsec)",
+                                "needs root — re-run without --user")
         return
 
     with tempfile.TemporaryDirectory() as td:
@@ -158,7 +175,12 @@ def firmware(scan) -> None:
 
     if not isinstance(summary, dict):
         scan.status("Chipsec", f"produced no readable results (exit {rc}) — firmware "
-                    "was NOT audited", "error")
+                    "was NOT audited", "error", blind=True)
+        scan.output.not_checked(
+            "firmware audit (chipsec)",
+            "this platform is not supported by chipsec — it has no register "
+            f"definitions for this CPU (exit {rc})" if _chipsec_unknown_platform(text)
+            else f"chipsec produced no readable results (exit {rc})")
         if scan.verbose:
             scan.result(text)
         return
@@ -192,6 +214,7 @@ def fwupd(scan) -> None:
     if not scan.which("fwupdmgr"):
         scan.status("fwupd", "not installed — firmware updates were NOT checked",
                     "warn")
+        scan.output.not_checked("firmware updates", "fwupd is not installed", "fwupd")
         return
     scan.sub("Devices with Firmware")
     devices = scan.run_text(["fwupdmgr", "get-devices", "--no-unreported-check"])
@@ -309,6 +332,8 @@ def tpm(scan) -> None:
     scan.sub("TPM DMI Information")
     if not scan.which("dmidecode"):
         scan.status("TPM DMI", "not checked — dmidecode is not installed", "warn")
+        scan.output.not_checked("TPM presence via DMI",
+                                "dmidecode is not installed", "dmidecode")
     elif not scan.is_root():
         # Printing nothing here left the subsection header above an empty space,
         # which reads as "checked, found nothing".
@@ -361,6 +386,8 @@ def storage(scan) -> None:
     if not scan.which("smartctl"):
         scan.status("smartctl", "not installed (smartmontools) — storage firmware "
                     "was NOT checked", "warn")
+        scan.output.not_checked("storage device firmware",
+                                "smartctl is not installed", "smartmontools")
         return
     scan.sub("Storage Devices")
     for dev in _storage_devices(scan):

@@ -7,7 +7,7 @@ Today the honest answer is "not without reading the source", and this is the row
 most accumulated evidence behind it — six instances found while sweeping individual
 features, plus one defect I knowingly left in place while shipping `--everything`.
 
-Status: **X1 and X1a done.** X2-X5 planned; one open question below needs deciding first.
+Status: **X1, X1a and X2 done.** X3-X5 planned.
 
 ---
 
@@ -75,7 +75,7 @@ Rendering is unchanged — all three still print `✗`. Only the exit code branc
 | invocation | exits non-zero on |
 |---|---|
 | a single action (`fettle -V`, `fettle -S`) | `failed` **or** `blind` **or** `found` — unchanged, strict, what automation gates on |
-| `--everything` | `failed` **or** `blind`; `found` warns |
+| `--everything` | `failed` only; `blind` and `found` are reported, not failed on |
 
 `--everything`'s status then means *"the run completed and could see everything it
 claimed to check"*, which is a defensible thing for a fourteen-action sweep to assert —
@@ -121,25 +121,24 @@ unreadable checks as `BLIND` — rather than deciding the whole roll-up by major
 changes visible output (an extra `✗` line in the rare mixed case), which is why it is not
 part of X1's inert labelling pass.
 
-### Open question raised by X1a: there are **two tiers** of "could not look"
+### Decided (Paul, 2026-08-06): blindness is made *visible*, not fatal
 
-Doing X1a surfaced a distinction the plan did not anticipate, and it needs deciding
-before X2 rather than during it:
+The open question above was answered, and the answer is better than the proposal: **leave
+the exit status alone and serve the invariant through visibility instead.**
 
-| | example | channel today | fails today? |
-|---|---|---|---|
-| the check **tried and failed** | `UNKNOWN — chipsec failed (exit 128)` | `✗` failure, now `BLIND` | yes |
-| the check **never started** | `smartctl not installed — storage firmware was NOT checked`; same for dmidecode, inxi, fwupd, TPM DMI | `!` warning | **no** |
+- A missing tool stays a warning. A check that tried and failed does not fail a sweep
+  either — on this workstation chipsec cannot run at all, so failing on it would put
+  `--everything` permanently in the red for a condition nobody can fix, which is how an
+  exit code stops being read.
+- In exchange, **everything that could not be examined is listed at the end of the run**,
+  under `Not checked`, with the install command where a missing tool is the cause and the
+  reason where fettle knows it — including chipsec's unsupported-platform case by name.
 
-Both are genuinely blindness. But making every missing optional tool fail the run puts
-`fettle -S` in the red on most machines — no chipsec on consumer hardware, no inxi, no
-smartmontools — which is the same cry-wolf failure this whole row exists to avoid, just
-arriving from the other side.
-
-The line is probably *expectation*: a tool the platform should have and does not is
-blindness worth failing on; an enrichment tool that was never required is a warning. That
-is a per-tool judgement, so it wants a deliberate pass rather than a blanket rule, and it
-is Paul's call where the line sits. **Recorded, not decided.**
+The invariant is "a check that cannot look must never render identically to a clean
+result". A summary of what *was* found cannot satisfy that: a short list of ticks reads
+identically whether nine checks passed or one passed and eight never ran. The coverage
+block is what makes the difference legible, and it does it without spending the exit
+code on it.
 
 ### X2 — key the exit codes on the classification
 Single actions strict, `--everything` on `failed | blind`. Delete the
