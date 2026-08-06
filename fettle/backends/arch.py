@@ -861,10 +861,23 @@ class ArchBackend(PackageBackend):
         return Result()
 
     def manage_kernels(self, ctx: Context) -> Result:
-        out = ctx.output
+        """Manjaro drives this through `mhwd-kernel`; plain Arch gets a report.
+
+        `mhwd-kernel` is Manjaro-only, so on Arch this action used to print "skipping"
+        and do nothing at all — an action that appears to exist and then declines at
+        runtime, which is worse than one that is honestly absent.
+
+        **Arch reports rather than removes, deliberately.** Manjaro's kernels are
+        whole-series packages (`linux612`, `linux71`) that its own tool understands;
+        Arch's are ordinary packages (`linux`, `linux-lts`, `linux-zen`) with no series
+        concept, and removing one is a plain `pacman -R` the user is better placed to
+        decide on. This is the same choice the RHEL backend makes and for the same
+        reason: kernel removal is the most consequential thing this tool can do, and an
+        inventory is genuinely useful where an auto-selected removal is a liability.
+        """
         if not command.which("mhwd-kernel"):
-            out.note("mhwd-kernel not found (Manjaro-only); skipping kernel management.")
-            return Result()
+            return self._report_kernels_pacman(ctx)
+        out = ctx.output
         out.note("installed kernels:")
         print(self._query(["mhwd-kernel", "-li"]).rstrip())
         out.note("available kernels:")
@@ -888,6 +901,65 @@ class ArchBackend(PackageBackend):
                 out.warn(f"refusing to remove the running kernel (linux{ver}); reboot into another first.")
             elif ver:
                 ctx.execute(["mhwd-kernel", "-r", f"linux{ver}"])
+        return Result()
+
+    def _report_kernels_pacman(self, ctx: Context) -> Result:
+        """Inventory the installed kernels on plain Arch, from pacman rather than names.
+
+        Which package owns the running kernel is asked of pacman (who owns this modules
+        directory), never built by pasting `uname -r` into a package name. That exact
+        shortcut is the Debian bug this project already recorded once: a kernel named
+        anything unexpected stops matching, and the *running* kernel then looks like
+        just another removable entry.
+        """
+        out = ctx.output
+        running = os.uname().release
+        base = ctx.root / "usr/lib/modules"
+        try:
+            dirs = sorted(p for p in base.iterdir() if p.is_dir())
+        except OSError:
+            out.warn("could not read /usr/lib/modules — installed kernels were NOT "
+                     "determined")
+            out.summary_warn("kernel: could not determine which kernels are installed")
+            return Result()
+
+        rows = []
+        for d in dirs:
+            owner = self._query(["pacman", "-Qoq", str(d / "vmlinuz")]).strip()
+            rows.append((d.name, owner.splitlines()[0] if owner else "",
+                         d.name == running))
+        if not rows:
+            out.note("no kernel module trees found under /usr/lib/modules.")
+            out.summary_add("kernel: no installed kernels found")
+            return Result()
+
+        out.note("installed kernels:")
+        for release, pkg, is_running in rows:
+            tag = "  <- running" if is_running else ""
+            owner = pkg or "(no package owns this tree — left behind by an upgrade?)"
+            print(f"  {release:<28} {owner}{tag}")
+
+        if not any(r[2] for r in rows):
+            # rebuild-check owns the reboot advice; do not duplicate it, but do not stay
+            # quiet either — this is the state where module loading is already broken.
+            out.warn(f"the running kernel ({running}) has no module tree on disk — it "
+                     "was replaced by an upgrade. Reboot; see rebuild-check (-r).")
+        orphaned = [r[0] for r in rows if not r[1]]
+        if orphaned:
+            out.warn(f"{len(orphaned)} module tree(s) owned by no package: "
+                     f"{', '.join(orphaned)} — leftovers from a removed or upgraded "
+                     "kernel, safe to delete once you are sure nothing boots from them.")
+
+        out.note("fettle does not remove kernels on Arch: they are ordinary packages "
+                 "with no series concept, so removal is a deliberate "
+                 "`sudo pacman -R <package>`. Never remove the one marked running.")
+        installed = sum(1 for r in rows if r[1])
+        summary = f"kernel: {installed} installed, running {running}"
+        if orphaned or not any(r[2] for r in rows):
+            out.summary_warn(summary + f"; {len(orphaned)} unowned module tree(s)"
+                             if orphaned else summary + "; running kernel's modules are gone")
+        else:
+            out.summary_add(summary)
         return Result()
 
     def _running_kernel_digits(self) -> str:

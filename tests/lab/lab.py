@@ -686,10 +686,19 @@ assert not _missing, f"lab.py: no column label for {_missing} — add it to _ACT
 # Substrings that mean "this did not run", not "this ran and found nothing". Keeping them
 # in one place is the point: the whole sweep is worthless if a check that could not look
 # is scored the same as a clean result.
+# "This distro does not have that concept" is not a gap in coverage. `aur-audit` on
+# Debian, or `kernel` on a distro whose kernel tool does not exist, are the tool
+# correctly declining -- but they were scored the same as "the check could not run",
+# so the grid read as eight gaps when five of them were nothing of the kind, and the
+# summary line implied unfinished work. N/A is reported separately and never counted
+# as a skip.
+_NA_MARKERS = (
+    "not supported by", "not implemented by",   # backend does not claim the action
+    "no fettle backend",                        # distro is not claimed at all
+)
 _SKIP_MARKERS = (
-    "not supported by", "not implemented by", "skipping", "not found",
+    "skipping", "not found",
     "did NOT run", "NOT assessed", "could not determine", "cannot determine",
-    "no fettle backend",
 )
 # Only a crash counts as a hard failure in the output itself. Notably `✗` does NOT:
 # fettle uses it for "this part could not run" as much as for anything fatal — a real
@@ -701,7 +710,7 @@ _FAIL_MARKERS = ("Traceback (most recent call last)",)
 
 
 def classify(rc: int, output: str, timed_out: bool) -> tuple[str, str]:
-    """One cell of the matrix: (PASS|ISSUE|FAIL|SKIP, reason).
+    """One cell of the matrix: (PASS|ISSUE|FAIL|SKIP|N/A, reason).
 
     A SKIP always carries its reason. An action that could not run must never be
     indistinguishable from one that ran cleanly — that failure mode is the reason this
@@ -732,6 +741,9 @@ def classify(rc: int, output: str, timed_out: bool) -> tuple[str, str]:
             return "FAIL", line.strip()[:80]
     del ran
     for line in output.splitlines():
+        for marker in _NA_MARKERS:
+            if marker in line:
+                return "N/A", line.strip().lstrip("✓!→ ")[:80]
         for marker in _SKIP_MARKERS:
             if marker in line:
                 return "SKIP", line.strip().lstrip("✓!→ ")[:80]
@@ -800,9 +812,13 @@ def cmd_matrix(conf, args) -> int:
         print(f"{target:<{width}}" + "".join(f"{row.get(a, '-'):<12}" for a in actions))
 
     tally = {v: sum(1 for r in results.values() for x in r.values() if x == v)
-             for v in ("PASS", "ISSUE", "FAIL", "SKIP")}
+             for v in ("PASS", "ISSUE", "FAIL", "SKIP", "N/A")}
     print(f"\n{tally['PASS']} pass · {tally['ISSUE']} issue · {tally['FAIL']} FAIL "
-          f"· {tally['SKIP']} skip")
+          f"· {tally['SKIP']} skip · {tally['N/A']} n/a")
+    if tally["N/A"]:
+        print("  (n/a = the action does not exist on that distro — the tool correctly "
+              "declining,\n   not a gap. Only `skip` means something could not be "
+              "checked.)")
     if tally["ISSUE"]:
         print("  (issue = the action RAN and reported something — a finding on the "
               "target, or\n   a tool that failed. Read the reason; it is not a broken "

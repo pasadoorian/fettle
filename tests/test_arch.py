@@ -743,3 +743,99 @@ def test_other_backends_still_elevate_for_those():
     from fettle.backends.rhel import RhelBackend
     for cls in (DebianBackend, RhelBackend):
         assert "only_update" not in cls.extra_no_root
+
+
+# -- kernels on plain Arch (no mhwd-kernel) ------------------------------------
+#
+# `mhwd-kernel` is Manjaro-only, so this action used to print "skipping" and do nothing
+# on Arch — an action that appears to exist and then declines at runtime. Arch reports
+# rather than removes, the same choice the RHEL backend makes: kernel removal is the most
+# consequential thing this tool can do, and an inventory is useful where an auto-selected
+# removal is a liability.
+
+def _kernel_ctx(tmp_path, releases):
+    for rel in releases:
+        d = tmp_path / "usr/lib/modules" / rel
+        d.mkdir(parents=True)
+        (d / "vmlinuz").write_bytes(b"\x7fELF")
+    return _ctx(root=tmp_path)
+
+
+def _run_kernels(tmp_path, releases, running, owners):
+    """owners: {release: package-name}; a missing entry means no package owns it."""
+    def fake_run(cmd, *, as_user=None, capture=False):
+        c = list(cmd)
+        if c[:2] == ["pacman", "-Qoq"]:
+            for rel, pkg in owners.items():
+                if rel in c[-1]:
+                    return command.Proc(0, pkg + "\n", "")
+            return command.Proc(1, "", "No package owns that file")
+        return command.Proc(0, "", "")
+
+    ctx = _kernel_ctx(tmp_path, releases)
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n != "mhwd-kernel"), \
+         patch("os.uname", return_value=type("U", (), {"release": running})()):
+        ArchBackend().manage_kernels(ctx)
+    ctx.output.print_summary()
+
+
+def test_arch_kernels_are_reported_not_skipped(tmp_path, capsys):
+    _run_kernels(tmp_path, ["6.15.4-arch2-1"], "6.15.4-arch2-1",
+                 {"6.15.4-arch2-1": "linux"})
+    out = capsys.readouterr()
+    text = out.out + out.err
+    assert "skipping kernel management" not in text
+    assert "linux" in text and "<- running" in text
+    assert "1 installed, running 6.15.4-arch2-1" in text
+
+
+def test_arch_running_kernel_is_identified_by_pacman_not_by_name(tmp_path):
+    """Building the package name from `uname -r` is the Debian bug this project already
+    recorded: a kernel named anything unexpected stops matching, and the RUNNING kernel
+    then looks like just another removable entry."""
+    seen = []
+
+    def fake_run(cmd, *, as_user=None, capture=False):
+        seen.append(list(cmd))
+        return command.Proc(0, "linux-custom\n", "")
+
+    ctx = _kernel_ctx(tmp_path, ["9.9.9-weird"])
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n != "mhwd-kernel"), \
+         patch("os.uname", return_value=type("U", (), {"release": "9.9.9-weird"})()):
+        ArchBackend().manage_kernels(ctx)
+    assert any(c[:2] == ["pacman", "-Qoq"] for c in seen), seen
+
+
+def test_arch_never_removes_a_kernel(tmp_path):
+    """Removal on Arch is a deliberate `pacman -R` the user runs; fettle must not."""
+    seen = []
+
+    def fake_run(cmd, *, as_user=None, capture=False):
+        seen.append(list(cmd))
+        return command.Proc(0, "linux\n", "")
+
+    ctx = _kernel_ctx(tmp_path, ["6.15.4-arch2-1", "6.12.0-lts"])
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n != "mhwd-kernel"), \
+         patch("os.uname", return_value=type("U", (), {"release": "6.15.4-arch2-1"})()):
+        ArchBackend().manage_kernels(ctx)
+    assert not [c for c in seen if "-R" in c or "-Rns" in c], seen
+
+
+def test_arch_unowned_module_tree_is_flagged(tmp_path, capsys):
+    """A tree no package owns is an upgrade leftover — worth naming, not silently kept."""
+    _run_kernels(tmp_path, ["6.15.4-arch2-1", "6.9.0-orphan"], "6.15.4-arch2-1",
+                 {"6.15.4-arch2-1": "linux"})
+    text = "".join(capsys.readouterr())
+    assert "owned by no package" in text and "6.9.0-orphan" in text
+
+
+def test_arch_missing_running_module_tree_is_warned(tmp_path, capsys):
+    """The state where module loading is already broken: the running kernel's tree was
+    deleted by an upgrade."""
+    _run_kernels(tmp_path, ["6.16.0-arch1-1"], "6.15.4-arch2-1",
+                 {"6.16.0-arch1-1": "linux"})
+    text = "".join(capsys.readouterr())
+    assert "has no module tree on disk" in text

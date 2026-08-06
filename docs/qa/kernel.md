@@ -150,3 +150,36 @@ The v0.4.3 fix — protect `running ∪ newest`, compare versions numerically �
 Pre-reboot the guest was running `6.12.96` with `6.12.100` installed, and **neither** was
 offered, with the newer one labelled "boots next" and a reboot advised. That is precisely the
 rollback the old bug would have proposed.
+
+---
+
+## Sweep 2 — v0.94.0, 2026-08-06 (matrix follow-up item E)
+
+**QA-KRN-04 is no longer "not run".** `mhwd-kernel` is Manjaro-only, so on plain Arch this
+action printed `mhwd-kernel not found (Manjaro-only); skipping kernel management.` and did
+nothing at all — an action that appears to exist in the help and then declines at runtime,
+which is worse than one honestly absent.
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-KRN-14 *(new)* | Arch without `mhwd-kernel` reports rather than skipping | **FAIL → fixed** |
+| QA-KRN-15 *(new)* | The running kernel is identified by **pacman**, not a constructed name | PASS |
+| QA-KRN-16 *(new)* | fettle never removes a kernel on Arch | PASS *(by construction)* |
+| QA-KRN-17 *(new)* | A module tree no package owns is named | PASS |
+
+### K-04 — the action existed on Arch and did nothing. FIXED v0.94.0
+Arch now gets an inventory: installed kernels, which package owns each, which is running,
+and any module tree owned by no package (an upgrade leftover). It **reports rather than
+removes** — the same choice the RHEL backend makes, for the same reason. Arch kernels are
+ordinary packages with no series concept, so removal is a deliberate `pacman -R` the user
+is better placed to decide on, and kernel removal is the most consequential thing this
+tool can do.
+
+**The running kernel is resolved by asking pacman who owns its module tree**, never by
+pasting `uname -r` into a package name. That shortcut is precisely QA-KRN-03's Debian bug:
+when the constructed name matches nothing, the *running* kernel stops being recognised and
+becomes just another removable entry. The lesson transferred rather than being re-learned.
+
+The "running kernel's modules are gone" state is warned about here but **owned by
+`rebuild-check`**, which already detects it; this action points at it rather than
+duplicating the logic.

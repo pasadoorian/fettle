@@ -8,7 +8,7 @@ from conftest import SNAP_LIST_ALL
 
 from fettle import command
 from fettle.backends.base import Context
-from fettle.backends.debian import DebianBackend
+from fettle.backends.debian import DebianBackend, orphaned_libraries
 from fettle.config import Config
 from fettle.output import Output
 
@@ -778,3 +778,84 @@ def test_kernel_never_offers_running_or_newest():
     # running = .96, newest = .100 -> only .48 may ever be offered
     assert not any("6.12.96" in a or "6.12.100" in a
                    for c in calls if c[:2] == ["apt-get", "purge"] for a in c)
+
+
+# -- orphaned libraries without deborphan --------------------------------------
+#
+# `deborphan` no longer exists in Debian 13 or Ubuntu 26.04, so this check had become a
+# permanent skip on the two most widely deployed server distros in the lab. autoremove
+# is NOT the answer -- this action already previews autoremove separately, and
+# autoremove only ever considers packages apt marked auto-installed, so a library
+# installed by hand is invisible to it forever. That case is deborphan's whole purpose.
+
+def _pkg(name, *, status="install ok installed", **fields):
+    lines = [f"Package: {name}", f"Status: {status}"]
+    lines += [f"{k.replace('_', '-').title()}: {v}" for k, v in fields.items()]
+    return "\n".join(lines)
+
+
+def _status(*blocks):
+    return "\n\n".join(blocks) + "\n"
+
+
+def test_unreferenced_library_is_orphaned():
+    text = _status(_pkg("libfoo1"), _pkg("someapp", depends="libbar2"), _pkg("libbar2"))
+    assert orphaned_libraries(text) == ["libfoo1"]
+
+
+def test_a_depended_on_library_is_not_orphaned():
+    text = _status(_pkg("libfoo1"), _pkg("someapp", depends="libfoo1 (>= 1.2)"))
+    assert orphaned_libraries(text) == []
+
+
+def test_alternatives_protect_both_sides():
+    """`a | b` means either may be the one in use; neither is orphaned."""
+    text = _status(_pkg("libfoo1"), _pkg("libbar2"),
+                   _pkg("someapp", depends="libfoo1 | libbar2"))
+    assert orphaned_libraries(text) == []
+
+
+def test_provides_protects_the_package_not_the_virtual_name():
+    """The bug a positive control against a real dpkg status file caught: marking the
+    VIRTUAL name as referenced protects nothing, because virtual names are not packages
+    — and the package actually supplying it was then offered for removal."""
+    text = _status(_pkg("libssl-real", provides="libssl-virtual"),
+                   _pkg("someapp", depends="libssl-virtual"))
+    assert orphaned_libraries(text) == []
+
+
+def test_weak_relationships_still_protect():
+    """Suggests is the weakest link there is, and it still counts. This list feeds a
+    REMOVAL prompt, so an over-eager entry is far worse than a missing one."""
+    for field in ("recommends", "suggests", "enhances", "pre_depends"):
+        text = _status(_pkg("libfoo1"), _pkg("someapp", **{field: "libfoo1"}))
+        assert orphaned_libraries(text) == [], field
+
+
+def test_essential_and_required_are_never_offered():
+    text = _status(_pkg("libessential1", essential="yes"),
+                   _pkg("librequired1", priority="required"),
+                   _pkg("libnormal1", priority="optional"))
+    assert orphaned_libraries(text) == ["libnormal1"]
+
+
+def test_not_installed_packages_are_ignored():
+    """A deinstalled/config-files entry is not installed and cannot be an orphan."""
+    text = _status(_pkg("libgone1", status="deinstall ok config-files"))
+    assert orphaned_libraries(text) == []
+
+
+def test_non_library_packages_are_never_listed():
+    """Deliberately narrow: this mirrors deborphan's default, and the narrow direction
+    is the safe one when the output feeds a removal prompt."""
+    text = _status(_pkg("someapp"), _pkg("libfoo1"))
+    assert orphaned_libraries(text) == ["libfoo1"]
+
+
+def test_multiline_dependency_fields_are_folded():
+    """dpkg wraps long fields with leading whitespace; missing a continuation line would
+    silently drop real references and invent orphans."""
+    text = _status(_pkg("libfoo1"),
+                   "Package: someapp\nStatus: install ok installed\n"
+                   "Depends: libc6,\n libfoo1 (>= 1.0)\nDescription: x")
+    assert orphaned_libraries(text) == []

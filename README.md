@@ -203,7 +203,7 @@ with a note**, so you install only what the commands you actually use need.
 | AUR / extras | `yay` or `pamac` | — |
 | rebuilds | `rebuild-detector` (`checkrebuild`) | `needrestart` |
 | config drift | `pacman-contrib` (`pacdiff`) | (built-in `dpkg`) |
-| orphans | (built-in) | `deborphan`, `apt-show-versions` |
+| orphans | (built-in) | `apt-show-versions`; `deborphan` if present, else dpkg reverse-deps (built-in) |
 | firmware | `fwupd` | `fwupd` |
 | kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
 | flatpak / snap | — | `flatpak`, `snapd` |
@@ -361,7 +361,7 @@ just Debian — each revision confirmed individually.
 | Flag | Action | Arch | Debian | RHEL family |
 |---|---|---|---|---|
 | `-c` · | `clean` | `paccache` — drops packages no longer installed, keeps the last **2** versions of the rest ([`[clean] keep_versions`](#cache-cleaning--c)); AUR build dirs (**asks first**; `--yes` skips) | `apt-get clean`, unused flatpaks | `dnf clean packages` — **not** `clean all`, so repo metadata survives; unused flatpaks |
-| `-o` · | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) — **the package manager confirms the full transaction**, which may exceed what you picked | obsolete pkgs → `~/.fettle/reports/`; `deborphan` + `autoremove`, same confirmation | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
+| `-o` · | `orphans` | foreign pkgs → `~/.fettle/reports/`; remove true orphans (`-Qtdq`) — **the package manager confirms the full transaction**, which may exceed what you picked | obsolete pkgs → `~/.fettle/reports/`; orphaned libraries (`deborphan`, or dpkg reverse-deps where it is gone) + `autoremove`, same confirmation | pkgs from no enabled repo (`repoquery --extras`) → reports; `repoquery --unneeded`, **kernels never offered** |
 | `-u` / `--upgrade` · | `update` | mirrorlist refresh (Manjaro; `[updaters.arch] refresh_mirrors`), then pacman/pamac, then yay AUR (with review) | apt/nala, then flatpak, then snap | `dnf upgrade --refresh`, then flatpak/snap; a `gpgcheck=0` repo asks once more |
 | `-O` | `only-update` | refresh **safely** — private cache, never `pacman -Sy` (no partial-upgrade risk) — then report upgradable | `apt-get update --error-on=any` + flatpak metadata, then report upgradable | `dnf makecache` + report upgradable (`check-update`; exit **100** means updates exist) |
 | `-r` · | `rebuild-check` | `checkrebuild` (rebuild with `-R`) + **reboot check**: warns if the running kernel's modules were replaced | `needrestart` — services **and** the kernel state (`KSTA`), so a pending reboot is reported | `needs-restarting` — reboot hint + services; **only exit 0 may mean "no reboot"** |

@@ -61,6 +61,77 @@ def _kernel_version_key(name: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", name))
 
 
+# A dependency field entry: "libfoo1 (>= 1.2) | libbar2", possibly with :arch.
+_DEP_NAME_RE = re.compile(r"([A-Za-z0-9][A-Za-z0-9+.\-]*)")
+
+
+def orphaned_libraries(status_text: str) -> list[str]:
+    """Installed library packages that nothing installed depends on.
+
+    `deborphan`'s core question, answered from dpkg's own status file, because
+    deborphan itself no longer exists in Debian 13 or Ubuntu 26.04 and the check had
+    become a permanent skip on the two most widely deployed server distros in the lab.
+
+    Deliberately narrow, in the direction that matters. Only packages whose name looks
+    like a library are considered, and **every** dependency-ish field of **every**
+    installed package counts as a reference — Depends, Pre-Depends, Recommends,
+    Suggests, Enhances, and the Provides graph, so a package satisfying a virtual name
+    protects whatever depends on that name. Alternatives (``a | b``) protect both sides.
+
+    Suggests is included even though it is the weakest relationship. It costs a few
+    false negatives — a library stays listed as needed when only a Suggests mentions it
+    — and buys the opposite of a false positive. **This list feeds a removal prompt**,
+    so an over-eager entry is far worse than a missing one; the whole point of the
+    per-package confirm and apt's own transaction is that this list is a suggestion, not
+    a verdict.
+
+    Essential and Required packages are never listed whatever the graph says.
+    """
+    packages, referenced = [], set()
+    for block in status_text.split("\n\n"):
+        if not block.strip():
+            continue
+        fields: dict[str, str] = {}
+        key = ""
+        for line in block.splitlines():
+            if line[:1] in (" ", "\t") and key:
+                fields[key] += " " + line.strip()
+            elif ":" in line:
+                key, _, val = line.partition(":")
+                key = key.strip().lower()
+                fields[key] = val.strip()
+        name = fields.get("package", "")
+        if not name or not fields.get("status", "").endswith("installed"):
+            continue          # deinstalled/config-files entries are not installed
+        packages.append((name, fields))
+        for field in ("depends", "pre-depends", "recommends", "suggests", "enhances"):
+            for alt in fields.get(field, "").split(","):
+                for part in alt.split("|"):
+                    m = _DEP_NAME_RE.search(part.strip())
+                    if m:
+                        referenced.add(m.group(1))
+
+    out = []
+    for name, fields in packages:
+        if not (name.startswith("lib") and not name.startswith("libreoffice")):
+            continue
+        if fields.get("essential", "") == "yes" or fields.get("priority", "") in (
+                "required", "important"):
+            continue
+        # A package is needed if its own name is depended on, OR if it Provides a
+        # virtual name that something depends on. Marking the virtual name itself as
+        # "referenced" protects nothing — virtual names are not packages — and the
+        # package actually supplying it would be offered for removal. Caught by a
+        # positive control against a real dpkg status file.
+        provided = {m.group(1)
+                    for prov in fields.get("provides", "").split(",")
+                    for m in [_DEP_NAME_RE.search(prov.strip())] if m}
+        if name in referenced or (provided & referenced):
+            continue
+        out.append(name)
+    return sorted(out)
+
+
 def _parse_apt_sim(text: str) -> list[TxItem]:
     items = []
     for raw in text.splitlines():
@@ -396,6 +467,40 @@ class DebianBackend(PackageBackend):
                 for line in out.splitlines()
                 if line.startswith("ii") and len(line.split()) > 1}
 
+    def _orphan_candidates(self, ctx: Context):
+        """``(source, [package, ...])`` or ``None`` if nothing could answer.
+
+        **`deborphan` no longer exists in Debian 13 or Ubuntu 26.04**, so on the two
+        most widely deployed server distros in the matrix this check had become a
+        permanent skip — honest, but the capability was missing exactly where it matters
+        most.
+
+        **`apt-get autoremove` is not the answer**, though it looks like it: this action
+        already runs an autoremove preview further down, and autoremove only ever
+        considers packages apt marked *auto-installed*. A library you installed by hand
+        and no longer need is invisible to it forever. That case — deborphan's whole
+        purpose — is what actually went missing.
+
+        So the fallback reimplements deborphan's core question directly from dpkg's own
+        status file: **which installed library packages does nothing installed depend
+        on?** One file read, no new dependency, and no per-package `apt-cache rdepends`
+        storm.
+
+        Whichever source answers, it is used **only as a list**. The removal stays the
+        existing explicit per-package purge, so the safety that flow already has — no
+        blanket ``-y``, apt's own transaction shown, the installed set diffed around the
+        command — is untouched. An orphan list that is wrong in the *removal* direction
+        is the most dangerous output this tool produces, which is why the caller also
+        prints which source produced it.
+        """
+        if command.which("deborphan"):
+            return "deborphan", self._query(["deborphan"]).split()
+        try:
+            status = (ctx.root / "var/lib/dpkg/status").read_text(errors="replace")
+        except OSError:
+            return None
+        return "dpkg reverse-deps", orphaned_libraries(status)
+
     def check_foreign_orphans(self, ctx: Context) -> Result:
         out, cfg = ctx.output, ctx.config
 
@@ -414,12 +519,14 @@ class DebianBackend(PackageBackend):
         else:
             out.note(f"{len(obsolete)} obsolete/foreign package(s) would be saved for review")
 
-        # Orphaned libraries via deborphan -> offer purge.
-        if command.which("deborphan"):
-            orphans = [o for o in self._query(["deborphan"]).split()
-                       if not matches_any(o, cfg.keep_orphans)]
+        # Orphaned packages -> offer purge. Two sources, and they are NOT the same
+        # question, so the output names which one answered.
+        found = self._orphan_candidates(ctx)
+        if found is not None:
+            source, candidates = found
+            orphans = [o for o in candidates if not matches_any(o, cfg.keep_orphans)]
             if orphans:
-                out.note("orphaned libraries eligible for removal:")
+                out.note(f"orphaned packages eligible for removal ({source}):")
                 for o in orphans:
                     print(f"    {o}")
                 chosen = ctx.select(orphans, prompt="purge orphan")
@@ -440,9 +547,11 @@ class DebianBackend(PackageBackend):
                     else:
                         out.ok("nothing was purged.")
             else:
-                out.ok("no orphaned libraries (deborphan).")
+                out.ok(f"no orphaned packages ({source}).")
         else:
-            out.note("deborphan not found (install it to detect orphaned libraries); skipping.")
+            out.warn("no way to detect orphaned packages on this system: `deborphan` is "
+                     "not installed (and no longer exists in Debian 13 / Ubuntu 26.04), "
+                     "checked.")
 
         # Unused dependencies — show exactly what autoremove would drop, THEN ask.
         removable = self._autoremove_preview(ctx)

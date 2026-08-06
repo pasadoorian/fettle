@@ -18,9 +18,9 @@ Status: **swept and fixed.** One sweep across all seven targets at v0.56.0; thre
 | Step | arch / manjaro | debian / ubuntu | rocky9 / alma9 / fedora |
 |---|---|---|---|
 | review file | `pacman -Qm` → `alien-pkgs` report | obsolete pkgs (`apt-show-versions`, else `aptitude ~o`) → `obsolete-pkgs` report | packages from no enabled repo → report |
-| candidates | `pacman -Qtdq` (true orphans) | `deborphan`, **plus** `apt-get autoremove --dry-run` | `dnf repoquery --unneeded` |
+| candidates | `pacman -Qtdq` (true orphans) | `deborphan` **or**, where it no longer exists, dpkg reverse-deps; **plus** `apt-get autoremove --dry-run` | `dnf repoquery --unneeded` |
 | protection | `keep_orphans` | `keep_orphans` | `keep_orphans` **+ installonly/kernels, fail-safe** |
-| consent | per-package `ctx.select` | per-package for deborphan; one confirm for autoremove | per-package `ctx.select` |
+| consent | per-package `ctx.select` | per-package for the orphaned-library list, whichever source produced it; one confirm for autoremove | per-package `ctx.select` |
 | removal | `pacman -Rsn --noconfirm` | `apt-get purge -y` / `apt-get autoremove -y` | `dnf remove` (**no `-y`** unless `--yes`) |
 
 ### The three backends disagree about how much to show before deleting
@@ -174,3 +174,41 @@ Arch writes no review report under `--dry-run` and says nothing about it; Debian
 but prints *"N obsolete/foreign package(s) would be saved for review"*. Both are defensible;
 being different is not, and the Arch user has no idea a report is part of this action.
 Cosmetic, and left open rather than fixed blind.
+
+
+---
+
+## Sweep 2 — v0.94.0, 2026-08-06 (matrix follow-up item D)
+
+`deborphan` no longer exists in Debian 13 or Ubuntu 26.04, so the orphaned-library half of
+this action had become a **permanent skip on the two most widely deployed server distros
+in the lab**. The skip was honest; the capability was missing where it matters most.
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-ORPH-14 *(new)* | Orphaned libraries are found without `deborphan` | **FAIL → fixed** |
+| QA-ORPH-15 *(new)* | A package that **Provides** a depended-on virtual name is not offered | **FAIL → fixed** |
+| QA-ORPH-16 *(new)* | Weak relationships (Recommends/Suggests/Enhances) still protect | PASS |
+| QA-ORPH-17 *(new)* | Essential/Required are never listed | PASS |
+
+### Why not just use `apt-get autoremove`
+Because this action **already** previews autoremove, separately, further down — and
+autoremove only ever considers packages apt marked *auto-installed*. A library installed
+by hand and no longer needed is invisible to it forever, and that case is deborphan's
+entire purpose. Swapping one for the other would have looked like a fix while quietly
+dropping the capability.
+
+### What replaced it
+deborphan's core question, answered from dpkg's own status file: which installed library
+packages does nothing installed depend on? Every dependency-ish field counts as a
+reference, alternatives protect both sides, and Suggests is included on purpose — it costs
+a few false negatives and buys the opposite of a false positive. **This list feeds a
+removal prompt**, so an over-eager entry is far worse than a missing one.
+
+### The bug the positive control caught
+Validated against a real Debian 13 `/var/lib/dpkg/status` — 0 orphans on a clean image,
+which proves nothing on its own, so a known-absent library was planted to prove the scan
+could still see. That same exercise found a real defect: a package that **Provides** a
+virtual name was being offered for removal, because the code marked the *virtual name* as
+referenced instead of the package supplying it. Virtual names are not packages. "Found
+nothing" and "could not look" are the same shape unless you check.

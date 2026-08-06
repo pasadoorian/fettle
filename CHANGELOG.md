@@ -10,6 +10,73 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.94.0] — the rest of the matrix follow-up: orphans, Arch kernels, and an honest grid
+
+Closes items C through F of the matrix follow-up plan. A, B and G shipped in 0.89–0.93.
+
+### Orphaned libraries work again on Debian 13 and Ubuntu 26.04 (item D)
+
+`deborphan` no longer exists in either release, so this check had become a **permanent
+skip on the two most widely deployed server distros in the lab** — honest, but the
+capability was missing exactly where it matters most.
+
+**`apt-get autoremove` is not the answer**, though it looks like it. This action already
+previews autoremove separately, and autoremove only ever considers packages apt marked
+*auto-installed* — a library you installed by hand and no longer need is invisible to it
+forever. That case is deborphan's whole purpose, and it is what actually went missing.
+
+So the fallback answers deborphan's question directly from dpkg's own status file:
+**which installed library packages does nothing installed depend on?** One file read, no
+new dependency, no per-package `apt-cache rdepends` storm. Every dependency-ish field
+counts as a reference — Depends, Pre-Depends, Recommends, Suggests, Enhances — and
+alternatives (`a | b`) protect both sides. Suggests is included deliberately: it costs a
+few false negatives and buys the opposite of a false positive, and **this list feeds a
+removal prompt**, so an over-eager entry is far worse than a missing one. Essential and
+Required packages are never listed.
+
+Whichever source answers, it is used **only as a list**; the removal stays the existing
+explicit per-package purge, so no blanket `-y`, apt's own transaction shown, and the
+installed set diffed around the command. The output names which source produced the list,
+because the two do not answer quite the same question.
+
+Validated against a real Debian 13 dpkg status file, which is how a genuine bug was
+caught: a package that **Provides** a virtual name was being offered for removal, because
+the virtual name was marked as referenced rather than the package supplying it. Virtual
+names are not packages. Fixed, with a test.
+
+### Kernel management does something on Arch now (item E)
+
+`mhwd-kernel` is Manjaro-only, so on Arch this action printed "skipping" and did nothing —
+an action that appears to exist and then declines at runtime, which is worse than one
+that is honestly absent.
+
+Arch now gets an inventory: which kernels are installed, which package owns each, which
+one is running, and any module tree no package owns (an upgrade leftover). It **reports
+rather than removes**, the same choice the RHEL backend makes and for the same reason —
+kernel removal is the most consequential thing this tool can do, and Arch kernels are
+ordinary packages with no series concept, so removal is a deliberate `pacman -R` the user
+is better placed to decide on.
+
+Which package owns the running kernel is asked of pacman, never built by pasting
+`uname -r` into a package name — that shortcut is the Debian bug this project already
+recorded once, where a kernel named anything unexpected stops matching and the *running*
+kernel then looks like just another removable entry.
+
+### The matrix grid distinguishes "not applicable" from "could not check" (item F)
+
+`aur-audit` on Debian is the tool correctly declining, not a gap — but it scored the same
+as a check that could not run, so the grid read as eight gaps when five were nothing of
+the kind. **N/A** is now its own verdict, counted separately, and only `skip` means
+something could not be checked.
+
+### Fedora's signature failure was transient (item C)
+
+Diagnosed, not fixed, because there was nothing to fix. `Signature verification failed`
+on a kernel rpm reproduced clean once the dnf cache was cleared — a corrupt cached
+package, not the stale keyring it might have been. fettle reported it correctly at the
+time (*"update did NOT complete — dnf failed. Some packages may be upgraded and others
+not; re-run to finish"*).
+
 ## [0.93.0] — the last three install channels notice when something is pulled
 
 `withdrawn upstream` now covers **all eight** of fettle's install channels. VS Code /
