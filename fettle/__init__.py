@@ -1,3 +1,3 @@
 """fettle — cross-distribution Linux system maintenance and supply-chain tool."""
 
-__version__ = "0.115.0"
+__version__ = "0.116.0"

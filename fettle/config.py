@@ -80,6 +80,12 @@ class Config:
     #   filesystem_paths (list of paths) — extra directories for the filesystem axis to
     #     check, ADDED to its built-in list rather than replacing it. To drop a
     #     built-in path, put it in exclude_paths.
+    #   certificate_paths (list of paths) — extra directories for the certs axis, also
+    #     additive. The CA trust store is refused even if named here (and the run says
+    #     so): its expiring root certificates are the packaging system's business, and
+    #     scanning it would bury the certificates this host actually serves with.
+    #   certificate_warn_days (int, default 30) — how far ahead an expiry is worth
+    #     reporting. Expired is always reported.
     hardening: dict = field(default_factory=dict)
     # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
     # type per host to retain, default 10 — also the depth of the dashboard's

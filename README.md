@@ -939,6 +939,7 @@ nothing else:
 | `kernel` | are the kernel's runtime protections switched on? | nothing |
 | `ssh` | is the *effective* sshd configuration weak anywhere? | sshd (needs root) |
 | `firewall` | is a host firewall active, and does it actually have rules? | `nft` or `iptables` (needs root to read rules) |
+| `certs` | are any TLS certificates expired or about to be? | `openssl` |
 
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
 An axis that **can't** look says so in its own words — it never renders as a pass.
@@ -1212,6 +1213,41 @@ anywhere — so a full ruleset with no managing service is reported as filtering
 "no firewall". An `-P INPUT ACCEPT` default policy is counted as the *absence* of
 filtering (it is what "allow everything" looks like written down); `-P INPUT DROP` is
 counted as filtering.
+
+#### Certificates axis — expired, or about to be?
+
+**In plain terms:** if the certificate your web server hands out expires, everything
+that connects to it starts failing. This checks the certificates this host *presents* —
+and deliberately ignores the list of certificate authorities it *trusts*.
+
+**The CA trust store is excluded on purpose, and that's the whole design.**
+`/etc/ssl/certs` on the reference machine is 121 root CAs symlinked out of the
+`ca-certificates` bundle. Some expire; that's normal, no local action fixes it, and
+`update-ca-certificates` already handles it. An axis that walked that directory would
+bury the certificates that matter under dozens of findings nobody can act on. If you
+add a trust-store path to the config it's **refused, and the run says so** — never
+silently, or you'd believe a directory was being watched when it isn't.
+
+Scanned by default: `/etc/letsencrypt/live`, `/etc/nginx`, `/etc/httpd`,
+`/etc/apache2`, `/etc/pki/tls/{certs,private}`, `/etc/ssl/private`, `/etc/dovecot`,
+`/etc/postfix`, `/etc/openvpn` — three levels deep, capped, and only files that look
+like certificates (so `openssl` never runs on `httpd.conf`).
+
+Expired is **high**; expiring within `certificate_warn_days` (default 30) is
+**medium**. A file that isn't a certificate is skipped silently; a file that can't be
+*read* — private-key directories need root — is reported as blindness, because "could
+not open" must never become "fine".
+
+```toml
+[hardening]
+certificate_paths     = ["/srv/certs"]   # additive; trust stores are refused
+certificate_warn_days = 45
+```
+
+Needs `openssl` — X.509 can't be parsed with the standard library, and fettle has no
+runtime dependencies to reach for. Without it, the axis reports that it could not look.
+On a workstation with no service certificates it reports **not applicable**, which is a
+different statement from "they're all fine".
 
 ### Package file integrity — `-V` / `pkg-integrity`
 

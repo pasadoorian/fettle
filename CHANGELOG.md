@@ -13,6 +13,34 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.116.0] — certificate expiry, ignoring the 121 certificates that don't matter
+
+The sixth and last `hardening-audit` axis: **`certs`**, and the design question was
+*which* certificates rather than how to read a date.
+
+**The CA trust store is deliberately excluded.** `/etc/ssl/certs` on the reference
+machine is 121 root CAs symlinked out of the `ca-certificates` bundle. Some expire;
+that is normal, no local action fixes it, and `update-ca-certificates` already handles
+it. Walking that directory would bury the certificates that matter under dozens of
+findings nobody can act on. A trust-store path added by hand is **refused, and the run
+says so** — never silently, or the user is left believing a directory is watched when
+it is not.
+
+What is scanned is what this host *presents*: `/etc/letsencrypt/live`, `/etc/nginx`,
+`/etc/httpd`, `/etc/apache2`, `/etc/pki/tls/{certs,private}`, `/etc/ssl/private`,
+`/etc/dovecot`, `/etc/postfix`, `/etc/openvpn` — three levels deep, capped at 200
+files, and only files that look like certificates so `openssl` never runs on
+`httpd.conf`. Expired is high; expiring within `certificate_warn_days` (default 30) is
+medium. Verified in a container against real certificates: an expired one, one due in
+eight days, and one valid for 800 days — the third stays silent.
+
+A file that is not a certificate is skipped silently; one that cannot be **read** —
+private-key directories need root — is blindness, because "could not open" must never
+become "fine". No `openssl` is blindness with an install hint. No service certificates
+at all is *not applicable*, which is a different statement from "they are all fine".
+
+New config: `[hardening] certificate_paths` (additive) and `certificate_warn_days`.
+
 ## [0.115.0] — ask the SSH server, not its config file
 
 A fifth `hardening-audit` axis: **`ssh`**, and the clearest case in this whole
