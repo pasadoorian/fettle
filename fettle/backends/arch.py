@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .. import command, reports
 from ..util import matches_any
+from ..output import FAILED
 from .base import (Context, PackageBackend, Result, Transaction, TxItem,
                    is_regenerated, sample_lines)
 
@@ -713,7 +714,7 @@ class ArchBackend(PackageBackend):
                 self._rebuild(pkgs, ctx)
                 if len(ctx.failed_commands) > failed_before:
                     out.summary_fail(f"rebuild of {len(pkgs)} package(s) did NOT "
-                                     "complete — see the errors above.")
+                                     "complete — see the errors above.", kind=FAILED)
                 else:
                     out.summary_add(f"{len(pkgs)} package(s) rebuilt")
         else:
@@ -781,7 +782,7 @@ class ArchBackend(PackageBackend):
                 self._rebuild(ordered, ctx)
                 if len(ctx.failed_commands) > failed_before:
                     out.summary_fail(f"rebuild for Python {current} did NOT complete — "
-                                     "see the errors above.")
+                                     "see the errors above.", kind=FAILED)
                 else:
                     out.summary_add(f"{len(ordered)} package(s) rebuilt for "
                                     f"Python {current}")

@@ -23,6 +23,19 @@ def _want_color(stream, override: bool | None) -> bool:
     return bool(getattr(stream, "isatty", lambda: False)())
 
 
+# What a `✗` line actually means. One channel on screen, three different situations
+# behind it — and they call for opposite responses from the reader:
+#
+#   FAILED  the action could not do its job          -> something is broken, go look
+#   BLIND   the check could not look                 -> you have a blind spot, and the
+#                                                       all-clear you just got is not one
+#   FOUND   the check looked and found something     -> the tool worked; go fix the thing
+#
+# Rendering is identical for all three on purpose; this is about what the exit status is
+# allowed to conclude, not about what the user reads.
+FAILED, BLIND, FOUND = "failed", "blind", "found"
+
+
 @dataclass
 class Output:
     """Sectioned, optionally-colored output with a step counter and end summary."""
@@ -150,15 +163,23 @@ class Output:
     def summary_add(self, line: str) -> None:
         self._summary.append(line)
 
-    def summary_fail(self, line: str) -> None:
+    def summary_fail(self, line: str, *, kind: str = FAILED) -> None:
         """Record something that did NOT work, for the end-of-run summary.
 
         Every summary line used to render with a green tick, so an action that failed
         could only report itself as a success or say nothing — QA found a clean blocked
         by a permission error signing off with `✓ caches already clean`. A failure needs
         its own channel, and it sets the process exit status via :attr:`had_failures`.
+
+        ``kind`` says **which** of the three this is (see the module constants). It
+        changes nothing about what prints — all three render `✗` — and for now nothing
+        about the exit status either. It exists so the status can later answer the right
+        question for how fettle was invoked: a single check should fail on any of the
+        three, while a fourteen-action sweep that fails on every *finding* is red on
+        every real machine and stops being read. What such a sweep must never do is
+        treat **could not look** as success, and today it cannot tell the difference.
         """
-        self._failures.append(line)
+        self._failures.append((line, kind))
 
     def summary_warn(self, line: str) -> None:
         """Record something that did not happen, without calling it a failure.
@@ -174,8 +195,16 @@ class Output:
 
     @property
     def had_failures(self) -> bool:
-        """Whether anything reported a failure — the process exit status."""
+        """Whether anything reported a failure — the process exit status.
+
+        Deliberately still blind to ``kind``: this milestone only labels the lines, so
+        every exit code stays exactly what it was and the change is provably inert.
+        """
         return bool(self._failures)
+
+    def failures_of(self, *kinds: str) -> list[str]:
+        """The recorded failure lines of the given kind(s)."""
+        return [line for line, kind in self._failures if kind in kinds]
 
     def next_step(self, line: str) -> None:
         self._next_steps.append(line)
@@ -190,7 +219,7 @@ class Output:
                 print(f"  {self.GRN}✓{self.NC} {line}")
             for line in self._warnings:
                 print(f"  {self.YLW}!{self.NC} {line}")
-            for line in self._failures:
+            for line, _kind in self._failures:
                 print(f"  {self.RED}✗{self.NC} {line}")
         else:
             print(f"  {self.DIM}nothing to report{self.NC}")

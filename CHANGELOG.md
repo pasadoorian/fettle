@@ -10,6 +10,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.97.0] — every `✗` now says which kind of bad news it is
+
+Groundwork for the exit-code sweep, and **deliberately inert**: nothing about what fettle
+prints or what it returns changes in this release. The full test suite passes untouched,
+which is the point.
+
+fettle has had one way of saying "that didn't go well", and it covers three situations
+that call for opposite responses:
+
+- **the action could not do its job** — the update failed, a rebuild did not finish
+- **the check could not look** — the tool was missing, a feed would not refresh, no
+  API key. *The all-clear you just got is not an all-clear.*
+- **the check looked and found something** — an altered file, an unpatched CVE. The tool
+  worked perfectly; go fix what it found.
+
+All fifteen places that report bad news now say which one they mean. On screen they are
+identical — same `✗`, same wording, same order. What it buys is that the pass/fail status
+can later answer the right question: a single check should fail on any of the three,
+while a fourteen-action sweep that fails on every *finding* is red on every real machine
+and stops being read. What such a sweep must never do is treat "could not look" as
+success — which is exactly what `--everything` does today, documented as a known limit
+when it shipped.
+
+The split is six *failed*, five *could not look*, four *found*. A permanent test requires
+every future one to declare which it is, because an omission would silently default to
+the strictest reading and be wrong for a finding.
+
+**And labelling them found a real problem, which was the point of doing it separately.**
+`pkg-integrity` and `sys-audit` each roll up every record they marked as an error into a
+single summary line — and that bucket mixes genuine findings with checks that could not
+run (`the rpm database could not be queried`, `mokutil failed`, `rpm: Not installed`).
+Both are labelled *found* today and both are wrong whenever the cause was blindness,
+which is the unsafe direction. Specified as X1a in the plan and fixed before the labels
+start affecting behaviour.
+
 ## [0.96.0] — group runs label every section with the host
 
 Running a group puts six machines' output into one terminal, one after another. The

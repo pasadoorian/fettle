@@ -21,6 +21,7 @@ from .config import load as load_config
 from .distro import UnknownDistro, detect
 from .output import Output
 from .util import invoking_user_home
+from .output import BLIND
 
 # Resolved from the INVOKING user's home, not `Path.home()`. Under sudo, HOME is
 # /root, so a bare Path.home() sends every consumer of this constant -- eight of them,
@@ -884,7 +885,7 @@ def _run_upgrade_check(argv: list[str]) -> int:
                  "showing the package list only:")
         _print_pending(pending)
         out.summary_fail("upgrade check did NOT run — no API key "
-                         "(ANTHROPIC_API_KEY or [config] ai_api_key)")
+                         "(ANTHROPIC_API_KEY or [config] ai_api_key)", kind=BLIND)
         return _finish(0)
 
     out.note(f"asking {cfg.ai_model} (may take a minute; searching distro forums)...")
@@ -895,7 +896,7 @@ def _run_upgrade_check(argv: list[str]) -> int:
             out.note("re-run with --verbose to see why the AI step failed.")
         _print_pending(pending)
         out.summary_fail(f"upgrade check did NOT run — {len(pending)} pending "
-                         "package(s) were NOT assessed (re-run with --verbose)")
+                         "package(s) were NOT assessed (re-run with --verbose)", kind=BLIND)
         return _finish(0)
 
     _render_upgrade_check(out, result, user_home=ctx.user_home,

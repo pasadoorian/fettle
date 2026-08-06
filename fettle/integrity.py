@@ -28,6 +28,7 @@ Which is why the three outcomes are kept apart, rather than summed into "issues"
 """
 
 from __future__ import annotations
+from .output import FOUND
 
 from typing import TYPE_CHECKING
 
@@ -52,7 +53,7 @@ def run(backend: "PackageBackend", ctx: "Context") -> None:
     warns = [r for r in scan.records if r["level"] == "warn"]
     if errors:
         out.summary_fail("pkg-integrity: " + "; ".join(
-            f"{r['label']}: {r['value']}" for r in errors))
+            f"{r['label']}: {r['value']}" for r in errors), kind=FOUND)
         out.next_step("check each file against what installed it before assuming "
                       "tampering — an upgrade interrupted mid-write looks the same.")
     if warns:

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..output import Output
 from .base import Scan
+from ..output import FOUND
 
 # Ordered category -> description (mirrors the bash CHECK_CATEGORIES). `packages`
 # is added in M10 (needs the backend's verify_integrity).
@@ -81,7 +82,7 @@ def _summarize(scan: Scan) -> None:
     checked = len({(r["category"], r["label"]) for r in scan.records})
     if errors:
         out.summary_fail(f"sys-audit: {len(errors)} finding(s) needing attention — "
-                         f"{_names(errors)}")
+                         f"{_names(errors)}", kind=FOUND)
     if warns:
         out.summary_warn(f"sys-audit: {len(warns)} warning(s) — {_names(warns)}")
     if not errors and not warns:

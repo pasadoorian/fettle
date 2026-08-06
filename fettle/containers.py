@@ -33,6 +33,7 @@ from . import command
 from .supplychain.container_source import (RUNTIMES, image_ref, images_argv,
                                            parse_images)
 from .util import matches_any
+from .output import FAILED
 
 _NONE = "<none>"
 
@@ -215,7 +216,7 @@ def run(ctx) -> None:
         out.summary_warn(f"{line} — but {names} could NOT be read; those images "
                          "were not assessed")
     elif failed:
-        out.summary_fail(f"{line} — those images were NOT updated")
+        out.summary_fail(f"{line} — those images were NOT updated", kind=FAILED)
     elif deferred:
         out.summary_warn(f"{line} — decisions still outstanding")
     else:

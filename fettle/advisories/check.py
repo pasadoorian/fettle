@@ -20,6 +20,7 @@ from .debian_source import DebianAdvisorySource
 from .osv_source import OsvLanguageSource
 from .rhel_source import RhelAdvisorySource
 from .ubuntu_source import UbuntuAdvisorySource
+from ..output import BLIND, FOUND
 
 
 def _providers():
@@ -312,7 +313,8 @@ def run(ctx) -> None:
     elif crit:
         # A Critical with a fix already released is the one case that should stop an
         # automated run; `security_gate` already treats it that way before -u/-a.
-        out.summary_fail(f"{line} — {len(crit)} CRITICAL with a fix available")
+                # FOUND: the advisory data was read successfully and it says you are exposed.
+        out.summary_fail(f"{line} — {len(crit)} CRITICAL with a fix available", kind=FOUND)
     elif counts["pending"] or counts["fixed_available"]:
         # Unpatched CVEs are open items, not an accomplishment.
         out.summary_warn(line)
@@ -355,8 +357,10 @@ def update(ctx) -> None:
     if failed:
         # Partial success is still a stale cache for the feeds that failed, and the
         # next `advisory-check` will answer from old data without knowing why.
+                # BLIND: a feed that would not refresh means the CVE answer below is
+        # incomplete, and 'no advisories' from a stale cache is not an all-clear.
         out.summary_fail(f"advisory cache: {', '.join(failed)} FAILED to refresh"
-                         + (f" (refreshed: {done})" if ok else ""))
+                         + (f" (refreshed: {done})" if ok else ""), kind=BLIND)
     else:
         out.summary_add(f"advisory cache refreshed: {done}")
 

@@ -6,6 +6,7 @@ in the ABC) so a half-built backend degrades gracefully.
 """
 
 from __future__ import annotations
+from .output import BLIND, FAILED, FOUND
 
 from typing import TYPE_CHECKING
 
@@ -72,7 +73,7 @@ def _clean(backend: "PackageBackend", ctx: "Context") -> None:
             else "nothing was reclaimed"
         ctx.output.summary_fail(
             f"clean did NOT complete — {tools} failed ({detail}). "
-            "The cache is not necessarily empty; see the errors above.")
+            "The cache is not necessarily empty; see the errors above.", kind=FAILED)
         return
     if not paths:
         # Backend declared nothing measurable — say what happened, claim no figure.
@@ -122,14 +123,15 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
         if ctx.assume_yes:
             out.summary_fail(f"update did NOT complete — {tools} failed. Some packages "
                              "may be upgraded and others not; re-run to finish, and "
-                             "see the errors above.")
+                             "see the errors above.", kind=FAILED)
         else:
             out.summary_warn(f"update did not complete — {tools} stopped without "
                              "finishing. If you declined its prompt, nothing was "
                              "changed; otherwise see the errors above.")
         return
     if any(r is not None and r.ok is False for r in results):
-        out.summary_fail("update did not fully complete — see the errors above.")
+        out.summary_fail("update did not fully complete — see the errors above.",
+                         kind=FAILED)
         return
     out.summary_add(f"packages updated ({what})" if what else "packages updated")
 
@@ -156,8 +158,10 @@ def _only_update(backend: "PackageBackend", ctx: "Context") -> None:
                  "Newly published updates, including security fixes, will not appear.")
     _preview_transaction(backend, ctx, stale=bool(stale))
     if stale:
+                # BLIND: the refresh is what failed, so what is pending is unknown. The list
+        # printed above is from stale data and may be missing everything that matters.
         out.summary_fail("could not refresh package metadata — the pending list above "
-                         "is from stale data and may be incomplete.")
+                         "is from stale data and may be incomplete.", kind=BLIND)
 
 
 # Order within a group: upgrades, then new dependencies, then removals.
@@ -186,7 +190,10 @@ def _preview_transaction(backend: "PackageBackend", ctx: "Context", *,
     if not tx.ok:
         detail = f" ({'; '.join(tx.notes)})" if tx.notes else " (query tool unavailable)"
         out.warn(f"could not determine the package transaction{detail}")
-        out.summary_fail("could not determine what is pending — see the warning above.")
+        # BLIND, not FAILED: nothing was attempted, so nothing broke — but the
+        # pending list is unknown, and "no updates" would be a lie.
+        out.summary_fail("could not determine what is pending — see the warning above.",
+                         kind=BLIND)
         return
     for note in tx.notes:
         out.note(note)
@@ -286,7 +293,8 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
         if crit:
             # A known-malicious package is not a to-do item. This is the one read-only
             # audit whose result should stop an automated run.
-            out.summary_fail(f"{msg}, {crit} CRITICAL — INVESTIGATE")
+                        # FOUND: pkg-audit looked and found compromised packages. The audit worked.
+            out.summary_fail(f"{msg}, {crit} CRITICAL — INVESTIGATE", kind=FOUND)
         else:
             # Findings are open items, not an accomplishment — a green tick over 46 of
             # them reads as "all good" at a glance, which is the opposite of the point.
