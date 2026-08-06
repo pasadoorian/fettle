@@ -10,6 +10,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.110.0] — the default set updates before it inspects; `--only` rejects a typo
+
+The last three cross-cutting rows, swept together.
+
+**`-a` inspected the machine before it updated it.** The default set ran `clean, orphans,
+update, …`, so `orphans` described the system you *booted* rather than the one the upgrade
+had just produced. `--everything` was given the right order two releases ago and the two
+disagreed on nine shared actions. Both now run clean → update → rebuild checks → orphans →
+config-drift, and a test asserts they agree where they overlap.
+
+**`fettle --only hardening-audi` ran nothing and exited 0.** An unknown name was silently
+ignored, so a typo in a cron line reported success for work that never happened. Bare
+action words have always been validated; these two flags now are too, accepting the same
+spellings as everywhere else.
+
+### Recorded, not changed: `--quiet` is inverted
+
+It suppresses section headers and the summary but **not** the body detail, so a quiet run
+drops the two things that organise the output and keeps the raw file lists — backwards for
+the obvious use. It is not fixed because the detail comes from **17 bare `print()` calls**
+across the backends that bypass the output layer entirely; suppressing them is a refactor,
+and this is the wrong side of a stable release for one. The help text describes the
+current behaviour accurately, so nobody is misled. Worth doing properly after 1.0.
+
+**All ten cross-cutting rows are now swept**, alongside 23 of 24 features — `web` remains
+on hold.
+
 ## [0.109.0] — root only when the work needs it
 
 The privilege-escalation row. Three fixes, one of them a regression this QA pass

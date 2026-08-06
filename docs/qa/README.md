@@ -124,14 +124,14 @@ Status of each feature's QA pass. `—` = not started.
 
 | Area | QA file | Status |
 |---|---|---|
-| Default action set (`-a` / bare `fettle`) | — | — |
+| Default action set (`-a` / bare `fettle`) | [selection-and-output.md](selection-and-output.md) | **swept — 1 fixed: it inspected before it updated** |
 | `--dry-run` semantics across all actions | [dry-run.md](dry-run.md) | **swept — 3 fixed, incl. a dry run DELETING run-logs** |
 | `--yes` semantics across all actions | [yes.md](yes.md) | **swept — 1 fixed: `--yes` auto-purged an inferred orphan list** |
-| `--only` / `--skip` selection | — | — |
+| `--only` / `--skip` selection | [selection-and-output.md](selection-and-output.md) | **swept — 1 fixed: a typo ran nothing and exited 0** |
 | Privilege escalation and the sudo re-exec | [privilege.md](privilege.md) | **swept — 3 fixed, incl. H-06 (remote elevated for everything)** |
 | Config file loading, safety gate, `--print-config` | — | — |
 | Reports and run-logs (paths, permissions, rotation) | [reports-logs.md](reports-logs.md) | **swept — 2 fixed (F-08 closed); 1 recorded, not changed** |
-| Output framing, colour, `--quiet`, `--verbose` | — | — |
+| Output framing, colour, `--quiet`, `--verbose` | [selection-and-output.md](selection-and-output.md) | **swept — sound; `--quiet` inversion recorded, needs a refactor** |
 | **Terminology consistency across the whole CLI** | [terminology.md](terminology.md) | **swept — 10 findings fixed; naming rule written down and enforced by test** |
 | **Exit codes** | [exit-codes.md](exit-codes.md) | **swept — 5 milestones, 4 findings fixed; the last instance of the entry-point defect closed and guarded** |
 

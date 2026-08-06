@@ -24,8 +24,14 @@ except ModuleNotFoundError:  # < 3.11
     except ModuleNotFoundError:
         tomllib = None  # type: ignore[assignment]
 
-DEFAULT_ACTIONS = ["clean", "orphans", "update", "rebuild_check",
-                   "python_rebuild_check", "config_drift", "auto_updates",
+# Order matters and is the same reasoning as `--everything` (see cli.EVERYTHING_ACTIONS):
+# clean first to free space before the upgrade needs it, then update, then the checks
+# that describe what the update LEFT BEHIND — the rebuild checks catch what it made
+# stale, and orphans and config-drift are both things an upgrade *creates*. This list
+# used to run `orphans` before `update`, so it reported the machine you booted rather
+# than the one you now have.
+DEFAULT_ACTIONS = ["clean", "update", "rebuild_check", "python_rebuild_check",
+                   "orphans", "config_drift", "auto_updates",
                    "firmware_check",
                    "pkg_audit"]  # security audits last (read-only)
 # `aur_ioc_scan` was retired in v0.73.0. `pkg_audit` ran every check it did — the

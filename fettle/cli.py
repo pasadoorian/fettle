@@ -413,11 +413,22 @@ def _requested_actions(args: argparse.Namespace, cfg: Config) -> list[str]:
     # De-dupe (preserve order), then apply --only / --skip.
     seen: set[str] = set()
     ordered = [a for a in chosen if not (a in seen or seen.add(a))]
+    # Validated, because an unrecognised name here used to be silently ignored: `--only
+    # hardening-audi` selected nothing, ran nothing and exited 0 — a typo in a cron line
+    # reporting success for work that never happened. Bare action words have always been
+    # checked this way; these two were not.
+    for flag, values in (("--only", args.only), ("--skip", args.skip)):
+        for word in values:
+            name = WORD_ALIASES.get(word.replace("-", "_"), word.replace("-", "_"))
+            if name not in ACTION_NAMES | PIPELINE_ONLY_ACTIONS:
+                raise SystemExit(f"fettle: {flag}: unknown action '{word}'")
     if args.only:
-        only = {o.replace("-", "_") for o in args.only}
+        only = {WORD_ALIASES.get(o.replace("-", "_"), o.replace("-", "_"))
+                for o in args.only}
         ordered = [a for a in ordered if a in only]
     if args.skip:
-        skip = {s.replace("-", "_") for s in args.skip}
+        skip = {WORD_ALIASES.get(x.replace("-", "_"), x.replace("-", "_"))
+                for x in args.skip}
         ordered = [a for a in ordered if a not in skip]
     return ordered
 
