@@ -7,7 +7,7 @@ Today the honest answer is "not without reading the source", and this is the row
 most accumulated evidence behind it — six instances found while sweeping individual
 features, plus one defect I knowingly left in place while shipping `--everything`.
 
-Status: **X1 done** (labelling, inert). X1a found and specified. X2-X5 planned.
+Status: **X1 and X1a done.** X2-X5 planned; one open question below needs deciding first.
 
 ---
 
@@ -120,6 +120,26 @@ Fix: emit two lines instead of one where both are present — the findings as `F
 unreadable checks as `BLIND` — rather than deciding the whole roll-up by majority. That
 changes visible output (an extra `✗` line in the rare mixed case), which is why it is not
 part of X1's inert labelling pass.
+
+### Open question raised by X1a: there are **two tiers** of "could not look"
+
+Doing X1a surfaced a distinction the plan did not anticipate, and it needs deciding
+before X2 rather than during it:
+
+| | example | channel today | fails today? |
+|---|---|---|---|
+| the check **tried and failed** | `UNKNOWN — chipsec failed (exit 128)` | `✗` failure, now `BLIND` | yes |
+| the check **never started** | `smartctl not installed — storage firmware was NOT checked`; same for dmidecode, inxi, fwupd, TPM DMI | `!` warning | **no** |
+
+Both are genuinely blindness. But making every missing optional tool fail the run puts
+`fettle -S` in the red on most machines — no chipsec on consumer hardware, no inxi, no
+smartmontools — which is the same cry-wolf failure this whole row exists to avoid, just
+arriving from the other side.
+
+The line is probably *expectation*: a tool the platform should have and does not is
+blindness worth failing on; an enrichment tool that was never required is a warning. That
+is a per-tool judgement, so it wants a deliberate pass rather than a blanket rule, and it
+is Paul's call where the line sits. **Recorded, not decided.**
 
 ### X2 — key the exit codes on the classification
 Single actions strict, `--everything` on `failed | blind`. Delete the

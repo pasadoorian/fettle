@@ -28,7 +28,7 @@ Which is why the three outcomes are kept apart, rather than summed into "issues"
 """
 
 from __future__ import annotations
-from .output import FOUND
+from .output import BLIND, FOUND
 
 from typing import TYPE_CHECKING
 
@@ -49,8 +49,20 @@ def run(backend: "PackageBackend", ctx: "Context") -> None:
         out.summary_warn("pkg-integrity did NOT run — unsupported backend")
         return
 
-    errors = [r for r in scan.records if r["level"] == "error"]
+    # Split, because these are not the same news. A digest that changed is a FINDING —
+    # the check worked and you have something to look at. A database that would not open
+    # is BLINDNESS — the check never ran, and "no altered files" from it is not an
+    # all-clear. Rolling both into one line meant a host whose rpm database could not be
+    # queried reported the same shape as one with a tampered binary, and (once the exit
+    # status starts reading these) would have passed a sweep.
+    errors = [r for r in scan.records
+              if r["level"] == "error" and not r.get("blind")]
+    unreadable = [r for r in scan.records
+                  if r["level"] == "error" and r.get("blind")]
     warns = [r for r in scan.records if r["level"] == "warn"]
+    if unreadable:
+        out.summary_fail("pkg-integrity did NOT verify: " + "; ".join(
+            f"{r['label']}: {r['value']}" for r in unreadable), kind=BLIND)
     if errors:
         out.summary_fail("pkg-integrity: " + "; ".join(
             f"{r['label']}: {r['value']}" for r in errors), kind=FOUND)

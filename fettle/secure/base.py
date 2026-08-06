@@ -89,9 +89,23 @@ class Scan:
         if not self.output.quiet:
             print(f"  {self.output.CYN}── {title} ──{self.output.NC}")
 
-    def status(self, label: str, value: str, level: str = "info") -> None:
+    def status(self, label: str, value: str, level: str = "info", *,
+               blind: bool = False) -> None:
+        """Record one line of a scan.
+
+        ``blind=True`` means **this check could not look** — the tool was missing, the
+        database would not open, the command failed. It is still an ``error``: it prints
+        the same and it is still bad news. What it is not is a *finding*, and the
+        difference decides what an exit status is allowed to conclude.
+
+        Marked at the source rather than inferred from the wording. Every one of these
+        currently says "UNKNOWN" or "NOT verified" somewhere in its text, and matching
+        on that would work right up until someone rephrased a message — which is a trap
+        this project has already walked into more than once.
+        """
         self.records.append({"category": self._cat, "sub": self._sub,
-                             "label": label, "value": value, "level": level})
+                             "label": label, "value": value, "level": level,
+                             "blind": blind})
         self.lines.append(f"[{level}] {label}: {value}")
         line = f"{label}: {value}"
         {"ok": self.output.ok, "warn": self.output.warn,

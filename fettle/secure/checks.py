@@ -26,7 +26,7 @@ def _ran(scan, label: str, rc: int, tool: str) -> bool:
     apply isn't flagged red.
     """
     if rc != 0:
-        scan.status(label, f"UNKNOWN — {tool} failed (exit {rc})", "error")
+        scan.status(label, f"UNKNOWN — {tool} failed (exit {rc})", "error", blind=True)
         return False
     return True
 

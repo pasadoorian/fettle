@@ -89,3 +89,68 @@ def test_exit_status_is_still_blind_to_kind():
         out = Output(color=False)
         out.summary_fail("x", kind=kind)
         assert out.had_failures is True
+
+
+# -- X1a: the roll-ups that mixed "found" with "could not look" -----------------
+#
+# pkg-integrity and sys-audit each built ONE summary line from every record they marked
+# as an error — and that bucket is not homogeneous. "The rpm database could not be
+# queried" and "10 files have changed contents" are opposite news reported identically,
+# and once the exit status reads these labels, calling the first one a finding would let
+# a sweep pass on a host that was never actually audited.
+
+def test_pkg_integrity_separates_could_not_look_from_found():
+    from fettle import integrity
+    from fettle.backends.base import Context
+    from fettle.config import Config
+
+    recs = [
+        {"category": "c", "sub": "s", "label": "rpm", "value": "Not installed",
+         "level": "error", "blind": True},
+        {"category": "c", "sub": "s", "label": "Package Integrity",
+         "value": "2 files changed", "level": "error", "blind": False},
+    ]
+
+    class FakeBackend:
+        name = "fake"
+
+        def verify_integrity(self, scan):
+            scan.records.extend(recs)
+
+    ctx = Context(output=Output(color=False), config=Config())
+    integrity.run(FakeBackend(), ctx)
+    out = ctx.output
+    assert out.failures_of(BLIND) == ["pkg-integrity did NOT verify: rpm: Not installed"]
+    assert out.failures_of(FOUND) == ["pkg-integrity: Package Integrity: 2 files changed"]
+
+
+def test_sys_audit_separates_could_not_look_from_found():
+    from fettle.output import Output as O
+    from fettle.secure import audit
+    from fettle.secure.base import Scan
+
+    scan = Scan(output=O(color=False))
+    scan.section("Secure Boot")
+    scan.status("Secure Boot", "UNKNOWN — mokutil failed (exit 2)", "error", blind=True)
+    scan.status("Setup Mode", "Enabled — anyone can enrol keys", "error")
+    audit._summarize(scan)
+
+    blind = scan.output.failures_of(BLIND)
+    found = scan.output.failures_of(FOUND)
+    assert blind and "could NOT run" in blind[0], blind
+    assert found and "finding(s) needing attention" in found[0], found
+
+
+def test_a_wholly_blind_scan_is_not_reported_as_nothing_flagged():
+    """The failure this guards: every check unable to run, and the summary saying
+    "nothing flagged" — a clean bill of health from an audit that never happened."""
+    from fettle.output import Output as O
+    from fettle.secure import audit
+    from fettle.secure.base import Scan
+
+    scan = Scan(output=O(color=False))
+    scan.section("Firmware")
+    scan.status("chipsec", "UNKNOWN — chipsec failed (exit 1)", "error", blind=True)
+    audit._summarize(scan)
+    assert not [ln for ln in scan.output._summary if "nothing flagged" in ln]
+    assert scan.output.failures_of(BLIND)

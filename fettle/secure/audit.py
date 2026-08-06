@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..output import Output
 from .base import Scan
-from ..output import FOUND
+from ..output import BLIND, FOUND
 
 # Ordered category -> description (mirrors the bash CHECK_CATEGORIES). `packages`
 # is added in M10 (needs the backend's verify_integrity).
@@ -77,17 +77,27 @@ def _summarize(scan: Scan) -> None:
         return head + (f" (+{len(seen) - limit} more)" if len(seen) > limit else "")
 
     out = scan.output
-    errors = [r for r in scan.records if r["level"] == "error"]
+    # A check that could not run is not a finding. Both print `✗` and both are bad
+    # news, but "mokutil failed" means you do not know your Secure Boot state, while
+    # "Secure Boot disabled" means you do. Reported separately so the exit status can
+    # tell a machine that was audited from one that only appeared to be.
+    errors = [r for r in scan.records
+              if r["level"] == "error" and not r.get("blind")]
+    unreadable = [r for r in scan.records
+                  if r["level"] == "error" and r.get("blind")]
     warns = [r for r in scan.records if r["level"] == "warn"]
     checked = len({(r["category"], r["label"]) for r in scan.records})
+    if unreadable:
+        out.summary_fail(f"sys-audit: {len(unreadable)} check(s) could NOT run — "
+                         f"{_names(unreadable)}", kind=BLIND)
     if errors:
         out.summary_fail(f"sys-audit: {len(errors)} finding(s) needing attention — "
                          f"{_names(errors)}", kind=FOUND)
     if warns:
         out.summary_warn(f"sys-audit: {len(warns)} warning(s) — {_names(warns)}")
-    if not errors and not warns:
+    if not errors and not warns and not unreadable:
         out.summary_add(f"sys-audit: {checked} check(s), nothing flagged")
-    if errors or warns:
+    if errors or warns or unreadable:
         out.next_step("full detail is in the saved report; re-run with -v for raw "
                       "tool output.")
 

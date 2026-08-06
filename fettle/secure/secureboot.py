@@ -89,7 +89,8 @@ def check(scan, *, now: datetime | None = None) -> None:
             scan.status("Secure Boot",
                         "not supported by this firmware — nothing to enable", "warn")
         elif rc != 0:
-            scan.status("Secure Boot", f"UNKNOWN — mokutil failed (exit {rc})", "error")
+            scan.status("Secure Boot", f"UNKNOWN — mokutil failed (exit {rc})",
+                        "error", blind=True)
         else:
             scan.status("Secure Boot", state or "Unknown (no state reported)", "info")
         if scan.verbose:

@@ -23,8 +23,11 @@ def test_scan_records_status_by_category():
     s.status("TPM 2.0", "Present", "ok")
 
     assert len(s.records) == 3
+    # `blind` says the check COULD NOT RUN, as opposed to having run and found
+    # something. False here: mokutil answered, and the answer was "Disabled".
     assert s.records[0] == {"category": "Secure Boot", "sub": "mokutil",
-                            "label": "Secure Boot", "value": "Disabled", "level": "warn"}
+                            "label": "Secure Boot", "value": "Disabled", "level": "warn",
+                            "blind": False}
     assert "Secure Boot: Disabled" in s.report_text()
 
 
@@ -108,3 +111,14 @@ def test_remote_sysaudit_fetches_reports_back():
     assert rc == 0 and run.called
     fetch.assert_called_once()
     assert fetch.call_args[0][0] == "server1"      # fetch-back keyed on the host
+
+
+def test_blind_status_is_marked_as_such():
+    """A check that could not run is not a finding. Both print the same and both are bad
+    news, but "mokutil failed" means you do not KNOW your Secure Boot state, while
+    "Secure Boot disabled" means you do."""
+    s = _scan()
+    s.section("Secure Boot")
+    s.status("Secure Boot", "UNKNOWN — mokutil failed (exit 2)", "error", blind=True)
+    s.status("Setup Mode", "Enabled", "error")
+    assert [r["blind"] for r in s.records] == [True, False]

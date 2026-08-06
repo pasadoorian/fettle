@@ -10,6 +10,51 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.98.0] — a check that could not run is no longer reported as a finding
+
+X1a of the exit-code sweep, and the reason X1 was done as a separate, inert step: the
+labelling exposed that two summary lines were lying about what they contained.
+
+`pkg-integrity` and `sys-audit` each built **one** summary line by rolling up every
+record they had marked as an error. That bucket is not homogeneous:
+
+    UNKNOWN — the rpm database could not be queried; packages were NOT verified
+    UNKNOWN — chipsec failed (exit 128)
+    UNKNOWN — mokutil failed (exit 2)
+    rpm: Not installed
+
+None of those are findings. They are the check saying it could not look — and rolled in
+with genuine findings, they were about to be counted as "the audit worked and found
+something", which would have let a sweep report success on a machine that was never
+actually audited.
+
+Now reported separately:
+
+    ✗ sys-audit: 2 check(s) could NOT run — ME Manufacturing Mode, BIOS Write Protection
+    ✗ sys-audit: 3 finding(s) needing attention — …
+
+Real data from the QA fleet, which is what confirmed the split matters: this workstation
+reports two chipsec checks that could not run, while another host reports three genuinely
+expired certificates. Before this they were the same sentence.
+
+**Marked at the source, not inferred from the wording.** Every one of these happens to
+say "UNKNOWN" or "NOT verified" somewhere, and matching on that would work right until
+someone rephrased a message — a trap this project has walked into more than once. Scan
+records now carry the distinction explicitly.
+
+A wholly blind scan also no longer reports "nothing flagged", which was a clean bill of
+health from an audit that never happened.
+
+### Recorded, not decided
+
+There turn out to be **two tiers** of "could not look": a check that tried and failed
+(chipsec exited 128) is a failure line, while a check that never started because its tool
+is absent (smartctl, dmidecode, inxi) is a warning and does not affect the exit status at
+all. Both are blindness. Making every missing optional tool fail the run would put
+`fettle -S` in the red on most machines, which is the same cry-wolf problem from the
+other direction — so where that line sits is a deliberate per-tool judgement, noted in
+`docs/qa/exit-codes.md` for a decision before X2.
+
 ## [0.97.0] — every `✗` now says which kind of bad news it is
 
 Groundwork for the exit-code sweep, and **deliberately inert**: nothing about what fettle

@@ -1251,14 +1251,14 @@ class RhelBackend(PackageBackend):
         """
         scan.sub("RPM Package Verification")
         if not scan.which("rpm"):
-            scan.status("rpm", "Not installed", "error")
+            scan.status("rpm", "Not installed", "error", blind=True)
             return
 
         probe, probe_rc = scan.run_text_rc(["rpm", "-q", "rpm"])
         if probe_rc != 0 or not probe.strip():
             scan.status("Package Integrity",
                         "UNKNOWN — the rpm database could not be queried; packages "
-                        "were NOT verified", "error")
+                        "were NOT verified", "error", blind=True)
             return
 
         scan.dim("Running rpm -Va (this may take a while)...")
@@ -1267,7 +1267,7 @@ class RhelBackend(PackageBackend):
         if rc > 1:
             scan.status("Package Integrity",
                         f"UNKNOWN — rpm -Va failed (exit {rc}); packages were NOT "
-                        "verified", "error")
+                        "verified", "error", blind=True)
             return
 
         altered, drifted, expected = [], [], []
