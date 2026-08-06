@@ -56,6 +56,52 @@ AUDIT_ACTIONS = [
     (("-A", "--aur-audit"), "aur_audit"),
     (("-H", "--hardening-audit"), "hardening_audit"),
 ]
+# Pipeline actions with no flag of their own: each already has a subcommand
+# (`fettle sys-audit`, `fettle advisory-check`), and they became pipeline actions so
+# `--everything` can fold their findings into the ONE summary and one exit code rather
+# than printing a second and third digest of its own. Declared here so the registry
+# guard still catches a genuinely unreachable handler.
+PIPELINE_ONLY_ACTIONS = {"sys_audit", "advisory_check"}
+
+# `--everything`: every action that is safe to run start-to-finish without supervision,
+# in an order chosen so each one sees the state the previous left behind.
+#
+#   update first        -- everything downstream should describe the system you will
+#                          actually be running, not the one you booted.
+#   rebuild-check after -- it exists to catch what the update just made stale.
+#   clean after         -- cleaning first only forces a re-download; cleaning after
+#                          reclaims exactly what the upgrade obsoleted.
+#   pkg-integrity after -- otherwise it verifies packages that are about to be replaced.
+#   advisory-check last of the "what is left" checks -- run after the update it reports
+#                          what is STILL unfixed, which is the actionable number. Before
+#                          the update it would mostly list things the update was about
+#                          to fix.
+#
+# Two actions are deliberately absent. `kernel` can remove your ability to boot and is
+# excluded from the default set for that reason; `container_update` pulls images over
+# the network. Both are one flag away, and neither belongs in something you can leave
+# running. `only_update` is redundant once `update` runs.
+#
+# Nothing here is Arch-specific by construction: unsupported actions are filtered
+# against the backend and reported, so the same list is correct on every distro.
+EVERYTHING_ACTIONS = [
+    # -- bring the system up to date, then describe what that left behind
+    "update",
+    "rebuild_check",
+    "python_rebuild_check",
+    "clean",
+    "orphans",
+    "config_drift",
+    # -- posture and supply chain
+    "auto_updates",
+    "firmware_check",
+    "pkg_audit",
+    "aur_audit",
+    "pkg_integrity",
+    "hardening_audit",
+    "sys_audit",
+    "advisory_check",
+]
 FLAG_ACTIONS = MAINTENANCE_ACTIONS + AUDIT_ACTIONS
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
 
@@ -256,6 +302,10 @@ def build_parser() -> argparse.ArgumentParser:
         audit.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"  {help_text}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
+    p.add_argument("--everything", action="store_true",
+                   help="run every action that is safe unattended, in a sensible order "
+                        "(adds the audits -a leaves out; excludes kernel and "
+                        "container-update)")
     p.add_argument("-R", "--auto-rebuild", action="store_true",
                    help="offer to rebuild (with -r / -y) instead of only listing")
     p.add_argument("--yes", action="store_true",
@@ -299,7 +349,12 @@ def _requested_actions(args: argparse.Namespace, cfg: Config) -> list[str]:
             raise SystemExit(f"fettle: unknown action '{word}'")
         chosen.append(name)
 
-    if args.all or not chosen:
+    if getattr(args, "everything", False):
+        # Explicit flags still compose: `--everything --skip hardening-audit` works,
+        # and naming actions alongside it is a no-op rather than an error.
+        chosen = list(EVERYTHING_ACTIONS) + [a for a in chosen
+                                             if a not in EVERYTHING_ACTIONS]
+    elif args.all or not chosen:
         chosen = list(cfg.default_actions)
 
     # De-dupe (preserve order), then apply --only / --skip.
@@ -412,7 +467,7 @@ examples:
 # any action flag, any dispatch shortcut, or -a/--all. Bare words also count.
 def _remote_has_action(forwarded: list[str]) -> bool:
     intent = ({opt for opts, _ in FLAG_ACTIONS for opt in opts}
-              | set(DISPATCH_SHORTCUTS) | {"-a", "--all"})
+              | set(DISPATCH_SHORTCUTS) | {"-a", "--all", "--everything"})
     return any(tok in intent or not tok.startswith("-") for tok in forwarded)
 
 
@@ -1134,6 +1189,22 @@ def _main(argv: list[str]) -> int:
                   full_preview=args.full_preview,
                   sudo_user=sudo_user, user_home=user_home)
     actions.run(runnable, backend, ctx)
+    if args.everything:
+        # `--everything` answers a different question with its status than a single
+        # action does, and deliberately: **did the run complete**, not **is the machine
+        # clean**. Fourteen actions on a real host will essentially always include a
+        # finding — advisory-check alone reported 142 fix-available on the QA
+        # workstation — and a status that is red every single time is one nobody reads.
+        # Findings are in the summary; read that.
+        #
+        # KNOWN LIMIT, stated rather than hidden: `had_failures` currently mixes three
+        # different things — a command that failed, a finding, and a check that could
+        # not look. Only the first is separable today (it is tracked per command), so a
+        # check that could not run reports itself in the summary but does not colour
+        # the exit status here. That is the wrong way round for this project's own
+        # invariant and wants the summary channels split; until then a single action
+        # (`fettle -V`) keeps the stricter rule, which is what automation should gate on.
+        return 1 if ctx.failed_commands else 0
     # Non-zero when an action reported a failure. The pipeline used to return 0
     # unconditionally, so a cron job could not tell a completed run from one whose
     # work was blocked — the run log said so, the exit status did not.

@@ -10,6 +10,66 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.95.0] — `--everything`, and two subcommands become real actions
+
+`fettle --everything` runs every action that is safe to leave running unattended, in a
+deliberate order, locally or over `fettle remote`. It adds what `-a` leaves out —
+`pkg-integrity`, `hardening-audit`, `aur-audit`, plus **`sys-audit`** and
+**`advisory-check`**, which until now were reachable only as their own subcommands.
+
+### The part that was actually work
+
+Making those two into pipeline actions, rather than shelling out to them in sequence.
+That is the difference between one summary and one exit code, and three digests in a row
+with a status that reflects only whichever ran last — and it also chips away at the
+structural defect this QA pass has now found five times: *every subcommand with its own
+entry point independently forgot to print a summary and compute a real exit code.*
+
+Both are distro-neutral by construction, so `supports()` treats them as universal rather
+than requiring every backend to remember to list them — the one that forgot would have
+silently dropped the action.
+
+Two integration defects surfaced on the first live run and are pinned as tests:
+
+- `sys-audit` sets `step_total` to its own category count and numbers each one, so
+  nesting it inside a counting pipeline produced `[3/9] … [10/9]` — a running number
+  against someone else's total, ending past it.
+- `sys-audit` also called `print_summary()` itself, so the run ended with two digests.
+  It now takes `summarize=False` when it runs as one action among many; `_summarize`
+  still runs either way, since that is what turns its records into summary entries.
+
+### Order
+
+`update` first, so everything downstream describes the system you will be running rather
+than the one you booted. `rebuild-check` after it, because it exists to catch what the
+update just made stale. `clean` after — cleaning first only forces a re-download.
+`pkg-integrity` after, or it verifies packages about to be replaced. `advisory-check`
+last, where it reports what is **still** unfixed.
+
+### What it excludes, and why
+
+`kernel` can remove your ability to boot, which is why it is not in the default set
+either; `container-update` pulls images over the network. Both are one flag away.
+`only-update` is redundant once `update` runs. And `aur-precheck` is not included because
+it is not an audit at all — it is an install-time gate that takes package names as
+arguments and is invoked per-package by the yay hook, so with no arguments there is
+nothing for it to check.
+
+### Exit status
+
+`--everything` answers **did the run complete**, not **is the machine clean** —
+deliberately different from a single action. Fourteen checks on a real host will
+essentially always find something (advisory-check alone reported 142 fix-available on the
+development machine), and a status that is red every time is one nobody reads.
+
+**Known limit, recorded rather than hidden:** `had_failures` currently conflates a failed
+command, a finding, and a check that could not look. Only the first is separable today, so
+a check that could not run reports itself in the summary but does not colour
+`--everything`'s exit status. That is the wrong way round for this project's own
+invariant and wants the summary channels split. Until then, single actions keep the
+stricter rule — `fettle -V` still exits non-zero on a content change — and that is what
+automation should gate on.
+
 ## [0.94.0] — the rest of the matrix follow-up: orphans, Arch kernels, and an honest grid
 
 Closes items C through F of the matrix follow-up plan. A, B and G shipped in 0.89–0.93.

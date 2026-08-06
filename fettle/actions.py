@@ -29,6 +29,8 @@ TITLES = {
     "hardening_audit": "Binary hardening audit",
     "pkg_integrity": "Package file integrity",
     "container_update": "Container images",
+    "sys_audit": "System & firmware security audit",
+    "advisory_check": "Security advisories (CVEs)",
 }
 
 
@@ -323,7 +325,50 @@ HANDLERS = {
     "hardening_audit": lambda b, c: _hardening_audit(b, c),
     "pkg_integrity": lambda b, c: _pkg_integrity(b, c),
     "container_update": lambda b, c: _container_update(c),
+    "sys_audit": lambda b, c: _sys_audit(c),
+    "advisory_check": lambda b, c: _advisory_check(c),
 }
+
+
+def _sys_audit(ctx: "Context") -> None:
+    """Run every sys-audit category into the SHARED output.
+
+    `fettle sys-audit` builds its own `Output` and prints its own summary, which is
+    right for a standalone run and wrong inside a pipeline — the digest would be
+    printed twice and the exit code computed from only one of them. Here the same
+    checks write into `ctx.output`, so their findings land in the one summary with
+    everything else.
+
+    `sys_audit.run()` sets `step_total` to its own category count and then numbers each
+    category, so nesting it inside a pipeline that is already counting produced
+    ``[3/9] … [10/9]`` — a running number against someone else's total, ending past it.
+    Both halves of the counter are therefore saved and restored, and zeroed for the
+    duration so the nested categories number themselves 1..n.
+    """
+    from .secure import audit as sysaudit
+    from .secure.base import Scan
+
+    out = ctx.output
+    total, cur = out.step_total, out._step_cur
+    scan = Scan(output=out, root=ctx.root,
+                verbose=bool(getattr(out, "verbose", False)), config=ctx.config)
+    try:
+        out._step_cur = 0
+        sysaudit.run(list(sysaudit.CATEGORIES), scan, summarize=False)
+        sysaudit._write_report(scan, out)
+    finally:
+        out.step_total, out._step_cur = total, cur
+
+
+def _advisory_check(ctx: "Context") -> None:
+    """CVE tracking into the shared output.
+
+    `Context` already carries everything `check.run` wants — config, user_home,
+    sudo_user, output, dry_run, root — which is why the standalone entry point builds a
+    SimpleNamespace with exactly those fields.
+    """
+    from .advisories import check
+    check.run(ctx)
 
 
 def _container_update(ctx: "Context") -> None:

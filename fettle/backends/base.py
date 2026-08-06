@@ -254,6 +254,12 @@ class PackageBackend(abc.ABC):
 
     name: str = "base"
     supported: set[str] = set()
+    # Actions every backend can run, because they do not go through a package manager
+    # at all: `sys_audit` reads firmware and hardware, and `advisory_check` carries its
+    # own per-distro providers that decline internally when they cannot answer. Keeping
+    # them out of each backend's `supported` set would mean every backend had to
+    # remember to add them, and the one that forgot would silently drop the action.
+    UNIVERSAL_ACTIONS = frozenset({"sys_audit", "advisory_check"})
 
     # Actions that need no root **on this distro**. Whether an action needs
     # privileges is genuinely per-family, and treating it as universal made fettle ask
@@ -264,7 +270,7 @@ class PackageBackend(abc.ABC):
     extra_no_root: set[str] = set()
 
     def supports(self, action: str) -> bool:
-        return action in self.supported
+        return action in self.supported or action in self.UNIVERSAL_ACTIONS
 
     def supply_chain_sources(self):
         """Package Supply Chain providers.

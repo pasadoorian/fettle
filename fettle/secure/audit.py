@@ -91,7 +91,15 @@ def _summarize(scan: Scan) -> None:
                       "tool output.")
 
 
-def run(categories: list[str], scan: Scan) -> None:
+def run(categories: list[str], scan: Scan, *, summarize: bool = True) -> None:
+    """Run the named categories into ``scan``.
+
+    ``summarize=False`` contributes the findings but does not print the digest, for
+    when this runs as one action inside a larger pipeline — the pipeline prints one
+    summary for everything, and two digests in a row is exactly the noise that folding
+    sys-audit into the pipeline was meant to remove. ``_summarize`` still runs either
+    way: it is what turns the scan's records into summary entries.
+    """
     reg = _registry()
     scan.output.step_total = len(categories)
     if not scan.is_root():
@@ -101,7 +109,8 @@ def run(categories: list[str], scan: Scan) -> None:
         scan.section(CATEGORIES.get(cat, cat))
         reg[cat](scan)
     _summarize(scan)
-    scan.output.print_summary()
+    if summarize:
+        scan.output.print_summary()
 
 
 _SYS_AUDIT_EPILOG = """\

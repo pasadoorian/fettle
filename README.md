@@ -639,6 +639,46 @@ known-compromise feed. `-I` was **retired** in v0.73.0: `-P` already runs all
 three of its checks (see [Three AUR checks](#three-aur-checks-and-which-to-reach-for)).
 Excluded from the default set — request explicitly: `-O`, `-k`, `-A`, `-H`.
 
+### `--everything` — one run, everything safe to leave running
+
+`--everything` runs every action that is safe start-to-finish without supervision, in an
+order chosen so each one describes the state the previous left behind. It works locally
+and over `fettle remote`.
+
+```bash
+fettle --everything            # or: fettle remote myhost --everything --yes
+```
+
+It adds what `-a` leaves out — `pkg-integrity`, `hardening-audit`, `aur-audit`, and the
+two that were previously only reachable as their own subcommands, **`sys-audit`** and
+**`advisory-check`**. Actions your distro does not have are filtered out and reported, so
+the same command is correct everywhere; there is no per-distro list to maintain.
+
+**The order is not alphabetical, and not the order you would type them.** `update` runs
+first so everything downstream describes the system you will actually be running.
+`rebuild-check` follows it because it exists to catch what the update just made stale.
+`clean` runs *after* the update — cleaning first only forces a re-download, while cleaning
+after reclaims exactly what the upgrade obsoleted. `pkg-integrity` runs after, or it
+verifies packages that are about to be replaced. And `advisory-check` runs last, where it
+reports what is **still** unfixed rather than listing everything the update was about to
+fix anyway.
+
+**Two actions are deliberately absent.** `kernel` can remove your ability to boot — it is
+kept out of the default set for that reason and stays out here — and `container-update`
+pulls images over the network. Both are one flag away. `--only-update` is redundant once
+`update` runs.
+
+**Its exit status answers "did the run complete", not "is the machine clean"**, and that
+is a deliberate difference from a single action. Fourteen checks on a real host will
+essentially always find *something* — advisory-check alone reported 142 fix-available on
+the machine this was developed on — and a status that is red every single time is one
+nobody reads. Findings are in the summary. If you want to gate automation on a specific
+condition, run that action on its own: `fettle -V` still exits non-zero when a packaged
+file's contents have changed.
+
+It is not quick. On a workstation with ~4,400 binaries the hardening audit alone is
+minutes, and `sys-audit` runs chipsec. The step counter tells you where it is.
+
 `auto-updates` (`-x`) is a **read-only, informational** report of whether the
 system is set up to update itself unattended — on Debian/Ubuntu whether
 `unattended-upgrades` is installed and its `apt-daily-upgrade.timer` /

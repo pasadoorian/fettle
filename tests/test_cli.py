@@ -462,3 +462,103 @@ def test_default_config_is_the_real_home_without_sudo(monkeypatch):
     monkeypatch.delenv("SUDO_USER", raising=False)
     monkeypatch.setenv("HOME", "/home/nobody")
     assert str(invoking_user_home()) == "/home/nobody"
+
+
+# -- --everything --------------------------------------------------------------
+#
+# "Everything that is safe to run start-to-finish without supervision", which is a
+# narrower claim than "every action fettle has" and is documented as such.
+
+def test_everything_adds_the_audits_the_default_set_leaves_out():
+    from fettle.config import DEFAULT_ACTIONS
+    got = _actions_for(["--everything"])
+    for extra in ("pkg_integrity", "hardening_audit", "sys_audit", "advisory_check",
+                  "aur_audit"):
+        assert extra in got, extra
+        assert extra not in DEFAULT_ACTIONS, f"{extra} is already in the default set"
+
+
+def test_everything_excludes_the_two_dangerous_actions():
+    """`kernel` can remove the ability to boot — it is kept out of the default set for
+    that reason and stays out here. `container_update` pulls images over the network.
+    Both are one flag away; neither belongs in something you leave running."""
+    got = _actions_for(["--everything"])
+    assert "kernel" not in got
+    assert "container_update" not in got
+
+
+def test_everything_excludes_only_update_as_redundant():
+    got = _actions_for(["--everything"])
+    assert "update" in got and "only_update" not in got
+
+
+def test_everything_orders_update_before_what_describes_its_result():
+    """Each of these exists to describe the system the update left behind, so running
+    them first would describe the machine you booted rather than the one you now have.
+    `clean` first would only force a re-download; after, it reclaims what the upgrade
+    obsoleted. `advisory-check` after reports what is STILL unfixed."""
+    got = _actions_for(["--everything"])
+    for later in ("rebuild_check", "clean", "pkg_integrity", "advisory_check"):
+        assert got.index("update") < got.index(later), later
+
+
+def test_everything_composes_with_skip():
+    got = _actions_for(["--everything", "--skip", "hardening-audit"])
+    assert "hardening_audit" not in got and "sys_audit" in got
+
+
+def test_everything_composes_with_only():
+    got = _actions_for(["--everything", "--only", "sys-audit"])
+    assert got == ["sys_audit"]
+
+
+def test_everything_has_no_duplicates():
+    got = _actions_for(["--everything"])
+    assert len(got) == len(set(got))
+
+
+def test_everything_is_not_the_default_set():
+    """`-a` stays the conservative set; --everything is opt-in and larger."""
+    assert set(_actions_for(["-a"])) < set(_actions_for(["--everything"]))
+
+
+def test_everything_actions_all_have_handlers():
+    """A name in the list that nothing can run would be a silent no-op mid-sweep."""
+    from fettle.actions import HANDLERS
+    from fettle.cli import EVERYTHING_ACTIONS
+    assert set(EVERYTHING_ACTIONS) <= set(HANDLERS)
+
+
+def test_remote_recognises_everything_as_an_action_choice():
+    """Without this, `fettle remote host --everything` would ALSO have the remote
+    default set prepended — the caller has plainly stated an intent."""
+    from fettle.cli import _remote_has_action
+    assert _remote_has_action(["--everything"])
+    assert _remote_has_action(["--everything", "--yes"])
+    assert not _remote_has_action(["--yes"])          # a modifier is not an intent
+
+
+def test_everything_exit_code_answers_did_it_complete_not_is_it_clean():
+    """Fourteen actions on a real host essentially always include a finding —
+    advisory-check alone reported 142 fix-available on the QA workstation — and a status
+    that is red every time is one nobody reads. A single action keeps the stricter rule,
+    which is what automation should gate on."""
+    from unittest.mock import patch
+
+    from fettle import cli
+
+    def fake_run(actions, backend, ctx):
+        ctx.output.summary_fail("advisories: 142 fix-available")   # a finding
+
+    with patch("fettle.actions.run", side_effect=fake_run):
+        assert cli.main(["--everything", "--only", "config-drift", "--dry-run"]) == 0
+
+    def fake_fail(actions, backend, ctx):
+        ctx.failed_commands.append("apt-get")                      # could not do its job
+
+    with patch("fettle.actions.run", side_effect=fake_fail):
+        assert cli.main(["--everything", "--only", "config-drift", "--dry-run"]) == 1
+
+    # A single action keeps the stricter rule.
+    with patch("fettle.actions.run", side_effect=fake_run):
+        assert cli.main(["-d", "--dry-run"]) == 1
