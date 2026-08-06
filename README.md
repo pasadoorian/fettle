@@ -677,6 +677,12 @@ normalized `Finding` format with one severity language:
   permissions (host/home filesystem, `devices=all`), http remotes.
 - **Snap**: **no longer in the Store**, sideloaded / unverified publisher,
   `classic`/`devmode` confinement.
+- **VS Code / VSCodium extensions**: **no longer listed in the gallery the editor is
+  actually wired to** (read from its `product.json`, never inferred from the profile
+  directory), registry install vs sideloaded `.vsix`.
+- **GitHub CLI extensions**: **origin repository no longer resolves** (deleted, renamed,
+  or made private — indistinguishable to an unauthenticated request), which repository
+  each came from.
 **"Withdrawn upstream" deserves its own note**, because it is the strongest signal in
 this list and the least obvious. Removal is what a registry **does to malware**: it is
 what Arch did to `firefox-patch-bin` after the 2025 RAT, and to 1,579 packages in June
@@ -695,6 +701,16 @@ same per-run snapshot that detects maintainer takeovers. The rest are listed qui
 pretend otherwise. The vanished entry is **kept for as long as the package is installed**,
 so the finding does not evaporate on the next run.
 
+**And it must be asked of the right registry.** VS Code and VSCodium can each be wired to
+either Microsoft's marketplace or Open VSX, and the profile directory does not tell you
+which — measured on a real Arch box, `Code - OSS` keeps its profile in `.vscode-oss` and is
+patched to use the *marketplace*. Inferring the registry from the directory name reported
+two extensions as withdrawn that were present in the gallery their editor actually uses;
+they had simply never been published to the other one. fettle reads `extensionsGallery.serviceUrl`
+from the editor's `product.json`, and when it cannot determine the gallery it **skips the
+check and says so**, because asking the wrong registry does not give a weaker answer — it
+gives a confident wrong one.
+
 It is asked over the network, which is the trap: a store that is merely **unreachable**
 would otherwise make every app you own look withdrawn at once. A non-zero exit is
 therefore not enough — the tool has to say, in as many words, that it looked and the
@@ -705,8 +721,10 @@ thing was not there. Anything else is reported as `UNVERIFIABLE`, once for the r
   URLs, third-party repositories.
 - **Containers** (docker/podman): images pulled by the mutable `:latest` tag, image
   **age**, registry provenance, dangling images.
-- **GNOME Shell extensions**: which extensions are **attributable** to a package vs
-  dropped in by hand, and whether they're enabled.
+- **GNOME Shell extensions**: **no longer listed on extensions.gnome.org** (asked only
+  for hand-installed ones — a packaged extension may never have been on e.g.o at all),
+  which extensions are **attributable** to a package vs dropped in by hand, and whether
+  they're enabled.
 - **VS Code / VSCodium extensions**: which came from the configured registry vs a
   sideloaded `.vsix`.
 - **GitHub CLI extensions**: which GitHub repository each `gh` extension came from.

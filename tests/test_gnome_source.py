@@ -7,7 +7,12 @@ from fettle import command
 from fettle.backends.base import Context
 from fettle.config import Config
 from fettle.output import Output
-from fettle.supplychain.base import UNOFFICIAL_SOURCE, UNVERIFIABLE, Severity
+from fettle.supplychain.base import (
+    STALE_OR_ABANDONED,
+    UNOFFICIAL_SOURCE,
+    UNVERIFIABLE,
+    Severity,
+)
 from fettle.supplychain.gnome_source import GnomeSource, parse_details
 
 _HOME = "/home/tester"
@@ -49,7 +54,8 @@ def _ctx():
                    user_home=Path(_HOME))
 
 
-def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman"):
+def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman",
+         upstream=True):
     def fake_run(cmd, *, as_user=None, capture=False):
         c = list(cmd)
         if c[:2] == ["gnome-extensions", "list"]:
@@ -61,7 +67,11 @@ def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman"):
         return command.Proc(0, "", "")
 
     tools = {"gnome-extensions"} | ({pm} if pm else set())
+    # Patched by default so the suite never touches the network — without this every
+    # test uuid 404s on e.g.o for real and reads as de-listed.
     with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.supplychain.gnome_source.still_upstream_url",
+               return_value=upstream), \
          patch("fettle.command.which", side_effect=lambda n: n in tools):
         return GnomeSource().findings(_ctx())
 
@@ -129,3 +139,28 @@ def test_no_extensions_yields_nothing():
 def test_absent_tool_is_not_present():
     with patch("fettle.command.which", side_effect=lambda n: False):
         assert GnomeSource().is_present(_ctx()) is False
+
+
+# -- is it still listed on e.g.o? ---------------------------------------------
+def test_delisted_extension_is_reported():
+    """e.g.o de-lists for malware as well as for policy, and an enabled extension runs
+    inside gnome-shell with the whole session's privileges."""
+    f = _run(owned=False, upstream=False)
+    w = [x for x in f if x.question == STALE_OR_ABANDONED]
+    assert w and "no longer listed on extensions.gnome.org" in w[0].detail
+
+
+def test_unreachable_ego_is_not_a_delisting():
+    f = _run(owned=False, upstream=None)
+    assert not [x for x in f if x.question == STALE_OR_ABANDONED]
+    assert [x for x in f if x.question == UNVERIFIABLE]
+
+
+def test_packaged_extension_is_never_asked_about():
+    """Plenty of extensions that ship in a distro package were never on e.g.o at all,
+    so asking would report them de-listed on every run."""
+    seen = []
+    with patch("fettle.supplychain.gnome_source.still_upstream_url",
+               side_effect=lambda u, **k: seen.append(u) or True):
+        _run(owned=True)
+    assert seen == []

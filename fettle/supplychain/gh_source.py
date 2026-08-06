@@ -22,7 +22,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .base import UNVERIFIED_PUBLISHER, Finding, Severity, SourceProvider
+from .base import (
+    UNVERIFIED_PUBLISHER,
+    Finding,
+    Severity,
+    SourceProvider,
+    still_upstream_url,
+    unverifiable_finding,
+    withdrawn_finding,
+)
 
 # Owners whose extensions ship from the GitHub CLI project itself. Still unsandboxed,
 # but attributable to the vendor you already trust for `gh` — not a third party.
@@ -33,6 +41,10 @@ _EXT_DIR = ".local/share/gh/extensions"
 # not a YAML parse: fettle has no YAML in the standard library and this file has a
 # fixed, flat shape.
 _MANIFEST_RE = re.compile(r"^\s*(owner|name|host)\s*:\s*(\S+)\s*$", re.M)
+# 200 present, 404 absent (measured 2026-08-06). Unauthenticated, so it is also rate
+# limited — a 403 comes back as "could not tell", never as "withdrawn".
+_GH_REPO = "https://api.github.com/repos/{owner}/{repo}"
+
 # git remotes: git@github.com:owner/repo.git | https://github.com/owner/repo(.git)
 _REMOTE_RE = re.compile(r"(?:github\.com[:/])([^/\s]+)/([^/\s]+?)(?:\.git)?\s*$", re.M)
 
@@ -93,6 +105,7 @@ class GhSource(SourceProvider):
         if not root.is_dir():
             return []
         out: list[Finding] = []
+        unknown: list[str] = []
         for ext_dir in sorted(p for p in root.iterdir() if p.is_dir()):
             owner, repo = extension_origin(ext_dir)
             if owner and owner.lower() in _FIRST_PARTY:
@@ -104,9 +117,27 @@ class GhSource(SourceProvider):
                     "repository with no review or signing, and it runs with your "
                     "authenticated gh session, so it can act as you anywhere your "
                     "token reaches"))
+                # Does the repository still exist? There is no registry to withdraw
+                # from, so for a gh extension "withdrawn" means the repo is gone,
+                # renamed, or taken private — GitHub itself also removes repositories
+                # that host malware.
+                present = still_upstream_url(_GH_REPO.format(owner=owner, repo=repo))
+                if present is False:
+                    out.append(withdrawn_finding(
+                        self.source, ext_dir.name,
+                        f"github.com/{owner}/{repo} no longer resolves — the repository "
+                        "was deleted, renamed, or made private. **These are the same "
+                        "404 to an unauthenticated request**, so this is worth checking "
+                        "rather than acting on: a rename is routine, a deletion after "
+                        "an abuse report is not. The extension is still installed and "
+                        "still runs with your gh session"))
+                elif present is None:
+                    unknown.append(ext_dir.name)
             else:
                 out.append(Finding(
                     Severity.LOW, self.source, ext_dir.name, UNVERIFIED_PUBLISHER,
                     "installed, but its origin repository could not be determined "
                     "from the extension directory — provenance unknown"))
+        if unknown:
+            out.append(unverifiable_finding(self.source, unknown, "the GitHub API"))
         return out

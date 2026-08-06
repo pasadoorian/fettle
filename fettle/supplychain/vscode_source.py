@@ -30,7 +30,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .base import UNOFFICIAL_SOURCE, UNVERIFIABLE, Finding, Severity, SourceProvider
+from .base import (
+    UNOFFICIAL_SOURCE,
+    UNVERIFIABLE,
+    Finding,
+    Severity,
+    SourceProvider,
+    still_upstream_url,
+    unverifiable_finding,
+    withdrawn_finding,
+)
 
 # (profile dir under $HOME, human label). VS Code and VSCodium keep separate trees.
 _PROFILES = (
@@ -42,6 +51,87 @@ _PROFILES = (
 # metadata.source values seen in the index. "gallery" = the configured registry
 # (Open VSX for VSCodium, the MS marketplace for VS Code); "vsix" = a local file.
 _SIDELOADED = "vsix"
+_GALLERY = "gallery"
+
+# Where a "gallery" install actually came from. VSCodium is wired to Open VSX and VS
+# Code to Microsoft's marketplace; asking the wrong one would report every extension in
+# the other ecosystem as withdrawn.
+_OPEN_VSX = "https://open-vsx.org/api/{publisher}/{name}"
+_MARKETPLACE = "https://marketplace.visualstudio.com/items?itemName={ext_id}"
+
+# The marketplace has no usable JSON endpoint for a single extension — its documented
+# gallery path answers 404 for present and absent alike (measured), so the signal is the
+# store page's own status. That is a rendered web page, not an API contract, and if it
+# ever starts serving 200 with a "not found" body the check would go quietly blind:
+# every extension would look present and the audit would report clean having detected
+# nothing. So each run first asks about an id that cannot exist. If THAT looks present,
+# the discriminator is broken and the answers are thrown away as unknown rather than
+# trusted. Same canary reasoning as tests/test_stale_flags.py: "found nothing" and
+# "could not look" are the same shape unless you prove you can still see.
+_CANARY_ID = "fettle-canary-no-such-publisher.fettle-canary-no-such-extension"
+
+
+# Where to find the editor's OWN answer to "which gallery am I wired to". The profile
+# directory name does NOT decide this, and assuming it does is a false-positive machine:
+# measured on a real Arch box, `.vscode-oss` (Code - OSS) is patched to use Microsoft's
+# marketplace, so asking Open VSX about its extensions reported `ms-vscode.cpptools` and
+# `platformio.platformio-ide` as withdrawn when both are present in the gallery the
+# editor actually uses — they were simply never published to Open VSX. VSCodium also
+# documents a user-level override for exactly this purpose, so the user's copy is
+# checked before the system one.
+_USER_PRODUCT_JSON = (
+    ".config/VSCodium/product.json",
+    ".config/Code - OSS/product.json",
+    ".config/Code/product.json",
+)
+_SYSTEM_PRODUCT_JSON = (
+    "/usr/lib/code/product.json",
+    "/usr/lib/codium/product.json",
+    "/usr/share/code/resources/app/product.json",
+    "/usr/share/codium/resources/app/product.json",
+    "/opt/visual-studio-code/resources/app/product.json",
+    "/opt/vscodium-bin/resources/app/product.json",
+)
+
+OPEN_VSX, MARKETPLACE = "openvsx", "marketplace"
+
+
+def _service_url(text: str) -> str:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return ""
+    gallery = data.get("extensionsGallery")
+    return str(gallery.get("serviceUrl") or "") if isinstance(gallery, dict) else ""
+
+
+def gallery_kind(home: Path) -> str:
+    """Which registry this editor is wired to: ``OPEN_VSX``, ``MARKETPLACE``, or ``""``.
+
+    Empty means *undetermined*, and undetermined means the removal check is skipped —
+    asking the wrong registry does not produce a weaker answer, it produces a confident
+    wrong one.
+    """
+    paths = [home / rel for rel in _USER_PRODUCT_JSON]
+    paths += [Path(rel) for rel in _SYSTEM_PRODUCT_JSON]
+    for path in paths:
+        try:
+            url = _service_url(path.read_text(errors="replace"))
+        except OSError:
+            continue
+        if "open-vsx" in url:
+            return OPEN_VSX
+        if "marketplace.visualstudio.com" in url:
+            return MARKETPLACE
+    return ""
+
+
+def _registry_url(kind: str, ext_id: str) -> str:
+    """The registry URL for `ext_id` in a gallery of `kind`."""
+    if kind == OPEN_VSX:
+        publisher, _, name = ext_id.partition(".")
+        return _OPEN_VSX.format(publisher=publisher, name=name)
+    return _MARKETPLACE.format(ext_id=ext_id)
 
 
 def _index_paths(home: Path):
@@ -90,7 +180,7 @@ class VSCodeSource(SourceProvider):
     source = "vscode"
     coverage = ("VS Code / VSCodium extension provenance from the editor's own index: "
                 "which extensions came from the configured registry vs a sideloaded "
-                ".vsix. VSCodium's registry is Open VSX, whose namespace vetting is "
+                ".vsix, and whether a registry install is still listed at all. VSCodium's registry is Open VSX, whose namespace vetting is "
                 "lighter than Microsoft's marketplace. Does NOT verify that a "
                 "publisher is who they claim, and does NOT scan extension code.")
 
@@ -102,6 +192,7 @@ class VSCodeSource(SourceProvider):
 
     def findings(self, ctx) -> list[Finding]:
         out: list[Finding] = []
+        unknown: list[str] = []
         for path, label in _index_paths(self._home(ctx)):
             try:
                 text = path.read_text(errors="replace")
@@ -121,6 +212,29 @@ class VSCodeSource(SourceProvider):
                     "extensions were NOT audited"))
                 continue
 
+            # Which gallery is this editor actually wired to? Read, never inferred.
+            kind = gallery_kind(self._home(ctx))
+            has_gallery_installs = any(e["source"] == _GALLERY for e in exts)
+            trustworthy = bool(kind)
+            if not kind and has_gallery_installs:
+                out.append(Finding(
+                    Severity.INFO, self.source, label, UNVERIFIABLE,
+                    "could not determine which extension gallery this editor uses "
+                    "(no readable product.json), so its extensions were NOT checked "
+                    "for removal — asking the wrong registry would report every one "
+                    "of them as withdrawn"))
+            elif kind == MARKETPLACE and has_gallery_installs:
+                # The marketplace signal is a rendered page rather than an API contract,
+                # so prove the discriminator still works before trusting any answer.
+                if still_upstream_url(_registry_url(kind, _CANARY_ID)) is not False:
+                    trustworthy = False
+                    out.append(Finding(
+                        Severity.MEDIUM, self.source, label, UNVERIFIABLE,
+                        "the marketplace no longer answers 404 for an extension that "
+                        "cannot exist, so a withdrawn extension is indistinguishable "
+                        f"from a present one — {label} extensions were NOT checked for "
+                        "removal"))
+
             for ext in exts:
                 name = f"{label}:{ext['id']}"
                 if ext["source"] == _SIDELOADED:
@@ -134,9 +248,29 @@ class VSCodeSource(SourceProvider):
                         "Re-install it from the registry to clear this "
                         f"({'codium' if label.startswith('vscodium') else 'code'} "
                         "--update-extensions, or install it from the Extensions view)"))
-                elif not ext["source"]:
+                elif ext["source"] == _GALLERY and trustworthy:
+                    # Still offered by the registry it came from? Withdrawal is what a
+                    # marketplace DOES to a malicious extension, and an extension runs
+                    # unsandboxed with your full privileges, so this is the highest-value
+                    # question in this provider.
+                    present = still_upstream_url(_registry_url(kind, ext["id"]))
+                    if present is False:
+                        registry = ("Open VSX" if kind == OPEN_VSX
+                                    else "the VS Code marketplace")
+                        out.append(withdrawn_finding(
+                            self.source, name,
+                            f"no longer listed on {registry} — withdrawn, renamed, or "
+                            "unpublished by its author. An extension pulled for malware "
+                            "looks exactly like this, and it is still installed and "
+                            "still running with your full user privileges"))
+                    elif present is None:
+                        unknown.append(name)
+                if not ext["source"]:
                     out.append(Finding(
                         Severity.LOW, self.source, name, UNOFFICIAL_SOURCE,
                         "the editor's index records no install source for this "
                         "extension, so where it came from cannot be established"))
+        if unknown:
+            out.append(unverifiable_finding(self.source, unknown,
+                                            "the extension registry"))
         return out

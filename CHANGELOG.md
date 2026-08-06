@@ -10,6 +10,55 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.93.0] — the last three install channels notice when something is pulled
+
+`withdrawn upstream` now covers **all eight** of fettle's install channels. VS Code /
+VSCodium extensions, GNOME Shell extensions and GitHub CLI extensions were the three that
+had never been asked.
+
+They matter for the same reason the others do — removal is what a registry *does* to
+malware — and arguably more, because of where the code runs. A VS Code extension is
+unsandboxed Node with your full user privileges. A GNOME extension runs **inside the
+gnome-shell process**, so an enabled one sees the whole session. A `gh` extension runs
+with your authenticated CLI session and can act as you anywhere your token reaches.
+
+| channel | asked | absent looks like |
+|---|---|---|
+| VS Code / VSCodium | the gallery the editor is **actually wired to** | 404 from Open VSX or the marketplace item page |
+| GNOME Shell | extensions.gnome.org, **hand-installed only** | 404 from its extension-info endpoint |
+| GitHub CLI | the GitHub API | 404 for the origin repository |
+
+**The bug this shipped with, caught on a real machine before release.** The first
+implementation inferred the registry from the profile directory — `.vscode-oss` meaning
+VSCodium meaning Open VSX. That is wrong: measured on an Arch box, `Code - OSS` keeps its
+profile in `.vscode-oss` and is patched to use *Microsoft's marketplace*. Asking Open VSX
+about its extensions reported `ms-vscode.cpptools` and `platformio.platformio-ide` as
+withdrawn when both are present in the gallery their editor actually uses — they had
+simply never been published to the other one.
+
+fettle now reads `extensionsGallery.serviceUrl` from the editor's `product.json` (user
+override first, then the system install), and when it cannot determine the gallery it
+**skips the check and says so**. Asking the wrong registry does not produce a weaker
+answer; it produces a confident wrong one.
+
+Three more things the shape of this demanded:
+
+- **A canary for the marketplace.** Its "absent" signal is the store page's own 404, not
+  an API contract — the *documented* gallery endpoint answers 404 for present and absent
+  alike, so building on that would have called every extension withdrawn. Because a page
+  could start serving 200 with a "not found" body and the check would go quietly blind,
+  each run first asks about an id that cannot exist; if that looks present, the answers
+  are discarded as unknown rather than trusted.
+- **Only ask where the question makes sense.** Packaged GNOME extensions are skipped —
+  plenty ship in a distro package and were never on e.g.o. Sideloaded `.vsix` installs are
+  skipped. A `gh` extension with no determinable origin is skipped.
+- **`gh` is honest about its limit.** Deleted, renamed and made-private are the same 404
+  to an unauthenticated request, and a rename is routine — so the finding says to check
+  rather than to act.
+
+The HTTP three-state helper is shared with the CLI-based one from v0.91.0: only a definite
+404 reads as withdrawn, and a rate limit, timeout or captive portal reads as *not checked*.
+
 ## [0.92.0] — "not in the AUR" becomes "vanished since the last run"
 
 The previous release stopped a green tick appearing over removed packages. This one makes

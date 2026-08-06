@@ -3,7 +3,14 @@
 from fettle.backends.base import Context
 from fettle.config import Config
 from fettle.output import Output
-from fettle.supplychain.base import UNVERIFIED_PUBLISHER, Severity
+from unittest.mock import patch
+
+from fettle.supplychain.base import (
+    STALE_OR_ABANDONED,
+    UNVERIFIABLE,
+    UNVERIFIED_PUBLISHER,
+    Severity,
+)
 from fettle.supplychain.gh_source import GhSource, extension_origin
 
 _EXT = ".local/share/gh/extensions"
@@ -32,8 +39,12 @@ def _git_ext(home, name, url):
     return d
 
 
-def _run(home):
-    return GhSource().findings(_ctx(home))
+def _run(home, *, upstream=True):
+    """Patched by default so the suite never touches the network — and so it never
+    burns GitHub's 60/hour unauthenticated rate limit from a test run."""
+    with patch("fettle.supplychain.gh_source.still_upstream_url",
+               return_value=upstream):
+        return GhSource().findings(_ctx(home))
 
 
 # -- origin extraction -------------------------------------------------------
@@ -99,3 +110,40 @@ def test_present_but_empty_is_clean(tmp_path):
     (tmp_path / _EXT).mkdir(parents=True)
     assert GhSource().is_present(_ctx(tmp_path)) is True
     assert _run(tmp_path) == []
+
+
+# -- does the repository still exist? ------------------------------------------
+def test_vanished_repo_is_reported(tmp_path):
+    _binary_ext(tmp_path, "gh-gone", "someone", "gh-gone")
+    f = _run(tmp_path, upstream=False)
+    w = next(x for x in f if x.question == STALE_OR_ABANDONED)
+    assert "no longer resolves" in w.detail
+
+
+def test_vanished_repo_says_private_and_deleted_are_the_same_404(tmp_path):
+    """Honesty about the limit of the signal: an unauthenticated request cannot tell a
+    deletion from a rename from a repo going private, and a rename is routine."""
+    _binary_ext(tmp_path, "gh-gone", "someone", "gh-gone")
+    w = next(x for x in _run(tmp_path, upstream=False)
+             if x.question == STALE_OR_ABANDONED)
+    assert "made private" in w.detail and "same" in w.detail
+
+
+def test_rate_limited_api_is_not_a_deletion(tmp_path):
+    """GitHub allows 60 unauthenticated requests an hour. A 403 must read as "could not
+    tell", never as "your extensions were removed"."""
+    _binary_ext(tmp_path, "gh-a", "someone", "gh-a")
+    f = _run(tmp_path, upstream=None)
+    assert not [x for x in f if x.question == STALE_OR_ABANDONED]
+    assert [x for x in f if x.question == UNVERIFIABLE]
+
+
+def test_unknown_origin_is_never_asked_about(tmp_path):
+    """No owner/repo means no URL to ask about — it must not become a false alarm."""
+    d = tmp_path / ".local/share/gh/extensions/gh-mystery"
+    d.mkdir(parents=True)
+    seen = []
+    with patch("fettle.supplychain.gh_source.still_upstream_url",
+               side_effect=lambda u, **k: seen.append(u) or True):
+        GhSource().findings(_ctx(tmp_path))
+    assert seen == []

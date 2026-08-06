@@ -21,8 +21,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from urllib.parse import quote
+
 from .. import command
-from .base import UNOFFICIAL_SOURCE, UNVERIFIABLE, Finding, Severity, SourceProvider
+from .base import (
+    UNOFFICIAL_SOURCE,
+    UNVERIFIABLE,
+    Finding,
+    Severity,
+    SourceProvider,
+    still_upstream_url,
+    unverifiable_finding,
+    withdrawn_finding,
+)
+
+# extensions.gnome.org's per-extension info endpoint: 200 present, 404 absent
+# (measured 2026-08-06).
+_EGO_INFO = "https://extensions.gnome.org/extension-info/?uuid={uuid}"
 
 _TOOL = "gnome-extensions"
 
@@ -103,6 +118,7 @@ class GnomeSource(SourceProvider):
 
         home = str(Path(getattr(ctx, "user_home", None) or Path.home()))
         out: list[Finding] = []
+        unknown: list[str] = []
         for uuid in uuids:
             info = details.get(uuid, {})
             path = info.get("Path", "")
@@ -120,7 +136,24 @@ class GnomeSource(SourceProvider):
                     continue                       # cannot tell — do not claim
                 attributed = owned
             if attributed:
+                # A packaged extension is the distro's to track, and plenty that ship in
+                # a package were never on e.g.o at all — asking about those would report
+                # them withdrawn on every run.
                 continue
+
+            # Hand-installed: e.g.o is where it came from, so e.g.o can be asked whether
+            # it is still there. Extensions run INSIDE gnome-shell, so a de-listed one is
+            # worth knowing about — e.g.o removes for malware as well as for policy.
+            present = still_upstream_url(_EGO_INFO.format(uuid=quote(uuid, safe="")))
+            if present is False:
+                out.append(withdrawn_finding(
+                    self.source, uuid,
+                    "no longer listed on extensions.gnome.org — de-listed, renamed, or "
+                    "withdrawn by its author. It is still installed, and an enabled "
+                    "extension runs inside the gnome-shell process with your full "
+                    "session privileges"))
+            elif present is None:
+                unknown.append(uuid)
 
             where = "in your home directory" if path.startswith(home) else \
                     "in a system directory but owned by no package"
@@ -130,4 +163,7 @@ class GnomeSource(SourceProvider):
                 ("ENABLED and unattributed" if enabled else "installed but disabled")
                 + f" — {where}; extension code runs inside the gnome-shell process "
                 "itself, with full access to your session"))
+        if unknown:
+            out.append(unverifiable_finding(self.source, unknown,
+                                            "extensions.gnome.org"))
         return out

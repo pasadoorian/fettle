@@ -92,6 +92,55 @@ def still_upstream(argv, absent_marker: str):
     return False if absent_marker.lower() in text else None
 
 
+_UA = "fettle (package supply-chain audit)"
+
+
+def still_upstream_url(url: str, *, timeout: float = 10.0):
+    """HTTP sibling of :func:`still_upstream`, with the same three states.
+
+    The extension registries answer over HTTP rather than through a CLI, but the
+    contract that matters is identical: **only a definite "I looked and it is not
+    there" may read as withdrawn.** A 404 is that. Everything else — a timeout, DNS
+    failure, 5xx, a captive portal, a proxy, GitHub's rate limit — is None, because a
+    registry that cannot be reached would otherwise report every extension you own as
+    pulled at once.
+
+    Measured 2026-08-06 against all four registries fettle talks to (Open VSX, the VS
+    Code Marketplace, extensions.gnome.org, the GitHub API): each answers 200 when the
+    item exists and 404 when it does not. Worth having measured — the *documented*
+    Marketplace gallery endpoint returns 404 for present and absent alike, so building
+    on it would have reported every VS Code extension as withdrawn.
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (https, fixed hosts)
+            return True if 200 <= getattr(resp, "status", 200) < 300 else None
+    except urllib.error.HTTPError as exc:
+        return False if exc.code == 404 else None
+    except Exception:                      # timeout, DNS, TLS, proxy, anything
+        return None
+
+
+def withdrawn_finding(source: str, package: str, detail: str) -> "Finding":
+    """The standard shape for "you have it installed and it is gone upstream"."""
+    return Finding(Severity.MEDIUM, source, package, STALE_OR_ABANDONED, detail)
+
+
+def unverifiable_finding(source: str, names, what: str) -> "Finding":
+    """One finding for a whole run's worth of unanswerable checks, never one each.
+
+    An unreachable registry is a single fact about the run; repeating it per item would
+    bury everything else the audit found.
+    """
+    names = sorted(names)
+    return Finding(Severity.INFO, source, ", ".join(names), UNVERIFIABLE,
+                   f"could not reach {what} to check whether {len(names)} item(s) are "
+                   "still published — not checked, rather than checked and clean")
+
+
 @dataclass
 class Finding:
     severity: Severity
