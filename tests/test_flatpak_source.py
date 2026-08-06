@@ -6,7 +6,13 @@ from fettle import command
 from fettle.backends.base import Context
 from fettle.config import Config
 from fettle.output import Output
-from fettle.supplychain.base import INSECURE_TRANSPORT, OVER_PRIVILEGED, UNOFFICIAL_SOURCE
+from fettle.supplychain.base import (
+    INSECURE_TRANSPORT,
+    OVER_PRIVILEGED,
+    STALE_OR_ABANDONED,
+    UNOFFICIAL_SOURCE,
+    UNVERIFIABLE,
+)
 from fettle.supplychain.flatpak_source import FlatpakSource
 
 
@@ -80,3 +86,46 @@ def test_app_id_passed_after_end_of_options_guard():
         FlatpakSource().findings(_ctx())
     info = next(c for c in seen if c[:3] == ["flatpak", "info", "--show-permissions"])
     assert info[-2:] == ["--", "org.x.App"]
+
+
+# -- is it still offered? ------------------------------------------------------
+def _run_remote(apps, *, info_rc=0, info_err=""):
+    calls = []
+
+    def fake_run(cmd, *, as_user=None, capture=False):
+        c = list(cmd)
+        calls.append(c)
+        if c[:2] == ["flatpak", "list"]:
+            return command.Proc(0, apps, "")
+        if c[:2] == ["flatpak", "remote-info"]:
+            return command.Proc(info_rc, "", info_err)
+        return command.Proc(0, "", "")
+    with patch("fettle.command.run", side_effect=fake_run):
+        return FlatpakSource().findings(_ctx()), calls
+
+
+def test_withdrawn_app_is_reported():
+    findings, _ = _run_remote(
+        "org.gone.App\tflathub\n", info_rc=1,
+        info_err="error: Error searching remote flathub: Can't find ref org.gone.App")
+    f = next(f for f in findings if f.question == STALE_OR_ABANDONED)
+    assert f.package == "org.gone.App"
+    assert "no longer offered by remote 'flathub'" in f.detail
+
+
+def test_unreachable_remote_is_not_a_withdrawal():
+    """An unreachable remote must never read as "every app you have was pulled"."""
+    findings, _ = _run_remote("org.mozilla.firefox\tflathub\n", info_rc=1,
+                              info_err="error: Unable to connect to flathub")
+    assert not [f for f in findings if f.question == STALE_OR_ABANDONED]
+    gap = next(f for f in findings if f.question == UNVERIFIABLE)
+    assert "could not reach" in gap.detail
+
+
+def test_app_is_checked_against_its_own_remote_not_flathub():
+    """A third-party app is checked where it came from. Asking flathub about it would
+    report every non-flathub app as withdrawn, which is a different bug wearing the
+    same clothes."""
+    _, calls = _run_remote("com.vendor.Tool\tvendor-remote\n")
+    info = next(c for c in calls if c[:2] == ["flatpak", "remote-info"])
+    assert info[2] == "vendor-remote", info

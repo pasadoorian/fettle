@@ -669,12 +669,27 @@ answers a different question.**
 `pkg-audit` runs each provider whose package manager is present and reports one
 normalized `Finding` format with one severity language:
 
-- **AUR** (Arch): orphan / out-of-date / stale / known-bad via AUR RPC + IOC feed.
+- **AUR** (Arch): **withdrawn upstream**, orphan / out-of-date / stale / known-bad via
+  AUR RPC + IOC feed.
 - **APT** (Debian): third-party repos/PPAs, `[trusted=yes]`, third-party-http,
   `debsums` file integrity.
-- **Flatpak**: non-flathub origin, broad sandbox permissions (host/home
-  filesystem, `devices=all`), http remotes.
-- **Snap**: sideloaded / unverified publisher, `classic`/`devmode` confinement.
+- **Flatpak**: **no longer offered by its remote**, non-flathub origin, broad sandbox
+  permissions (host/home filesystem, `devices=all`), http remotes.
+- **Snap**: **no longer in the Store**, sideloaded / unverified publisher,
+  `classic`/`devmode` confinement.
+**"Withdrawn upstream" deserves its own note**, because it is the strongest signal in
+this list and the least obvious. Removal is what a registry **does to malware**: it is
+what Arch did to `firefox-patch-bin` after the 2025 RAT, and to 1,579 packages in June
+2026. So an app you still have installed that is no longer offered by the place it came
+from is worth a look — it may equally have been renamed or retired, which is why the
+finding says *investigate* rather than *panic*.
+
+It is asked over the network, which is the trap: a store that is merely **unreachable**
+would otherwise make every app you own look withdrawn at once. A non-zero exit is
+therefore not enough — the tool has to say, in as many words, that it looked and the
+thing was not there. Anything else is reported as `UNVERIFIABLE`, once for the run:
+*not checked*, rather than checked and clean.
+
 - **DNF/YUM repos** (RHEL family): `gpgcheck=0` (signatures not verified), plain-http
   URLs, third-party repositories.
 - **Containers** (docker/podman): images pulled by the mutable `:latest` tag, image

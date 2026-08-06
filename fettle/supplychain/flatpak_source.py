@@ -14,10 +14,13 @@ from .. import command
 from .base import (
     INSECURE_TRANSPORT,
     OVER_PRIVILEGED,
+    STALE_OR_ABANDONED,
     UNOFFICIAL_SOURCE,
+    UNVERIFIABLE,
     Finding,
     Severity,
     SourceProvider,
+    still_upstream,
 )
 
 # Filesystem grants that punch broadly through the sandbox.
@@ -43,13 +46,15 @@ def _perm_field(text: str, section: str, key: str) -> list[str]:
 class FlatpakSource(SourceProvider):
     source = "flatpak"
     coverage = ("remote origin (flathub vs other) + sandbox permissions "
-                "(filesystem/devices) + remote transport; no malware feed")
+                "(filesystem/devices) + remote transport + still-offered check "
+                "against the app's own remote; no malware feed")
 
     def is_present(self, ctx) -> bool:
         return command.which("flatpak")
 
     def findings(self, ctx) -> list[Finding]:
         out: list[Finding] = []
+        unknown: list[str] = []
         apps = command.run(["flatpak", "list", "--app", "--columns=application,origin"],
                            capture=True).stdout
         for line in apps.splitlines():
@@ -60,6 +65,19 @@ class FlatpakSource(SourceProvider):
             if origin.lower() != "flathub":
                 out.append(Finding(Severity.LOW, self.source, appid, UNOFFICIAL_SOURCE,
                                    f"installed from non-flathub remote '{origin}'"))
+            # Is it still offered by the remote it came from? Asked against that remote
+            # rather than flathub, so an app from a third-party remote is checked
+            # against its own source instead of being flagged for not being on flathub.
+            present = still_upstream(["flatpak", "remote-info", origin, appid],
+                                     "can't find ref")
+            if present is False:
+                out.append(Finding(Severity.MEDIUM, self.source, appid,
+                                   STALE_OR_ABANDONED,
+                                   f"no longer offered by remote '{origin}' — withdrawn "
+                                   "or renamed; an app pulled for malware looks exactly "
+                                   "like this"))
+            elif present is None:
+                unknown.append(appid)
             out.extend(self._permission_findings(appid))
 
         remotes = command.run(["flatpak", "remotes", "--columns=name,url"], capture=True).stdout
@@ -68,6 +86,14 @@ class FlatpakSource(SourceProvider):
             if len(cols) >= 2 and cols[1].startswith("http://"):
                 out.append(Finding(Severity.MEDIUM, self.source, cols[0], INSECURE_TRANSPORT,
                                    f"remote '{cols[0]}' over http: {cols[1]}"))
+        if unknown:
+            # One finding, not one per app: an unreachable remote is a single fact about
+            # the run, and repeating it per app would bury everything else.
+            out.append(Finding(Severity.INFO, self.source, ", ".join(sorted(unknown)),
+                               UNVERIFIABLE,
+                               f"could not reach the remote(s) to check whether "
+                               f"{len(unknown)} app(s) are still offered — not checked, "
+                               "rather than checked and clean"))
         return out
 
     def _permission_findings(self, appid: str) -> list[Finding]:

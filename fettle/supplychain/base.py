@@ -60,6 +60,38 @@ MUTABLE_REFERENCE = "MUTABLE_REFERENCE"
 UNVERIFIABLE = "UNVERIFIABLE"
 
 
+def still_upstream(argv, absent_marker: str):
+    """Does an installed item still exist in the index it came from?
+
+    Returns **True** (still there), **False** (definitively gone), or **None** (could
+    not tell) — and the third state is the entire reason this is a shared helper rather
+    than two copies.
+
+    *Withdrawn upstream* is one of the strongest supply-chain signals available, because
+    removal is what a registry **does to malware**: Arch deleted `firefox-patch-bin` and
+    friends after the 2025 RAT, and 1,579 packages in June 2026. fettle already asks the
+    AUR this question; the store-backed ecosystems were not asked at all.
+
+    The trap is that the question is answered over the network. A store that is merely
+    unreachable makes **every** installed app look withdrawn at once — "could not look"
+    rendering as "found a problem", which cries wolf exactly as badly as the reverse and
+    is the failure this whole model exists to prevent. So a non-zero exit is not enough:
+    the tool has to say, in as many words, that it looked and the thing was not there.
+    Anything else is None and gets reported as a gap in coverage.
+
+    Matching on the tool's own wording is fragile — it is English in someone else's
+    output — but it is the only signal either tool offers, and the failure mode of a
+    changed message is a finding downgraded to "could not tell", never a false alarm.
+    """
+    from .. import command
+
+    proc = command.run(list(argv), capture=True)
+    if proc.returncode == 0:
+        return True
+    text = ((proc.stdout or "") + (proc.stderr or "")).lower()
+    return False if absent_marker.lower() in text else None
+
+
 @dataclass
 class Finding:
     severity: Severity

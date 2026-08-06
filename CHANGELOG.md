@@ -10,6 +10,31 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.91.0] — Flatpak and Snap now notice when an app is pulled upstream
+
+fettle asked the AUR whether your installed packages still exist there, and asked no
+other ecosystem at all. So a Flatpak or Snap that had been **withdrawn from its store**
+was invisible — which matters, because removal is what a registry *does to malware*.
+
+Both providers now check, against the remote the app actually came from (not flathub by
+assumption, or a third-party app would report as withdrawn on every run):
+
+- Flatpak — `flatpak remote-info <origin> <appid>`
+- Snap — `snap info <name>`, skipping sideloaded snaps, which were never in the Store
+  and would otherwise be flagged forever
+
+**The failure mode this was written around:** the question is answered over the network,
+and a store that is merely unreachable would make every installed app look withdrawn at
+once — "could not look" rendering as "found a problem", which cries wolf exactly as badly
+as the reverse. A non-zero exit is not enough. The tool has to say, in as many words,
+that it looked and the thing was not there; anything else is reported as `UNVERIFIABLE`,
+**once for the run rather than once per app**.
+
+Measured against the real tools before it was written — `flatpak remote-info` exits 1
+with `Can't find ref`, `snap info` exits 1 with `no snap found for` — and verified live
+through the shared helper afterwards, including that an unreachable remote returns
+"don't know" rather than "withdrawn".
+
 ## [0.90.0] — a vanished AUR package no longer gets a green tick
 
 `fettle -A` on a real 79-package host summarised as::
