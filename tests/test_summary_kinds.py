@@ -120,8 +120,10 @@ def test_pkg_integrity_separates_could_not_look_from_found():
     ctx = Context(output=Output(color=False), config=Config())
     integrity.run(FakeBackend(), ctx)
     out = ctx.output
-    assert out.failures_of(BLIND) == ["pkg-integrity did NOT verify: rpm: Not installed"]
-    assert out.failures_of(FOUND) == ["pkg-integrity: Package Integrity: 2 files changed"]
+    # The "pkg-integrity:" prefix is added by the pipeline now, not written by hand, so
+    # a direct call to the action carries none.
+    assert out.failures_of(BLIND) == ["did NOT verify: rpm: Not installed"]
+    assert out.failures_of(FOUND) == ["Package Integrity: 2 files changed"]
 
 
 def test_sys_audit_separates_could_not_look_from_found():

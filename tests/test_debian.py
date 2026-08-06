@@ -594,7 +594,8 @@ def test_auto_updates_warns_when_security_updates_need_pro(capsys):
     ctx, _, _ = _with_pro(_pro_json(infra=5, apps=2))
     said = capsys.readouterr()
     assert "not attached" in said.err and "7 security update(s)" in said.err
-    assert any("need Ubuntu Pro" in s for s in ctx.output._summary)
+    # The test name already said "warns"; the assertion checked the green channel.
+    assert any("need Ubuntu Pro" in s for s in ctx.output._warnings)
     assert any("pro attach" in s for s in ctx.output._next_steps)
 
 

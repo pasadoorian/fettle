@@ -635,7 +635,8 @@ def test_exit_1_means_reboot_required(capsys):
     said = capsys.readouterr()
     assert "reboot is required" in said.err
     assert "glibc" in said.out                       # names what changed
-    assert any("reboot required" in s for s in ctx.output._summary)
+    # A reboot needs YOU to do something, so it is not a green tick.
+    assert any("reboot required" in s for s in ctx.output._warnings)
 
 
 def test_exit_0_is_the_only_way_to_report_no_reboot(capsys):
@@ -667,7 +668,7 @@ def test_services_are_listed_and_summarised(capsys):
     ctx, _ = _rebuilds(services=(1, "sshd.service\nchronyd.service\n", ""))
     said = capsys.readouterr()
     assert "sshd.service" in said.out
-    assert any("2 service(s) need restarting" in s for s in ctx.output._summary)
+    assert any("2 service(s) need restarting" in s for s in ctx.output._warnings)
     assert any("systemctl restart" in s for s in ctx.output._next_steps)
 
 

@@ -88,15 +88,15 @@ def _summarize(scan: Scan) -> None:
     warns = [r for r in scan.records if r["level"] == "warn"]
     checked = len({(r["category"], r["label"]) for r in scan.records})
     if unreadable:
-        out.summary_fail(f"sys-audit: {len(unreadable)} check(s) could NOT run — "
+        out.summary_fail(f"{len(unreadable)} check(s) could NOT run — "
                          f"{_names(unreadable)}", kind=BLIND)
     if errors:
-        out.summary_fail(f"sys-audit: {len(errors)} finding(s) needing attention — "
+        out.summary_fail(f"{len(errors)} finding(s) needing attention — "
                          f"{_names(errors)}", kind=FOUND)
     if warns:
-        out.summary_warn(f"sys-audit: {len(warns)} warning(s) — {_names(warns)}")
+        out.summary_warn(f"{len(warns)} warning(s) — {_names(warns)}")
     if not errors and not warns and not unreadable:
-        out.summary_add(f"sys-audit: {checked} check(s), nothing flagged")
+        out.summary_add(f"{checked} check(s), nothing flagged")
     if errors or warns or unreadable:
         out.next_step("full detail is in the saved report; re-run with -v for raw "
                       "tool output.")

@@ -122,7 +122,7 @@ def run(ctx) -> None:
     runtimes = [r for r in RUNTIMES if command.which(r)]
     if not runtimes:
         out.note("no container runtime (docker/podman) found; nothing to update.")
-        out.summary_add("containers: no runtime installed — nothing to update")
+        out.summary_add("no runtime installed — nothing to update")
         return
 
     cfg = _cfg(ctx)
@@ -198,7 +198,7 @@ def run(ctx) -> None:
 
     if ctx.dry_run:
         out.note(f"dry-run: {considered} image(s) considered, nothing pulled.")
-        out.summary_add(f"containers: {considered} image(s) considered (dry-run, "
+        out.summary_add(f"{considered} image(s) considered (dry-run, "
                         "nothing pulled)")
         return
 

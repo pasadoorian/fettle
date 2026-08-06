@@ -46,7 +46,7 @@ def run(backend: "PackageBackend", ctx: "Context") -> None:
     except NotImplementedError:
         out.warn(f"package integrity is not implemented for the {backend.name} "
                  "backend — nothing was verified.")
-        out.summary_warn("pkg-integrity did NOT run — unsupported backend")
+        out.summary_warn("did NOT run — unsupported backend")
         return
 
     # Split, because these are not the same news. A digest that changed is a FINDING —
@@ -61,18 +61,18 @@ def run(backend: "PackageBackend", ctx: "Context") -> None:
                   if r["level"] == "error" and r.get("blind")]
     warns = [r for r in scan.records if r["level"] == "warn"]
     if unreadable:
-        out.summary_fail("pkg-integrity did NOT verify: " + "; ".join(
+        out.summary_fail("did NOT verify: " + "; ".join(
             f"{r['label']}: {r['value']}" for r in unreadable), kind=BLIND)
     if errors:
-        out.summary_fail("pkg-integrity: " + "; ".join(
+        out.summary_fail("" + "; ".join(
             f"{r['label']}: {r['value']}" for r in errors), kind=FOUND)
         out.next_step("check each file against what installed it before assuming "
                       "tampering — an upgrade interrupted mid-write looks the same.")
     if warns:
-        out.summary_warn("pkg-integrity: " + "; ".join(
+        out.summary_warn("" + "; ".join(
             f"{r['label']}: {r['value']}" for r in warns))
     if not errors and not warns:
-        out.summary_add("pkg-integrity: installed files match their packages")
+        out.summary_add("installed files match their packages")
 
     _write_report(scan, ctx)
 

@@ -46,7 +46,11 @@ MAINTENANCE_ACTIONS = [
     (("-y", "--python-rebuild-check"), "python_rebuild_check"),
     (("-d", "--config-drift"), "config_drift"),
     (("-x", "--auto-updates"), "auto_updates"),
-    (("-f", "--firmware"), "firmware_check"),
+    # `--firmware-check` is the canonical spelling: it is what the action is called
+    # everywhere else, including the prefix the summary now puts on its lines.
+    # `--firmware` stays as an alias — it is what has been documented and typed
+    # since the beginning, and breaking it buys nothing.
+    (("-f", "--firmware-check", "--firmware"), "firmware_check"),
     (("-k", "--kernel"), "kernel"),
     (("-C", "--container-update"), "container_update"),
 ]

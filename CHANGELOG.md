@@ -10,6 +10,70 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.103.0] — every summary line says which check produced it
+
+The terminology row, and the stated top priority of this QA pass.
+
+### The problem, from a real run
+
+```
+✓ packages updated (apt)
+✓ reboot required (kernel)
+✓ caches cleaned — 68.8 MiB reclaimed
+✓ auto-updates: ON (unattended-upgrades)
+! 3 High, 32 Medium, 13 Low (218 deviations across 48 packages, worst first)
+! advisories: 361 pending, 0 fix-available
+```
+
+Nothing says which check produced most of those. *"218 deviations across 48 packages"* —
+deviations of **what**? With `--everything` running fourteen actions, that is unreadable.
+
+### Every line is now attributed, automatically
+
+The pipeline knows which action is running, so it tags every summary line itself rather
+than relying on ~40 call sites to remember — which is exactly why four of them did and the
+rest did not. The prefix is **the command name**, so the summary tells you what to type to
+look into whatever it just mentioned:
+
+```
+✓ auto-updates: ON (unattended-upgrades)
+! pkg-integrity: debsums: Not installed (apt install debsums)
+! hardening-audit: 3 High, 32 Medium, 13 Low (218 deviations across 48 packages)
+```
+
+The hand-written prefixes are gone, and with them a quiet inconsistency: `advisory-check`
+had been announcing itself as `advisories:` and `container-update` as `containers:` —
+neither of which is a command you can run. A test now rejects any new line that writes its
+own prefix.
+
+### A green tick means "nothing needed from you"
+
+`✓ reboot required`, `✓ 3 service(s) need restarting`, `✓ 12 config file(s) to review`,
+`✓ dpkg --audit found package problems` — all green ticks on things that need you to act.
+They now carry the warning mark, so an all-green run genuinely means an idle machine.
+
+One of the tests pinning the old behaviour was already named
+`test_auto_updates_warns_when_security_updates_need_pro` while asserting the green channel.
+The name knew before the code did.
+
+### The naming rule, written down and enforced
+
+- `<thing>-audit` judges what you **already have** — pkg-audit, aur-audit, sys-audit,
+  hardening-audit
+- `<thing>-check` asks whether something is **pending or needed** — rebuild-check,
+  advisory-check, firmware-check
+- a bare noun names the thing it manages — clean, orphans, update, kernel, config-drift,
+  pkg-integrity
+
+Derived from the names that already existed and it fits all of them, so it exists to stop
+the *next* action being guessed at. Command names are unchanged; a test enforces that
+nothing ends in `-audit` or `-check` unclassified, and that no third verb (`scan`,
+`verify`, `inspect`) creeps in.
+
+The one exception found: the action is `firmware_check` everywhere, including the prefix
+its lines now carry, but the flag was `--firmware`. `--firmware-check` is now canonical,
+with `--firmware` kept working.
+
 ## [0.102.0] — exit codes are documented, and the row is closed
 
 X5, the last milestone of the exit-code sweep — and the **first cross-cutting row in the

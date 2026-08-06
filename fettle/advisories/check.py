@@ -319,7 +319,7 @@ def run(ctx) -> None:
         # Unpatched CVEs are open items, not an accomplishment.
         out.summary_warn(line)
     else:
-        out.summary_add("advisories: nothing known-vulnerable")
+        out.summary_add("nothing known-vulnerable")
 
 
 def update(ctx) -> None:

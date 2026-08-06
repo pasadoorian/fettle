@@ -691,7 +691,7 @@ class ArchBackend(PackageBackend):
             out.warn(f"REBOOT REQUIRED — the running kernel's modules are gone "
                      f"({detail}); it can no longer load any module it has not "
                      "already loaded.")
-            out.summary_add("reboot required (running kernel replaced)")
+            out.summary_warn("reboot required (running kernel replaced)")
             out.next_step("reboot to start running the kernel you have installed")
         if not command.which("checkrebuild"):
             # Not a silent skip: the summary would otherwise be empty, which reads
@@ -725,7 +725,7 @@ class ArchBackend(PackageBackend):
                 else:
                     out.summary_add(f"{len(pkgs)} package(s) rebuilt")
         else:
-            out.summary_add(f"{len(lines)} package(s) may need rebuilding")
+            out.summary_warn(f"{len(lines)} package(s) may need rebuilding")
             out.next_step("rebuild them: fettle -r -R")
         return Result()
 
@@ -837,7 +837,7 @@ class ArchBackend(PackageBackend):
 
         displaced_n = sum(len(found.get(s) or [])
                           for s, (d, _) in _DRIFT_KINDS.items() if d)
-        out.summary_add(f"{total} config file(s) to review"
+        out.summary_warn(f"{total} config file(s) to review"
                         + (f" — {displaced_n} where YOUR version is no longer in effect"
                            if displaced_n else ""))
         if command.which("pacdiff"):
@@ -860,12 +860,12 @@ class ArchBackend(PackageBackend):
                    if self._query(["systemctl", "is-enabled", t]).strip() == "enabled"]
         if enabled:
             out.note("automatic-update timer(s) enabled: " + ", ".join(enabled) + ".")
-            out.summary_add("auto-updates: ON (" + ", ".join(enabled) + ")")
+            out.summary_add("ON (" + ", ".join(enabled) + ")")
             self.report_timer_health(ctx, enabled)
         else:
             out.note("automatic updates: none detected "
                      "(manual updates — the Arch default).")
-            out.summary_add("auto-updates: OFF")
+            out.summary_add("OFF")
         return Result()
 
     def manage_kernels(self, ctx: Context) -> Result:
@@ -928,7 +928,7 @@ class ArchBackend(PackageBackend):
         except OSError:
             out.warn("could not read /usr/lib/modules — installed kernels were NOT "
                      "determined")
-            out.summary_warn("kernel: could not determine which kernels are installed")
+            out.summary_warn("could not determine which kernels are installed")
             return Result()
 
         rows = []
@@ -938,7 +938,7 @@ class ArchBackend(PackageBackend):
                          d.name == running))
         if not rows:
             out.note("no kernel module trees found under /usr/lib/modules.")
-            out.summary_add("kernel: no installed kernels found")
+            out.summary_add("no installed kernels found")
             return Result()
 
         out.note("installed kernels:")

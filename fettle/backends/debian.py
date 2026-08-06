@@ -634,7 +634,7 @@ class DebianBackend(PackageBackend):
                 exp = (fields.get("NEEDRESTART-KEXP") or [""])[0]
                 detail = f" (running {cur}, installed {exp})" if cur and exp else ""
                 out.warn(f"REBOOT REQUIRED — {why}{detail}.")
-                out.summary_add("reboot required (kernel)")
+                out.summary_warn("reboot required (kernel)")
                 out.next_step("reboot to start running the kernel you have installed")
 
             svc = fields.get("NEEDRESTART-SVC", [])
@@ -644,14 +644,14 @@ class DebianBackend(PackageBackend):
             out.note("services needing a restart after library upgrades:")
             for s in svc:
                 print(f"    {s}")
-            out.summary_add(f"{len(svc)} service(s) need restarting")
+            out.summary_warn(f"{len(svc)} service(s) need restarting")
             out.next_step("restart them: sudo needrestart")
             return Result()
         if command.which("checkrestart"):
             text = self._query(["checkrestart"]).strip()
             if text:
                 print(text)
-                out.summary_add("services need restarting (checkrestart)")
+                out.summary_warn("services need restarting (checkrestart)")
             else:
                 out.ok("no services need restarting.")
             return Result()
@@ -681,7 +681,7 @@ class DebianBackend(PackageBackend):
                     print(f"    {f}")
             displaced_n = sum(len(found.get(s) or [])
                               for s, (d, _) in _DRIFT_KINDS.items() if d)
-            out.summary_add(f"{total} config file(s) to review"
+            out.summary_warn(f"{total} config file(s) to review"
                             + (f" — {displaced_n} where YOUR version is no longer in "
                                "effect" if displaced_n else ""))
             out.next_step("review and merge them (see the paths above)")
@@ -691,7 +691,7 @@ class DebianBackend(PackageBackend):
             if audit:
                 out.warn("dpkg --audit reports problems:")
                 print(audit)
-                out.summary_add("dpkg --audit found package problems")
+                out.summary_warn("dpkg --audit found package problems")
         return Result()
 
     # -- automatic-update posture (Phase 13) ---------------------------------
@@ -723,7 +723,7 @@ class DebianBackend(PackageBackend):
             out.note("automatic updates: ENABLED — unattended-upgrades installs "
                      f"upgrades (Unattended-Upgrade={upgrade}, "
                      "apt-daily-upgrade.timer enabled).")
-            out.summary_add("auto-updates: ON (unattended-upgrades)")
+            out.summary_add("ON (unattended-upgrades)")
             self.report_timer_health(ctx, ["apt-daily-upgrade.timer"])
         else:
             reasons = []
@@ -734,7 +734,7 @@ class DebianBackend(PackageBackend):
             if not timer_on:
                 reasons.append(f"apt-daily-upgrade.timer {timer or 'not-enabled'}")
             out.note("automatic updates: DISABLED (" + "; ".join(reasons) + ").")
-            out.summary_add("auto-updates: OFF")
+            out.summary_add("OFF")
         if lists != "0":
             out.note(f"package lists auto-refresh is on (Update-Package-Lists={lists}).")
         self._report_pro_coverage(ctx)
@@ -771,7 +771,7 @@ class DebianBackend(PackageBackend):
         if infra or apps:
             out.warn(f"Ubuntu Pro: not attached — {infra + apps} security update(s) are "
                      f"unavailable to this host (esm-infra {infra}, esm-apps {apps}).")
-            out.summary_add(f"{infra + apps} security update(s) need Ubuntu Pro")
+            out.summary_warn(f"{infra + apps} security update(s) need Ubuntu Pro")
             out.next_step("attach a subscription: sudo pro attach")
             return
         uncovered = _n("num_universe_packages") + _n("num_multiverse_packages")

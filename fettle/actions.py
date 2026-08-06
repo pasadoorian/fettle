@@ -404,6 +404,9 @@ def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
     out.step_total = len(actions)
     for name in actions:
         out.section(TITLES.get(name, name))
+        # Tag every summary line this handler produces with the command that produced
+        # it — the name you would type to re-run just this one.
+        out.current_action = name.replace("_", "-")
         handler = HANDLERS.get(name)
         if handler is None:
             out.note(f"'{name}' not yet implemented — coming in a later milestone")
@@ -412,4 +415,6 @@ def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
             handler(backend, ctx)
         except NotImplementedError:
             out.note(f"'{name}' not yet implemented for the {backend.name} backend")
+        finally:
+            out.current_action = ""
     out.print_summary()

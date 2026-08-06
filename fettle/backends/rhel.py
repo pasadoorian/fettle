@@ -714,7 +714,7 @@ class RhelBackend(PackageBackend):
             out.warn("a reboot is required — core libraries or services were updated "
                      "since this host booted:")
             print(body)
-            out.summary_add("reboot required")
+            out.summary_warn("reboot required")
             out.next_step("reboot to finish applying those updates")
         else:
             err = _strip_dnf_notices(proc.stderr or "").splitlines()
@@ -762,7 +762,7 @@ class RhelBackend(PackageBackend):
         out.note("services started before their dependencies were updated:")
         for svc in services[:40]:
             print(f"    {svc}")
-        out.summary_add(f"{len(services)} service(s) need restarting")
+        out.summary_warn(f"{len(services)} service(s) need restarting")
         out.next_step("restart them: sudo systemctl restart " + " ".join(services[:5])
                       + (" …" if len(services) > 5 else ""))
 
@@ -821,7 +821,7 @@ class RhelBackend(PackageBackend):
         if all(s == "not-found" for s in states.values()):
             out.note("automatic updates: DISABLED (dnf-automatic is not installed — none "
                      "of its timers exist).")
-            out.summary_add("auto-updates: OFF")
+            out.summary_add("OFF")
             out.next_step("to enable: dnf install dnf-automatic, set apply_updates=yes "
                           "in /etc/dnf/automatic.conf, then enable dnf-automatic.timer")
             return Result()
@@ -838,12 +838,12 @@ class RhelBackend(PackageBackend):
             out.note(f"automatic updates: ENABLED — {', '.join(forced_on)} installs "
                      "upgrades. That unit passes --installupdates, so it applies them "
                      f"regardless of apply_updates in {conf_path or 'automatic.conf'}.")
-            out.summary_add("auto-updates: ON (dnf-automatic)")
+            out.summary_add("ON (dnf-automatic)")
             self.report_timer_health(ctx, forced_on)
         elif by_config and apply_updates:
             out.note(f"automatic updates: ENABLED — {', '.join(by_config)} with "
                      f"apply_updates=yes in {conf_path}.")
-            out.summary_add("auto-updates: ON (dnf-automatic)")
+            out.summary_add("ON (dnf-automatic)")
             self.report_timer_health(ctx, by_config)
         else:
             reasons = []
@@ -861,14 +861,14 @@ class RhelBackend(PackageBackend):
                                "passes --no-installupdates, so nothing is applied even "
                                "with apply_updates=yes")
             out.note("automatic updates: DISABLED (" + "; ".join(reasons) + ").")
-            out.summary_add("auto-updates: OFF")
+            out.summary_add("OFF")
 
         reboot = str(commands.get("reboot", "never")).strip().lower()
         if reboot != "never" and (forced_on or (by_config and apply_updates)):
             # A server rebooting itself is a bigger operational fact than the updates.
             out.warn(f"this host is configured to REBOOT ITSELF after applying updates "
                      f"(reboot = {reboot} in {conf_path}).")
-            out.summary_add("auto-updates: host reboots itself")
+            out.summary_add("host reboots itself")
 
         if self._unit_state("dnf-makecache.timer") in _UNIT_ON:
             out.note("repo metadata refreshes on a timer (dnf-makecache.timer).")
@@ -910,7 +910,7 @@ class RhelBackend(PackageBackend):
                     print(f"    {path}")
             displaced_n = sum(len(found.get(s) or [])
                               for s, (d, _) in _DRIFT_KINDS.items() if d)
-            out.summary_add(f"{total} config file(s) to review"
+            out.summary_warn(f"{total} config file(s) to review"
                             + (f" — {displaced_n} where YOUR version is no longer "
                                "in effect" if displaced_n else ""))
             if command.which("rpmconf"):
@@ -955,7 +955,7 @@ class RhelBackend(PackageBackend):
         count = f"{match.group(1)} " if match else ""
         ctx.output.warn(f"dnf check found {count}package problem(s):")
         print("\n".join(body.splitlines()[:40]))
-        ctx.output.summary_add("dnf check found package problems")
+        ctx.output.summary_warn("dnf check found package problems")
 
     # -- orphans / foreign packages ------------------------------------------
     @staticmethod

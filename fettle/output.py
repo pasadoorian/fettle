@@ -49,6 +49,13 @@ class Output:
     # long before the actions do — so by the third host you are reading a summary with
     # no idea whose it is. A single host does not need it: its banner is right there.
     host_label: str = ""
+    # The action currently running, as the command you would type to re-run just it
+    # ("hardening-audit"). Every summary line it produces is prefixed with this, so a
+    # fourteen-action sweep does not leave you reading "218 deviations across 48
+    # packages" with no way to tell which check said it. Set by the pipeline around each
+    # handler rather than by the ~40 call sites, because relying on each site to
+    # remember is exactly what produced the gaps: most simply never did.
+    current_action: str = ""
     _step_cur: int = field(default=0, init=False)
     _summary: list[str] = field(default_factory=list, init=False)
     _failures: list[str] = field(default_factory=list, init=False)
@@ -166,8 +173,14 @@ class Output:
         return proc
 
     # -- end-of-run summary --------------------------------------------------
+    def _tag(self, line: str) -> str:
+        """Prefix a summary line with the action that produced it."""
+        if not self.current_action or line.startswith(f"{self.current_action}:"):
+            return line
+        return f"{self.current_action}: {line}"
+
     def summary_add(self, line: str) -> None:
-        self._summary.append(line)
+        self._summary.append(self._tag(line))
 
     def summary_fail(self, line: str, *, kind: str = FAILED) -> None:
         """Record something that did NOT work, for the end-of-run summary.
@@ -185,7 +198,7 @@ class Output:
         every real machine and stops being read. What such a sweep must never do is
         treat **could not look** as success, and today it cannot tell the difference.
         """
-        self._failures.append((line, kind))
+        self._failures.append((self._tag(line), kind))
 
     def summary_warn(self, line: str) -> None:
         """Record something that did not happen, without calling it a failure.
@@ -197,7 +210,7 @@ class Output:
         declined. This says what is known — it did not complete — and leaves the exit
         status alone.
         """
-        self._warnings.append(line)
+        self._warnings.append(self._tag(line))
 
     @property
     def had_failures(self) -> bool:

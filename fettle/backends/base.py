@@ -340,7 +340,7 @@ class PackageBackend(abc.ABC):
                 ctx.output.warn(f"but automatic updates are NOT working: {detail}. "
                                 "This host is not being patched — check the unit's logs "
                                 f"(journalctl -u {timer.rsplit('.', 1)[0]}).")
-                ctx.output.summary_warn("auto-updates: enabled but the last run FAILED "
+                ctx.output.summary_warn("enabled but the last run FAILED "
                                         "— this host is NOT being patched")
                 return
             if state == "never":
