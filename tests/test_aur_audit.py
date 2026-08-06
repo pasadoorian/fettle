@@ -55,7 +55,7 @@ def test_not_found_and_report_written(tmp_path, capsys):
     results = [{"Name": "present", "Maintainer": "bob", "LastModified": time.time(),
                 "NumVotes": 3, "Description": "a handy tool", "URL": "https://example.org"}]
     out = _run(tmp_path, foreign=["present", "ghost"], results=results, capsys=capsys)
-    assert "NOT FOUND IN AUR" in out and "ghost" in out
+    assert "never seen there by fettle" in out and "ghost" in out
     d = tmp_path / ".fettle/reports/local"
     report = list(d.glob("aur-audit-*.txt"))[0].read_text()
     assert "AUR audit" in report and "present" in report
@@ -150,7 +150,7 @@ def test_maintainer_snapshot_unreadable_does_not_crash(tmp_path):
     snap.parent.mkdir(parents=True)
     snap.write_text('{"pkg": "bob"}')  # a real prior snapshot
     with patch("pathlib.Path.read_text", side_effect=PermissionError):
-        changes, first_run = audit._maintainer_changes(by_name, _ctx(tmp_path))
+        changes, first_run, _seen = audit._maintainer_changes(by_name, _ctx(tmp_path))
     assert changes == []  # degraded (couldn't read baseline) rather than raised
     # An unreadable baseline is not a comparison — it must not be reported as "none".
     assert first_run is True
@@ -172,9 +172,11 @@ def test_summary_carries_what_was_found(tmp_path, capsys):
         audit.run(ctx)
     ctx.output.print_summary()
     out = capsys.readouterr()
-    assert "1 no longer in the AUR" in out.out
+    assert "1 not in the AUR (never seen there)" in out.out
     assert "1 flagged out-of-date" in out.out
-    assert "vanished" in out.err          # and warned about by name
+    # Named either way. With no snapshot fettle cannot know it was ever in the AUR, so
+    # this is a note rather than a warning -- see the vanished/never-seen pair below.
+    assert "vanished" in out.out + out.err
 
 
 def test_rpc_failure_is_not_silent_in_the_summary(tmp_path, capsys):
@@ -202,7 +204,7 @@ def test_maintainer_baseline_is_not_shared_with_pkg_audit(tmp_path):
         feed.return_value.bad_npm.return_value = set()
         AURSource().findings(ctx)
     # ...and aur-audit must still see its own first run, not an already-consumed diff.
-    changes, first_run = audit._maintainer_changes(by_name, ctx)
+    changes, first_run, _seen = audit._maintainer_changes(by_name, ctx)
     assert first_run is True and changes == []
     assert (tmp_path / ".cache/fettle/aur-maintainers-pkgaudit.json").is_file()
     assert (tmp_path / ".cache/fettle/aur-maintainers-audit.json").is_file()
@@ -230,12 +232,49 @@ def test_vanished_package_does_not_get_a_green_tick(tmp_path, capsys):
     """The bug: `✓ AUR audit of 79 package(s) — 9 no longer in the AUR`, exit 0.
 
     A package that disappeared from the AUR is what a package deleted for malware looks
-    like from here, and it was being reported under a green tick.
+    like from here, and it was being reported under a green tick. The snapshot is what
+    makes it a *disappearance*: it was in the AUR when fettle last looked.
     """
     info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
-    mark, line = _summary_mark(tmp_path, capsys, ["good", "vanished"], info)
+    mark, line = _summary_mark(tmp_path, capsys, ["good", "gone"], info,
+                               snapshot={"good": "alice", "gone": "bob"})
     assert mark == "!", line
-    assert "1 no longer in the AUR" in line
+    assert "1 VANISHED from the AUR" in line
+
+
+def test_never_seen_package_does_not_raise_the_mark(tmp_path, capsys):
+    """The refinement. On a real host this stood at 9 every single run — mostly work
+    packages built in-house that were never in the AUR at all — and a warning that is
+    permanently on is one nobody reads. fettle cannot tell "installed from elsewhere"
+    from "deleted before I first looked", so it does not pretend to.
+    """
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
+    mark, line = _summary_mark(tmp_path, capsys, ["good", "inhouse"], info,
+                               snapshot={"good": "alice"})
+    assert mark == "✓", line
+    assert "1 not in the AUR (never seen there)" in line
+
+
+def test_a_disappearance_is_still_reported_on_later_runs(tmp_path, capsys):
+    """Writing only what is currently in the AUR would forget the vanished package
+    immediately, so the alarm would fire once — on a run the user may never read — and
+    then quietly downgrade to "never seen there" forever after."""
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
+    for run_no in (1, 2, 3):
+        mark, line = _summary_mark(tmp_path, capsys, ["good", "gone"], info,
+                                   snapshot={"good": "alice", "gone": "bob"}
+                                   if run_no == 1 else None)
+        assert mark == "!", f"run {run_no}: {line}"
+        assert "1 VANISHED from the AUR" in line, f"run {run_no}: {line}"
+
+
+def test_uninstalled_package_drops_out_of_the_snapshot(tmp_path, capsys):
+    """Retention is bounded by what is still installed, so the file cannot grow forever."""
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
+    _summary_mark(tmp_path, capsys, ["good"], info,
+                  snapshot={"good": "alice", "removed-long-ago": "bob"})
+    saved = json.loads((tmp_path / ".cache/fettle/aur-maintainers-audit.json").read_text())
+    assert "removed-long-ago" not in saved, saved
 
 
 def test_clean_audit_still_gets_a_green_tick(tmp_path, capsys):

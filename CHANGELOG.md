@@ -10,6 +10,39 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.92.0] — "not in the AUR" becomes "vanished since the last run"
+
+The previous release stopped a green tick appearing over removed packages. This one makes
+the finding worth acting on.
+
+"Absent from the AUR" was two very different situations under one label. On a real
+79-package host it stood at **9 every single run** — most of them work packages built
+in-house that were never in the AUR at all — and a warning that is permanently on is one
+nobody reads.
+
+The event worth alarming on is **disappearance**: it was there when fettle last looked,
+and now it is not. That is what deletion for malware looks like. fettle already keeps a
+per-package snapshot to detect maintainer takeovers, and that same file answers "was this
+ever in the AUR". Now:
+
+- **VANISHED from the AUR since the last run** — warns, and is named in the summary.
+- **Not in the AUR, and never seen there** — listed quietly, still counted in the summary
+  line and still in the JSON report. "Installed from somewhere else" and "deleted before
+  fettle first ran" are genuinely indistinguishable, so it does not pretend otherwise.
+
+The vanished entry is **retained for as long as the package is installed**. Writing only
+what is currently in the AUR would forget it immediately, so the alarm would fire once —
+on a run the user may never read — and then silently downgrade to "never seen there"
+forever after. Entries for uninstalled packages drop out, so the file cannot grow without
+bound.
+
+**The honest cost of this change:** on an existing host the first run goes quiet. The
+snapshot only ever recorded packages that *were* in the AUR at the time, so anything that
+disappeared before this release is in the never-seen bucket and cannot be recovered —
+including the `claude-desktop-bin` case that prompted the work. There is no other record
+on the system to reconstruct it from: the AUR helper's build cache was checked and holds
+one entry. The alarm is prospective by nature.
+
 ## [0.91.0] — Flatpak and Snap now notice when an app is pulled upstream
 
 fettle asked the AUR whether your installed packages still exist there, and asked no

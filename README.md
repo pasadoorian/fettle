@@ -669,8 +669,8 @@ answers a different question.**
 `pkg-audit` runs each provider whose package manager is present and reports one
 normalized `Finding` format with one severity language:
 
-- **AUR** (Arch): **withdrawn upstream**, orphan / out-of-date / stale / known-bad via
-  AUR RPC + IOC feed.
+- **AUR** (Arch): **vanished from the AUR since the last run**, orphan / out-of-date /
+  stale / known-bad via AUR RPC + IOC feed.
 - **APT** (Debian): third-party repos/PPAs, `[trusted=yes]`, third-party-http,
   `debsums` file integrity.
 - **Flatpak**: **no longer offered by its remote**, non-flathub origin, broad sandbox
@@ -683,6 +683,17 @@ what Arch did to `firefox-patch-bin` after the 2025 RAT, and to 1,579 packages i
 2026. So an app you still have installed that is no longer offered by the place it came
 from is worth a look — it may equally have been renamed or retired, which is why the
 finding says *investigate* rather than *panic*.
+
+**On the AUR this is a disappearance, not an absence.** "Not in the AUR" is two very
+different situations wearing one label, and lumping them made the finding useless — on a
+real 79-package host it stood at 9 every run, mostly in-house packages that were never in
+the AUR at all, and a warning that is permanently on is one nobody reads. So fettle
+warns only when a package **was there when it last looked and is gone now**, using the
+same per-run snapshot that detects maintainer takeovers. The rest are listed quietly as
+*not in the AUR, and never seen there* — because "installed from somewhere else" and
+"deleted before fettle first ran" are genuinely indistinguishable, and it does not
+pretend otherwise. The vanished entry is **kept for as long as the package is installed**,
+so the finding does not evaporate on the next run.
 
 It is asked over the network, which is the trap: a store that is merely **unreachable**
 would otherwise make every app you own look withdrawn at once. A non-zero exit is

@@ -86,9 +86,26 @@ def run(ctx) -> None:
     lines += [f"{name:<34} {maint[:16]:<16} {age:>7} {ood:<8} {votes:>6}  {flags}"
               for age, name, maint, ood, votes, flags in rows]
 
+    changes, first_run, seen_before = _maintainer_changes(by_name, ctx, foreign)
+
+    # "Absent from the AUR" is two very different situations wearing one label, and
+    # lumping them made the finding useless: on a real 79-package host it stood at 9
+    # every single run, most of them work packages built in-house that were never in the
+    # AUR at all. A list that is permanently 9 long is a list nobody reads.
+    #
+    # The event worth alarming on is *disappearance*: it was there when fettle last
+    # looked, and now it is not. That is what deletion for malware looks like. The rest
+    # is provenance trivia — installed from somewhere else, or gone before fettle ever
+    # saw it — and fettle cannot tell those two apart, so it does not pretend to.
     missing = [p for p in foreign if p not in by_name]
-    if missing:
-        lines += ["", f"NOT FOUND IN AUR (deleted/renamed - investigate): {' '.join(missing)}"]
+    vanished = [p for p in missing if p in seen_before]
+    unseen = [p for p in missing if p not in seen_before]
+    if vanished:
+        lines += ["", "VANISHED FROM THE AUR SINCE THE LAST RUN (investigate): "
+                  + " ".join(vanished)]
+    if unseen:
+        lines += ["", "Not in the AUR, and never seen there by fettle (installed from "
+                  "elsewhere, or removed before the first run): " + " ".join(unseen)]
 
     removal = _removal_candidates(foreign, deps, libs)
     if removal:
@@ -105,7 +122,6 @@ def run(ctx) -> None:
                   "   Verify before removing.)"]
 
     lines += ["", "=== Maintainer changes since last run ==="]
-    changes, first_run = _maintainer_changes(by_name, ctx)
     # "none (or first run)" made the run that matters most — the first — indistinguishable
     # from a run where genuinely nothing moved.
     lines += ([f"  [REVIEW BEFORE UPGRADE] {c}" for c in changes]
@@ -128,6 +144,8 @@ def run(ctx) -> None:
                               "is_library": name in libs}
                              for age, name, maint, ood, votes, flags in rows],
                 "not_found_in_aur": list(missing),
+                "vanished_from_aur": list(vanished),
+                "never_seen_in_aur": list(unseen),
                 "removal_candidates": removal,
                 "maintainer_changes": list(changes),
             }
@@ -142,8 +160,10 @@ def run(ctx) -> None:
     orphaned = sum(1 for r in rows if "ORPHAN" in r[5])
     ood = sum(1 for r in rows if r[3] == "FLAGGED")
     notes = []
-    if missing:
-        notes.append(f"{len(missing)} no longer in the AUR")
+    if vanished:
+        notes.append(f"{len(vanished)} VANISHED from the AUR since the last run")
+    if unseen:
+        notes.append(f"{len(unseen)} not in the AUR (never seen there)")
     if ood:
         notes.append(f"{ood} flagged out-of-date")
     if orphaned:
@@ -165,14 +185,18 @@ def run(ctx) -> None:
     # orphaned are standing states — on a real 79-package host, 7 are flagged out-of-date
     # more or less permanently, and warning on those every single run is how a warning
     # stops being read. They stay in the text, counted.
-    if missing or changes:
+    if vanished or changes:
         out.summary_warn(summary)
     else:
         out.summary_add(summary)
-    if missing:
-        out.warn(f"{len(missing)} installed AUR package(s) are NOT in the AUR any more "
-                 "(deleted or renamed upstream) — a package removed for malware looks "
-                 f"exactly like this: {', '.join(missing)}")
+    if vanished:
+        out.warn(f"{len(vanished)} installed package(s) VANISHED from the AUR since the "
+                 "last run — they were there when fettle last looked. A package deleted "
+                 f"for malware looks exactly like this: {', '.join(vanished)}")
+    if unseen:
+        out.note(f"{len(unseen)} installed package(s) are not in the AUR and never were "
+                 "as far as fettle has seen — most likely built in-house or installed "
+                 f"from elsewhere: {', '.join(unseen)}")
     if changes:
         out.warn(f"{len(changes)} AUR package(s) changed maintainer since the last run "
                  "— review before upgrading them.")
@@ -257,9 +281,12 @@ def _library_packages(names) -> set:
     return libs
 
 
-def _maintainer_changes(by_name, ctx) -> tuple[list[str], bool]:
-    """``(changes, first_run)`` — maintainers that moved since the snapshot, and whether
-    there was a snapshot at all.
+def _maintainer_changes(by_name, ctx, foreign=()) -> tuple[list[str], bool, set]:
+    """``(changes, first_run, seen_before)`` — maintainers that moved since the snapshot,
+    whether there was a snapshot at all, and which installed packages this file has ever
+    recorded as being in the AUR.
+
+    ``seen_before`` is what makes "it disappeared" separable from "it was never there".
 
     The re-adoption tell. ``first_run`` is returned because "nothing changed" and "there
     was nothing to compare against" were reported with one sentence, so on the run where
@@ -284,13 +311,22 @@ def _maintainer_changes(by_name, ctx) -> tuple[list[str], bool]:
     changes = [f"{n}: {previous[n]} -> {m}"
                for n, m in current.items()
                if n in previous and previous[n] != m]
+    seen_before = {n for n in (foreign or ()) if n in previous}
+    # A package that has vanished from the AUR is absent from `current`, so writing
+    # `current` alone would forget it immediately and the disappearance would be
+    # reported exactly once — on a run the user may never read — and then silently
+    # downgrade to "never seen there" forever after. Its last known entry is kept for
+    # as long as the package is still installed, so the finding persists until it is
+    # dealt with. Uninstalled packages drop out, so this cannot grow without bound.
+    retained = {n: previous[n] for n in (foreign or ())
+                if n not in current and n in previous}
     if not ctx.dry_run:
         try:
             write_to = ctx.user_home / _SNAPSHOT       # always our own file
             write_to.parent.mkdir(parents=True, exist_ok=True)
-            write_to.write_text(json.dumps(current))
+            write_to.write_text(json.dumps({**current, **retained}))
             chown_to_user(write_to.parent, ctx.sudo_user)  # don't leave root-owned
             chown_to_user(write_to, ctx.sudo_user)
         except OSError:
             pass
-    return changes, not had_snapshot
+    return changes, not had_snapshot, seen_before
