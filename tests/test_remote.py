@@ -472,7 +472,10 @@ def test_group_runs_each_host_in_order():
         rc = cli_main(["remote", "bifrost-lab", "-a"])
     assert rc == 0
     assert [h for h, _ in calls] == ["bifrost", "ec1", "ec2", "ec3"]   # order kept
-    assert all(f == ["-a"] for _, f in calls)                          # -a to each
+    # -a to each, plus the per-host label so six hosts' output stays telling apart
+    assert all(f[:1] == ["-a"] for _, f in calls)
+    assert [f[-1] for _, f in calls] == ["bifrost", "ec1", "ec2", "ec3"]
+    assert all(f[-2] == "--host-label" for _, f in calls)
 
 
 def test_group_continues_past_failure_and_summarizes(capsys):
@@ -496,7 +499,8 @@ def test_group_default_actions_yes_and_ssh_merge():
     with patch("fettle.remote.remote_groups", return_value=grp), \
          patch("fettle.remote.run", side_effect=fake):
         cli_main(["remote", "--ssh-arg", "-p2222", "g"])
-    assert seen["fwd"] == ["-a", "--yes"]                 # group actions + group.yes
+    # group actions + group.yes, then the per-host label appended last
+    assert seen["fwd"] == ["-a", "--yes", "--host-label", "h1"]
     assert seen["ssh"] == ["-p2222", "-o", "X=1"]         # CLI + group ssh_args
     assert seen["tty"] is False                           # --yes -> unattended
 

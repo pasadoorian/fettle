@@ -606,3 +606,80 @@ def test_remote_reports_a_config_it_could_not_read(capsys, tmp_path, monkeypatch
     assert "invalid TOML" in err or "could not be read" in err, err
     # and it still falls through to treating the name as a host, as before
     assert one.called
+
+
+# -- host labels in a group run -------------------------------------------------
+def test_section_and_summary_carry_the_host_label():
+    """Six hosts' output runs together in one terminal and the per-host banner scrolls
+    off long before the actions do, so by the third host you are reading a summary with
+    no idea whose it is."""
+    import io
+    from contextlib import redirect_stdout
+
+    from fettle.output import Output
+
+    out = Output(color=False, host_label="bifrost")
+    out.step_total = 2
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        out.section("Cleaning caches")
+        out.print_summary()
+    text = buf.getvalue()
+    assert "[1/2] Cleaning caches (bifrost)" in text
+    assert "Summary (bifrost)" in text
+
+
+def test_no_label_means_no_parentheses():
+    """A single host does not need it — its banner is right there."""
+    import io
+    from contextlib import redirect_stdout
+
+    from fettle.output import Output
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        Output(color=False).section("Cleaning caches")
+    assert "Cleaning caches\n" in buf.getvalue().replace("\x1b", "")
+    assert "(" not in buf.getvalue()
+
+
+def test_group_run_labels_each_host():
+    from unittest.mock import patch
+
+    from fettle import cli
+    from fettle.remote import RemoteGroup
+
+    seen = []
+
+    def fake_one(host, ssh_args, forwarded, label=""):
+        seen.append((host, label))
+        return 0
+
+    g = RemoteGroup(name="fleet", hosts=["bifrost", "wopr"], ssh_args=(),
+                    actions=("--everything",), yes=True)
+    with patch.object(cli, "_remote_one", side_effect=fake_one):
+        cli._run_group(g, [], [])
+    assert seen == [("bifrost", "bifrost"), ("wopr", "wopr")]
+
+
+def test_host_label_is_appended_after_the_action_check():
+    """`--host-label bifrost` puts a BARE WORD in the argument list, and
+    `_remote_has_action` treats any bare word as "the user named an action" — so adding
+    it before the check would silently suppress the default action set."""
+    from unittest.mock import patch
+
+    from fettle import cli
+
+    sent = {}
+
+    def fake_run(host, fwd, **kw):
+        sent["fwd"] = list(fwd)
+        return 0
+
+    with patch("fettle.remote.run", side_effect=fake_run), \
+         patch.object(cli, "_fetch_remote_reports"):
+        cli._remote_one("h", [], [], label="bifrost")
+    fwd = sent["fwd"]
+    assert fwd[-2:] == ["--host-label", "bifrost"], fwd
+    # the default set still got prepended despite the bare word
+    assert any(a.replace("_", "-") in fwd for a in cli.REMOTE_DEFAULT_ACTIONS), fwd

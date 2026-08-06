@@ -10,6 +10,29 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.96.0] — group runs label every section with the host
+
+Running a group puts six machines' output into one terminal, one after another. The
+per-host banner is printed once and then scrolls off long before the actions do, so by
+the third host you are reading a summary with no idea whose it is.
+
+Every section header and the summary now carry the host:
+
+    ▸ [1/12] Cleaning caches (bifrost)
+    ▸ [2/12] Updating packages (bifrost)
+    …
+    ▸ Summary (bifrost)
+
+Only for group runs. A single remote host does not get it — its banner is right there,
+and the parentheses would be noise.
+
+The label is carried by a `--host-label` flag that `fettle remote <group>` sets per host,
+because the headers are printed by the fettle running **on the remote**, which otherwise
+has no idea it is one of six. It is appended to the argument list **after** the
+action-detection step, deliberately: `--host-label bifrost` puts a bare word in the
+arguments, and a bare word is how fettle recognises "the user named an action", so adding
+it any earlier would have silently suppressed the default action set on every group run.
+
 ## [0.95.2] — `fettle remote` says so when it could not read your config
 
 A stray line in `config.toml` made the whole file invalid, so `[remote.groups.fleet]`

@@ -315,6 +315,10 @@ def build_parser() -> argparse.ArgumentParser:
         audit.add_argument(*opts, dest=f"do_{action}", action="store_true",
                            help=f"  {help_text}")
     p.add_argument("-a", "--all", action="store_true", help="run the default action set")
+    p.add_argument("--host-label", metavar="NAME", default="",
+                   help="label every section with NAME — set automatically by "
+                        "`fettle remote <group>` so six hosts' output stays telling "
+                        "apart; rarely useful by hand")
     p.add_argument("--everything", action="store_true",
                    help="run every action that is safe unattended, in a sensible order "
                         "(adds the audits -a leaves out; excludes kernel and "
@@ -455,6 +459,8 @@ firmware-check (never orphan/kernel removal unless you name it).
 GROUP: if the name matches a [remote.groups.<name>] in your config, fettle runs on
 each host in the group IN ORDER (confirms the list first, continues past a failing
 host, prints a pass/fail summary). A group name wins over a same-named single host.
+Every section is labelled with the host it describes -- "[1/12] Cleaning caches
+(bifrost)" -- because the per-host banner scrolls off long before the actions do.
 
 --dry-run (change nothing; no sudo) and --yes (unattended: auto-confirm +
 non-interactive) are forwarded and interpreted on the remote. NOTE: --yes also
@@ -548,7 +554,7 @@ def _run_remote_maintenance(argv: list[str]) -> int:
     return _remote_one(host, ssh_args, forwarded)
 
 
-def _remote_one(host: str, ssh_args, forwarded) -> int:
+def _remote_one(host: str, ssh_args, forwarded, label: str = "") -> int:
     """Run fettle on a single remote host: the upgrade-check collect/analyse path
     or the generic forward-and-run maintenance path (+ report fetch-back)."""
     from . import remote
@@ -569,6 +575,11 @@ def _remote_one(host: str, ssh_args, forwarded) -> int:
     # since resolving a full dnf transaction is only possible as root.
     dry_run = "--dry-run" in fwd
     unattended = "--yes" in fwd
+    # Appended AFTER the action check on purpose: `--host-label bifrost` puts a bare
+    # word in the argument list, and `_remote_has_action` treats any bare word as "the
+    # user named an action" — so adding it earlier would suppress the default set.
+    if label:
+        fwd = [*fwd, "--host-label", label]
     rc = remote.run(host, fwd, sudo=not dry_run or "--full-preview" in fwd,
                     ssh_args=ssh_args, tty=not unattended)
     if not dry_run:  # pull any reports the remote wrote back under reports/<host>/
@@ -605,7 +616,7 @@ def _run_group(group, cli_ssh_args, cli_forwarded) -> int:
     results = []
     for idx, h in enumerate(group.hosts, 1):
         print(f"\n=== [{group.name}] {h}  ({idx}/{len(group.hosts)}) ===")
-        results.append((h, _remote_one(h, ssh_args, fwd)))
+        results.append((h, _remote_one(h, ssh_args, fwd, label=h)))
 
     print(f"\n=== group '{group.name}' summary ===")
     for h, rc in results:
@@ -1142,7 +1153,8 @@ def _main(argv: list[str]) -> int:
 
     args = build_parser().parse_args(argv)
     out = Output(color=(False if args.no_color else None),
-                 quiet=args.quiet, verbose=args.verbose)
+                 quiet=args.quiet, verbose=args.verbose,
+                 host_label=getattr(args, "host_label", ""))
 
     if args.no_config:
         cfg, warnings = Config(), []

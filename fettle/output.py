@@ -31,6 +31,11 @@ class Output:
     quiet: bool = False
     verbose: bool = False
     step_total: int = 0
+    # Which machine this output is describing. Set only for a group run, where six
+    # hosts' output runs together in one terminal and the per-host banner scrolls off
+    # long before the actions do — so by the third host you are reading a summary with
+    # no idea whose it is. A single host does not need it: its banner is right there.
+    host_label: str = ""
     _step_cur: int = field(default=0, init=False)
     _summary: list[str] = field(default_factory=list, init=False)
     _failures: list[str] = field(default_factory=list, init=False)
@@ -51,11 +56,13 @@ class Output:
     def section(self, title: str) -> None:
         if self.quiet:
             return
+        where = f" ({self.host_label})" if self.host_label else ""
         if self.step_total > 0:
             self._step_cur += 1
-            print(f"\n{self.B}{self.CYN}▸ [{self._step_cur}/{self.step_total}] {title}{self.NC}")
+            print(f"\n{self.B}{self.CYN}▸ [{self._step_cur}/{self.step_total}] "
+                  f"{title}{where}{self.NC}")
         else:
-            print(f"\n{self.B}{self.CYN}▸ {title}{self.NC}")
+            print(f"\n{self.B}{self.CYN}▸ {title}{where}{self.NC}")
 
     def ok(self, msg: str) -> None:
         if not self.quiet:
@@ -176,7 +183,8 @@ class Output:
     def print_summary(self) -> None:
         if self.quiet:
             return
-        print(f"\n{self.B}{self.CYN}▸ Summary{self.NC}")
+        where = f" ({self.host_label})" if self.host_label else ""
+        print(f"\n{self.B}{self.CYN}▸ Summary{where}{self.NC}")
         if self._summary or self._failures or self._warnings:
             for line in self._summary:
                 print(f"  {self.GRN}✓{self.NC} {line}")
