@@ -7,7 +7,7 @@ Today the honest answer is "not without reading the source", and this is the row
 most accumulated evidence behind it — six instances found while sweeping individual
 features, plus one defect I knowingly left in place while shipping `--everything`.
 
-Status: **X1, X1a, X2, X3 and X4 done.** X5 (document + close) remains.
+Status: **COMPLETE** — X1, X1a, X2, X3, X4, X5.
 
 ---
 
@@ -195,9 +195,58 @@ Verified the guard fails with the fix reverted, rather than trusting that it wou
   `--dry-run` does everywhere else in fettle (`would run: …`), so Arch was the outlier and
   now matches.
 
-### X5 — document and close
-A short table in the README saying what each exit code means, per invocation. Then the
-matrix row in `docs/qa/README.md` gets a status for the first time.
+### X5 — document and close — **DONE**
+
+The README gained an **Exit codes** section: a table of what `0`, `1`, `2` and `255` mean
+per invocation, and the advice that matters — *gate automation on a single action, not on
+`--everything`* — with the reasoning for why the two differ.
+
+**Writing it down found one more defect**, which is the argument for doing this step at
+all rather than treating it as paperwork. `aur-precheck`'s module docstring still said
+*"Always exits 0 (advisory; never blocks an install)"* — the exact contract that was
+disproved and fixed in v0.77.0 as finding AP-03, because the yay hook does not read the
+exit code and `fettle aur-precheck foo && yay -S foo` was proceeding on a known-compromised
+package. The code was corrected then; the sentence at the top of the file outlived it by
+six months. Anyone reading the file to learn the contract learned the wrong one.
+
+Every row of the table was **run** rather than transcribed from the source.
+
+---
+
+## Results
+
+| ID | Verdict |
+|---|---|
+| QA-EXIT-01 | PASS — `-V` non-zero on a content change |
+| QA-EXIT-02 | PASS |
+| QA-EXIT-03 | PASS — a check that could not look fails a single action |
+| QA-EXIT-04 | PASS — findings do not fail `--everything` |
+| QA-EXIT-05 | **by decision, 0** — blindness is reported under `Not checked`, not failed on (see the decision above) |
+| QA-EXIT-06 | PASS |
+| QA-EXIT-07 | **FAIL → fixed** — `report` returned 0 whatever happened |
+| QA-EXIT-08 | PASS — and a third path found: a named action the backend cannot run |
+| QA-EXIT-09 | PASS |
+| QA-EXIT-10 | PASS — re-proved live |
+| QA-EXIT-11 | **FAIL → fixed** — unreachable was indistinguishable from failed |
+| QA-EXIT-12 | PASS — permanent guard, split by entry-point role |
+
+## Findings
+
+- **E-01** `report` printed one line and returned success whatever happened. FIXED v0.100.0.
+  The sixth and last instance of the entry-point defect; now guarded by a test.
+- **E-02** A named action the backend cannot run reported success having done nothing —
+  F-11's shape by a third road. FIXED v0.101.0.
+- **E-03** An unreachable host was reported identically to a failed one. FIXED v0.101.0.
+- **E-04** `aur-precheck`'s docstring stated a contract that had been disproved and fixed
+  six months earlier. FIXED v0.102.0.
+
+## What this row taught
+
+Three of the four findings were **not** in the code that computes exit codes. They were in
+what the code *claimed*: a summary that never printed, a status that was a constant, a
+docstring that outlived its fix. The exit code is downstream of whether an action is honest
+about what happened, which is why this row kept turning into the same lesson as the rest of
+the pass.
 
 ---
 

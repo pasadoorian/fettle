@@ -10,6 +10,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.102.0] — exit codes are documented, and the row is closed
+
+X5, the last milestone of the exit-code sweep — and the **first cross-cutting row in the
+QA matrix to get a status at all**.
+
+The README gained an **Exit codes** section: what `0`, `1`, `2` and `255` mean per
+invocation, and the advice that actually matters — *gate automation on a single action,
+not on `--everything`*. `fettle -V` is a tripwire and goes red when a packaged file's
+contents changed, when the integrity database could not be opened, or when the tool is
+missing. `--everything` answers "did the run complete", because fourteen checks on a real
+machine always find something and a status that is red every time is one nobody reads.
+
+Every row of that table was **run** rather than transcribed from the source.
+
+### Writing it down found one more defect
+
+Which is the argument for documenting rather than treating it as paperwork.
+`aur-precheck`'s module docstring still said *"Always exits 0 (advisory; never blocks an
+install)"* — the exact contract disproved and fixed in v0.77.0, when QA found that the yay
+hook does not read the exit code and `fettle aur-precheck foo && yay -S foo` was
+proceeding on a known-compromised package. The code was corrected then. The sentence at
+the top of the file outlived the fix by six months, so anyone reading the file to learn
+the contract learned the wrong one.
+
+### The row, closed
+
+Four findings across five milestones. Three of them were **not** in the code that
+computes exit codes — they were in what the code *claimed*: a summary that never printed,
+a status that was a constant, a docstring that outlived its fix. The exit status is
+downstream of whether an action is honest about what happened, which is why this row kept
+turning into the same lesson as the rest of the pass.
+
 ## [0.101.0] — "nothing happened" stops reporting success
 
 X4: the cross-cutting exit-code cases that had been sitting on the tracker.

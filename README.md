@@ -1736,6 +1736,48 @@ without the flag.
 | `--distro NAME` | override distro detection |
 | `--print-config` / `--version` | print config or version and exit |
 
+## Exit codes — what fettle's status actually means
+
+Short version: **`0` means the run completed, not that the machine is clean.** What
+counts as "completed" depends on how you invoked it, deliberately.
+
+| | `0` | `1` | `2` |
+|---|---|---|---|
+| a single action (`fettle -V`, `-S`, `-P`, …) | nothing wrong, nothing missed | the action failed, **or** a check could not look, **or** it looked and found something | — |
+| `--everything` | the run completed | an action could not do its job | — |
+| `fettle report` | the dashboard was rebuilt | it could not be written | — |
+| `fettle remote <host>` | the remote's own status | the remote's own status | — |
+| `fettle remote <group>` | every host succeeded | any host failed **or** was unreachable | — |
+| any invocation | — | — | bad arguments (argparse) |
+| a single host inside a group | — | — | `255` = **unreachable**, distinct from a failed run |
+
+**Gate automation on a single action, not on `--everything`.** `fettle -V` is a tripwire:
+it goes red when a packaged file's contents have changed, when the integrity database
+could not be opened, or when the tool is missing — any of which means you should look.
+That is precisely what a cron job or CI step wants.
+
+`--everything` answers a different question on purpose. Fourteen checks on a real machine
+will essentially always find *something* — advisory-check alone reports 142 packages with
+fixes available on the machine this was developed on — so a status that failed on findings
+would be red every single time and would stop being read. It also does not fail on
+blindness, which is the deliberate part: on that same machine chipsec cannot run at all,
+so two checks report "could not run" on every run, and failing on a condition nobody can
+fix is how an exit code becomes noise.
+
+**So read the summary, not just the status.** Findings are in it, and everything that
+could *not* be examined is listed under `Not checked` at the end of every run, with the
+command to fix it where a missing tool is the cause:
+
+```
+▸ Not checked
+  these were not examined, so nothing above speaks for them
+  ? storage device firmware — smartctl is not installed
+      install: sudo apt install smartmontools
+```
+
+That block is how fettle keeps its central promise — *a check that cannot look must never
+render identically to a clean result* — without spending the exit code on it.
+
 ## How elevation works
 
 fettle elevates **lazily and by itself** — you never need to type `sudo fettle`.

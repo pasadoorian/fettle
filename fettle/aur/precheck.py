@@ -11,7 +11,13 @@ severity:
 
 The ``CRIT ``/``WARN `` line contract is byte-for-byte the bash original's, so
 ``yay-init.lua`` only needs its helper path repointed at ``fettle aur-precheck``.
-Always exits 0 (advisory; never blocks an install).
+
+**Exits 1 on a CRITICAL finding**, 0 otherwise. This file used to say "always exits 0
+(advisory; never blocks an install)" and that was fixed in v0.77.0 (AP-03) — the
+reasoning came from the hook, and *the hook does not read the exit code*, so the only
+thing the old contract achieved was letting ``fettle aur-precheck foo && yay -S foo``
+proceed on a known-compromised package. The sentence outlived the fix by six months,
+which is its own small lesson about where a stale claim hides.
 
 Unlike ``pkg-audit`` (which audits the *installed* foreign set), this operates on
 package names handed in as arguments and runs unprivileged as the user — so it is

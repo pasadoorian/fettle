@@ -133,7 +133,7 @@ Status of each feature's QA pass. `—` = not started.
 | Reports and run-logs (paths, permissions, rotation) | — | — |
 | Output framing, colour, `--quiet`, `--verbose` | — | — |
 | **Terminology consistency across the whole CLI** | — | — |
-| Exit codes | — | — |
+| **Exit codes** | [exit-codes.md](exit-codes.md) | **swept — 5 milestones, 4 findings fixed; the last instance of the entry-point defect closed and guarded** |
 
 At the close of the effort, this matrix is the answer to *"did we miss anything?"* — any row
 without a QA file is a gap by definition.
