@@ -147,7 +147,8 @@ WORD_ALIASES = {"upgrade": "update"}
 
 # Actions that never MUTATE the system.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
-                     "auto_updates", "hardening_audit", "pkg_integrity"}
+                     "auto_updates", "hardening_audit", "pkg_integrity",
+                     "advisory_check", "sys_audit"}
 
 # "Read-only" and "needs no root" are different questions, and they come apart in
 # BOTH directions. Each exception is listed rather than derived, because assuming
@@ -160,8 +161,12 @@ READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
 #       unprivileged it cannot read ~65 of them on a stock desktop. It would still
 #       run, and still print an answer — just a quieter one about less of the system.
 #       Reading can need privilege too.
+#   read-only, needs root   -> sys-audit reads firmware, the boot chain and hardware
+#       through interfaces that are root-only; unprivileged it says so and checks far
+#       less. It elevates itself when run as `fettle sys-audit`, and needs the pipeline
+#       to do the same when it runs as one action among many.
 _MUTATES_BUT_NO_ROOT = {"container_update"}
-_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity"}
+_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity", "sys_audit"}
 
 # Elevation keys off this set; READ_ONLY_ACTIONS above keeps its literal meaning.
 NO_ROOT_ACTIONS = (READ_ONLY_ACTIONS - _READ_ONLY_BUT_NEEDS_ROOT) | _MUTATES_BUT_NO_ROOT
@@ -515,6 +520,39 @@ examples:
 
 # Tokens that count as "an action was named" (so we DON'T inject the safe set):
 # any action flag, any dispatch shortcut, or -a/--all. Bare words also count.
+def _forwarded_needs_root(forwarded: list[str]) -> bool:
+    """Whether anything named in `forwarded` actually needs root on the remote host.
+
+    `fettle remote` used to elevate for everything except `--dry-run`, which meant a
+    read-only audit ran as root for no reason and asked for a sudo password to do it.
+    The local path has never done that — it resolves the requested actions against
+    `NO_ROOT_ACTIONS` — and this is the same question asked of the tokens being
+    forwarded rather than of parsed arguments.
+
+    **Unknown tokens count as needing root.** A run that has privilege it did not need
+    works; one that lacks privilege it did need fails partway with a permissions error,
+    which is the worse end to be wrong at. The shortcut commands (-S/-p/-U) are routed
+    elsewhere before this and are not the pipeline's business.
+    """
+    by_opt = {opt: action for opts, action in FLAG_ACTIONS for opt in opts}
+    named, unknown = set(), False
+    for tok in forwarded:
+        if tok in ("--dry-run", "--yes", "--no-sync", "--full-preview", "-v", "-q",
+                   "--no-color", "--host-label"):
+            continue
+        if tok in by_opt:
+            named.add(by_opt[tok])
+        elif not tok.startswith("-"):
+            name = WORD_ALIASES.get(tok.replace("-", "_"), tok.replace("-", "_"))
+            if name in ACTION_NAMES:
+                named.add(name)
+            else:
+                unknown = True          # a value, a hostname, something we cannot judge
+    if unknown or not named:
+        return True
+    return any(a not in NO_ROOT_ACTIONS for a in named)
+
+
 def _remote_has_action(forwarded: list[str]) -> bool:
     intent = ({opt for opts, _ in FLAG_ACTIONS for opt in opts}
               | set(DISPATCH_SHORTCUTS) | {"-a", "--all", "--everything"})
@@ -611,7 +649,9 @@ def _remote_one(host: str, ssh_args, forwarded, label: str = "") -> int:
     # user named an action" — so adding it earlier would suppress the default set.
     if label:
         fwd = [*fwd, "--host-label", label]
-    rc = remote.run(host, fwd, sudo=not dry_run or "--full-preview" in fwd,
+    needs_root = _forwarded_needs_root(fwd) or "--full-preview" in fwd
+    rc = remote.run(host, fwd, sudo=needs_root and (not dry_run or
+                                                    "--full-preview" in fwd),
                     ssh_args=ssh_args, tty=not unattended)
     if not dry_run:  # pull any reports the remote wrote back under reports/<host>/
         _fetch_remote_reports(host, ssh_args)

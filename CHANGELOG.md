@@ -10,6 +10,37 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.109.0] — root only when the work needs it
+
+The privilege-escalation row. Three fixes, one of them a regression this QA pass
+introduced itself.
+
+**`fettle -D` asked for a sudo password to read a CVE cache.** `advisory-check` reads the
+package database and a cache under `~/.cache`; it needs no root, and as a subcommand it
+never took any. Giving it a flag in v0.104.0 moved it into the pipeline's elevation path
+without adding it to the read-only set, so the flag form started prompting where the
+command form did not.
+
+**`fettle remote` elevated for everything except `--dry-run`** — recorded as H-06 during
+the hardening row, where it was what exposed checksec's sleep-as-root behaviour. A
+read-only audit ran as root on the far host and asked for a password to do it, while the
+local path had always resolved the request against the no-root set properly. The remote
+path now asks the same question of the tokens it forwards. Measured against a live guest:
+`-P` and `-D` go `sudo=off`, `-V` and `-c` `sudo=on`, and `--full-preview` still elevates
+under `--dry-run` as documented.
+
+An unrecognised token counts as needing root. A run holding privilege it did not need
+works; one lacking privilege it did need fails partway with a permissions error.
+
+**`sys-audit` was classified as not-read-only.** It elevated correctly so nothing
+misbehaved, but it sat outside the read-only set while being read-only, which left that
+set meaning "read-only *and* rootless" in practice. Now listed as read-only **and** as a
+declared needs-root exception, next to `pkg-integrity`.
+
+The row rests on one distinction worth restating: *"does this change the system?"* and
+*"does this need root?"* look like one question and are not. `container-update` mutates
+and needs no root; `pkg-integrity` and `sys-audit` change nothing and do.
+
 ## [0.108.0] — `--yes` no longer auto-purges a list fettle guessed at
 
 The `--yes` row. One finding, one fix.
