@@ -71,7 +71,15 @@ def screen(results: list[AxisResult]) -> list[str]:
             # the axis passed.
             lines.append(f"{res.title}: not checked (see below)")
             continue
-        lines.append(f"{res.title}: {tally_line(res)}")
+        # An axis that looked at *some* of its subjects must not sign off with a bare
+        # "nothing to report" — that is the invariant applied to partial blindness,
+        # and it is easy to miss because the axis genuinely did run. The firewall axis
+        # is the clearest case: unprivileged it can see that ufw is active but cannot
+        # read a single rule, and "nothing to report" there is close to the opposite
+        # of the truth.
+        partial = (f"  — plus {len(res.blind)} not checked (see below)"
+                   if res.blind else "")
+        lines.append(f"{res.title}: {tally_line(res)}{partial}")
         lines.extend("  " + row for row in _rows(res, fix=True))
         for note in res.notes:
             for i, chunk in enumerate(textwrap.wrap(note, width=_WIDTH - 8)):

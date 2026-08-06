@@ -13,6 +13,36 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.114.0] — a firewall that is "active" and filters nothing
+
+A fourth `hardening-audit` axis: **`firewall`**, which asks the half that usually goes
+unasked. "A firewall is active" is close to content-free — a service running with an
+empty ruleset filters nothing and reads as protection on every dashboard it reaches.
+Lynis reports `[ ACTIVE ]` and stops.
+
+Two questions, answered separately because they need different privileges: which
+management service is running (`systemctl is-active`, rootless), and whether the kernel
+actually holds packet-filter rules (`nft list ruleset`, falling back to `iptables -S`,
+**needs root**). Measured on the reference machine: nothing here is readable
+unprivileged — nft, iptables, ufw and `firewall-cmd` all refuse. So an unprivileged run
+names the active service and says plainly that the rules are unverified.
+
+**Permission-denied is never read as an empty ruleset.** Both produce no output, and
+one of the two answers is a serious finding.
+
+**Rules outrank the absence of a service.** Docker and libvirt program netfilter
+directly and many hosts load rules from a script, so a populated ruleset with no
+managing service is reported as filtering rather than as "no firewall". `-P INPUT
+ACCEPT` counts as the *absence* of filtering — it is what "allow everything" looks like
+written down — while `-P INPUT DROP` counts as filtering.
+
+**Fixed a truthfulness bug in the axis renderer** that this axis exposed: an axis that
+examined some of its subjects but was blind to others signed off with a bare "nothing
+to report". Unprivileged, the firewall axis can see that ufw is active and cannot read
+a single rule, and "nothing to report" there is close to the opposite of the truth. The
+tally line now says how many things went unchecked. The filesystem axis had the same
+gap when `/proc/mounts` was unreadable.
+
 ## [0.113.0] — kernel posture, judging fewer things and getting them right
 
 A third `hardening-audit` axis: **`kernel`**, read straight out of `/proc/sys` with no

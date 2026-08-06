@@ -390,7 +390,7 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem, service exposure, kernel settings → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem, service exposure, kernel settings, firewall → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
 | — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
@@ -937,6 +937,7 @@ nothing else:
 | `filesystem` | can a local user tamper with shared directories? | nothing |
 | `services` | how much of the system can each running service reach? | systemd |
 | `kernel` | are the kernel's runtime protections switched on? | nothing |
+| `firewall` | is a host firewall active, and does it actually have rules? | `nft` or `iptables` (needs root to read rules) |
 
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
 An axis that **can't** look says so in its own words — it never renders as a pass.
@@ -1147,6 +1148,30 @@ from profile" line.
 Settings the kernel doesn't have (`yama.ptrace_scope` without the Yama LSM, or a
 container's masked `/proc/sys`) collapse into a single line rather than a dozen
 findings about knobs that were never offered.
+
+#### Firewall axis — active *and* actually filtering?
+
+**In plain terms:** a firewall that is switched on but has no rules loaded blocks
+nothing at all — and on every dashboard it still shows up as "active". This asks both
+halves.
+
+1. **Which management service is running?** `systemctl is-active` — rootless, always
+   answerable.
+2. **Are there packet-filter rules in the kernel?** `nft list ruleset`, falling back to
+   `iptables -S`. **This needs root.** On the reference machine nothing here is
+   readable unprivileged — nft, iptables, ufw and `firewall-cmd` all refuse.
+
+So an unprivileged `-H` reports which service is running and says plainly that it could
+not verify the rules — less than a full answer, more than a lie, and strictly more than
+`[ACTIVE]`. Permission-denied is never mistaken for an empty ruleset; those produce the
+same empty output, and one of the two is a serious finding.
+
+**Rules outrank the absence of a service.** Docker and libvirt program netfilter
+directly, and plenty of hosts load rules from a script with no `firewalld.service`
+anywhere — so a full ruleset with no managing service is reported as filtering, not as
+"no firewall". An `-P INPUT ACCEPT` default policy is counted as the *absence* of
+filtering (it is what "allow everything" looks like written down); `-P INPUT DROP` is
+counted as filtering.
 
 ### Package file integrity — `-V` / `pkg-integrity`
 
