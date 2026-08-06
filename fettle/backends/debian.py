@@ -529,7 +529,23 @@ class DebianBackend(PackageBackend):
                 out.note(f"orphaned packages eligible for removal ({source}):")
                 for o in orphans:
                     print(f"    {o}")
-                chosen = ctx.select(orphans, prompt="purge orphan")
+                # `--yes` answers questions; it does not override a safety judgement.
+                # That is already how the AUR gate behaves — a CRITICAL finding needs
+                # `--force-aur` on top of `--yes` — and the same reasoning applies here.
+                # When the list came from fettle's own INFERENCE rather than a dedicated
+                # tool, an unattended run would purge every package a heuristic guessed
+                # at, with apt's own confirmation suppressed too. deborphan's verdict is
+                # a tool's; the dpkg reverse-dependency scan is ours.
+                if ctx.assume_yes and source != "deborphan":
+                    out.warn(f"{len(orphans)} orphan(s) found by {source}, NOT removed: "
+                             "--yes will not auto-purge a list fettle inferred rather "
+                             "than one a tool reported. Re-run without --yes to review "
+                             "them, or install deborphan.")
+                    out.summary_warn(f"{len(orphans)} orphaned package(s) found but not "
+                                     "removed (unattended run, inferred list)")
+                    chosen = []
+                else:
+                    chosen = ctx.select(orphans, prompt="purge orphan")
                 if chosen:
                     # No blanket `-y`: purging can pull in dependents, and apt's own
                     # transaction is the only place that set is shown. Under `--yes`

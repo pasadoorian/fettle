@@ -10,6 +10,32 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.108.0] — `--yes` no longer auto-purges a list fettle guessed at
+
+The `--yes` row. One finding, one fix.
+
+`deborphan` no longer exists in Debian 13 or Ubuntu 26.04, so v0.94.0 added a fallback
+that answers the same question from dpkg's own data — **fettle's own reverse-dependency
+scan**. Under `--yes`, the per-package chooser selects everything and the purge runs with
+`apt-get purge -y`, so `fettle -o --yes` on a modern Debian would remove every package a
+*heuristic* guessed at, with apt's confirmation suppressed too. No human anywhere in the
+loop, on the output this project's own notes call the most dangerous it produces.
+
+**Fixed by applying a rule fettle already follows elsewhere:** `--yes` answers questions,
+it does not override a safety judgement. A CRITICAL AUR pre-check finding already needs
+`--force-aur` on top of `--yes`; container images awaiting confirmation are already
+skipped rather than auto-approved. So an unattended run now reports an inferred orphan
+list and removes nothing. `deborphan`'s verdict is a tool's and keeps its behaviour, and
+interactive runs are untouched — a human is there to review per package.
+
+### Checked and left alone
+
+Kernels exclude running ∪ newest before `--yes` sees the list. Arch orphans come from
+`pacman -Qtdq`, the package manager's verdict rather than fettle's inference. Containers
+skip deferred images and point at `[containers] always_update`. `confirm()` and `select()`
+keep answering yes and selecting all, because that is the point of the flag — the guard
+belongs at the call site that knows whether the list can be trusted, not in the primitive.
+
 ## [0.107.0] — run-logs are owner-only from creation; `report` counts hosts, not directories
 
 The reports-and-run-logs row. Two fixes, deliberately small with the stable release

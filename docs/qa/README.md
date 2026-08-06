@@ -126,7 +126,7 @@ Status of each feature's QA pass. `—` = not started.
 |---|---|---|
 | Default action set (`-a` / bare `fettle`) | — | — |
 | `--dry-run` semantics across all actions | [dry-run.md](dry-run.md) | **swept — 3 fixed, incl. a dry run DELETING run-logs** |
-| `--yes` semantics across all actions | — | — |
+| `--yes` semantics across all actions | [yes.md](yes.md) | **swept — 1 fixed: `--yes` auto-purged an inferred orphan list** |
 | `--only` / `--skip` selection | — | — |
 | Privilege escalation and the sudo re-exec | — | — |
 | Config file loading, safety gate, `--print-config` | — | — |
