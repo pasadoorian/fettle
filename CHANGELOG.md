@@ -13,6 +13,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.115.0] — ask the SSH server, not its config file
+
+A fifth `hardening-audit` axis: **`ssh`**, and the clearest case in this whole
+comparison for asking the right question.
+
+On the reference machine Lynis prints **twenty-two** lines of
+`OpenSSH option: X [ NOT FOUND ]` — on a host whose `sshd_config` is three non-comment
+lines, so every one of them is at an OpenSSH default, and modern OpenSSH defaults are
+fine. Twenty-two finding-shaped lines saying nothing about actual exposure, because the
+question was asked of the file rather than of the server.
+
+fettle parses **`sshd -T`** — the effective configuration with defaults filled in — and
+reports only what is genuinely weak. On a stock Debian 13 that is two low notes and
+nothing else (verified live in a container). The worst case is a combination rather than
+two separate lines: `PermitRootLogin yes` *with* password authentication is one **high**
+finding, because the account that matters most becomes reachable by guessing.
+
+The weak-algorithm lists are deliberately not a modern-crypto wishlist. `hmac-sha1` and
+`aes256-ctr` are shipped defaults — checked against a real `sshd -T` rather than assumed
+— so listing them would fire on every unmodified host. Only non-default algorithms
+(`3des-cbc`, `arcfour`, `ssh-dss`, `diffie-hellman-group1-sha1`) are reported, because
+their presence means someone re-enabled them deliberately.
+
+`sshd -T` needs root. Unprivileged it reports blindness with the reason, and
+deliberately does **not** fall back to parsing the config file against a built-in table
+of defaults — that table drifts with every OpenSSH release, and being confidently wrong
+about `PermitRootLogin` is worse than saying nothing. No SSH server is **not
+applicable**; an installed-but-stopped one is audited with a note that it is not live.
+
+Also fixes an alignment bug: a subject of exactly the column width rendered as
+`PasswordAuthenticationpassword authentication is enabled…`.
+
 ## [0.114.0] — a firewall that is "active" and filters nothing
 
 A fourth `hardening-audit` axis: **`firewall`**, which asks the half that usually goes

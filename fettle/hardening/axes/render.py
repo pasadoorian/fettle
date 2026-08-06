@@ -36,7 +36,10 @@ def _rows(res: AxisResult, *, fix: bool) -> list[str]:
     lines: list[str] = []
     for f in sorted(res.findings, key=lambda x: (order.get(x.severity, 9), x.subject)):
         label = f"{f.severity.upper():<{_LABEL}}"
-        if len(f.subject) <= _SUBJECT:
+        # Strictly less, so the column always leaves at least one space before the
+        # detail: a subject of exactly _SUBJECT characters rendered as
+        # "PasswordAuthenticationpassword authentication is enabled…".
+        if len(f.subject) < _SUBJECT:
             head = label + f"{f.subject:<{_SUBJECT}}"
             pad = " " * len(head)
             first, rest = head, textwrap.wrap(f.detail, width=max(20, _WIDTH - len(head)))

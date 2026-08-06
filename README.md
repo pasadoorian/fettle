@@ -390,7 +390,7 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem, service exposure, kernel settings, firewall → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-H` | `hardening-audit` | is this system hardened? six axes — build flags (needs `checksec`), filesystem, services, kernel, sshd, firewall → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
 | — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
@@ -937,6 +937,7 @@ nothing else:
 | `filesystem` | can a local user tamper with shared directories? | nothing |
 | `services` | how much of the system can each running service reach? | systemd |
 | `kernel` | are the kernel's runtime protections switched on? | nothing |
+| `ssh` | is the *effective* sshd configuration weak anywhere? | sshd (needs root) |
 | `firewall` | is a host firewall active, and does it actually have rules? | `nft` or `iptables` (needs root to read rules) |
 
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
@@ -1148,6 +1149,45 @@ from profile" line.
 Settings the kernel doesn't have (`yama.ptrace_scope` without the Yama LSM, or a
 container's masked `/proc/sys`) collapse into a single line rather than a dozen
 findings about knobs that were never offered.
+
+#### SSH axis — what the server is *actually* configured to do
+
+**In plain terms:** most of an SSH server's settings are never written in its config
+file — they take an out-of-the-box default. Asking "is `PermitRootLogin` in the file?"
+therefore tells you nothing. This asks the running server what it will actually do.
+
+This is the clearest case in the whole comparison. On the reference machine Lynis
+prints **twenty-two** lines like:
+
+```
+- OpenSSH option: PermitRootLogin      [ NOT FOUND ]
+- OpenSSH option: PermitEmptyPasswords [ NOT FOUND ]
+```
+
+…on a host whose `sshd_config` is three non-comment lines, so *everything* is at an
+OpenSSH default — and modern OpenSSH defaults are fine (`PermitRootLogin
+prohibit-password`, `PermitEmptyPasswords no`, `HostbasedAuthentication no`).
+Twenty-two finding-shaped lines that say nothing about actual exposure, because the
+question was asked of the file rather than of the server.
+
+fettle parses **`sshd -T`** — the effective configuration with defaults filled in — and
+reports only what is genuinely weak. On a stock install that means two low notes and
+nothing else. The worst case is treated as a combination rather than two separate
+lines: `PermitRootLogin yes` *with* password authentication is one **high** finding,
+because the account that matters most becomes reachable by guessing.
+
+The weak-algorithm lists are deliberately **not** a modern-crypto wishlist. `hmac-sha1`
+and `aes256-ctr` are shipped OpenSSH defaults, so listing them would fire on every
+unmodified host; only algorithms that are *not* defaults — `3des-cbc`, `arcfour`,
+`ssh-dss`, `diffie-hellman-group1-sha1` — are reported, since their presence means
+someone deliberately re-enabled them for a legacy peer.
+
+**`sshd -T` needs root** (it loads the host keys). Unprivileged, this axis reports that
+it could not look, and says why. It deliberately does **not** fall back to parsing the
+config file against a built-in table of defaults: that table drifts with every OpenSSH
+release, and being confidently wrong about `PermitRootLogin` is worse than saying
+nothing. No SSH server installed reports **not applicable** — there is no exposure to
+have. An installed-but-stopped sshd is still audited, with a note saying it is not live.
 
 #### Firewall axis — active *and* actually filtering?
 
