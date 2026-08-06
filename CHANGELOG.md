@@ -10,6 +10,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.100.0] — `fettle report` answers for itself, and a guard so the next one has to
+
+X3, and the end of a defect this QA pass found six times: *a subcommand with its own
+entry point independently forgets both to print a summary and to compute an exit code.*
+
+`report` was the last one standing. It printed one line and returned success whatever
+happened, so nothing scripting it could tell a rebuilt dashboard from a failed one.
+Now it:
+
+- **fails** when the dashboard could not be written, instead of raising a traceback or
+  claiming success
+- **says so when the dashboard contains no hosts** — a page built from nothing is a valid
+  HTML file and a useless answer, and reporting only "written to <path>" invites the
+  reader to believe their fleet is represented in it
+- reports how many hosts it actually covered (19 here)
+
+### The guard matters more than the fix
+
+This was never a bug in one place; it is what happens by default every time someone adds
+a subcommand. So there is now a permanent test, split by what an entry point actually is:
+
+- **work runners** — `report`, `advisory-check`, `upgrade-check` — must print a summary
+  and must not end in a hardcoded `return 0`
+- **orchestrators** — `remote`, the group runner — print no digest of their own, since
+  the group runner prints a per-host table and the remote path forwards the remote's own
+  summary, but their status must still be computed rather than assumed
+
+`fettle web` is in neither: it hands control to a server that runs until interrupted, so
+"what happened" is not a question it can answer at the end.
+
+The guard was checked against the reverted fix rather than assumed to work.
+
 ## [0.99.0] — exit codes mean something, and a "Not checked" list says what was missed
 
 X2 of the exit-code sweep.

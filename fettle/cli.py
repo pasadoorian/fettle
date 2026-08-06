@@ -709,12 +709,36 @@ def _run_report(argv: list[str]) -> int:
     ctx = SimpleNamespace(config=cfg, user_home=user_home, sudo_user=sudo_user,
                           output=out)
 
-    if args.backfill_json:
-        n = htmlreport.backfill(ctx)
-        out.note(f"backfilled {n} JSON sibling(s) for existing reports/logs")
-    path = htmlreport.build(ctx, open_browser=args.open)
-    out.ok(f"report written to {path}")
-    return 0
+    # Every path here used to `return 0` with no summary at all — the sixth instance of
+    # the shape this QA pass kept finding, where a subcommand with its own entry point
+    # forgets both. A dashboard that could not be written said so on one line and then
+    # exited successfully, so nothing scripting `fettle report` could tell a rebuilt
+    # dashboard from a failed one.
+    from . import reports as _reports
+    try:
+        if args.backfill_json:
+            n = htmlreport.backfill(ctx)
+            out.note(f"backfilled {n} JSON sibling(s) for existing reports/logs")
+        path = htmlreport.build(ctx, open_browser=args.open)
+    except OSError as exc:
+        out.err(f"could not write the report: {exc}")
+        out.summary_fail(f"report was NOT written — {exc}", kind=FAILED)
+        out.print_summary()
+        return 1
+
+    hosts = htmlreport.collect(_reports._settings(ctx)[0])
+    if hosts:
+        out.summary_add(f"report for {len(hosts)} host(s) written to {path}")
+    else:
+        # A dashboard built from nothing is a valid HTML file and a useless answer.
+        # Reporting only "written to <path>" invites the reader to believe their fleet
+        # is represented in it.
+        out.summary_warn(f"report written to {path}, but it contains NO hosts — no "
+                         "stored reports or run-logs were found")
+        out.not_checked("every host", f"no reports or run-logs under "
+                                      f"{_reports._settings(ctx)[0]}")
+    out.print_summary()
+    return 1 if out.had_failures else 0
 
 
 def _run_web(argv: list[str]) -> int:

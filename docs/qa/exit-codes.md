@@ -7,7 +7,7 @@ Today the honest answer is "not without reading the source", and this is the row
 most accumulated evidence behind it — six instances found while sweeping individual
 features, plus one defect I knowingly left in place while shipping `--everything`.
 
-Status: **X1, X1a and X2 done.** X3-X5 planned.
+Status: **X1, X1a, X2 and X3 done.** X4-X5 planned.
 
 ---
 
@@ -147,12 +147,28 @@ Single actions strict, `--everything` on `failed | blind`. Delete the
 Regression test: an action that reports `blind` must fail `--everything`; one that reports
 `found` must not.
 
-### X3 — the entry points that still return a hardcoded 0
-`_run_report` first (no summary, no code). Then audit the remaining early-return paths in
-`_run_upgrade_check` and `aur-precheck` for the same shape. Add the **permanent guard**:
-a test that enumerates every entry point and asserts none of them `return 0` literally at
-the end of a run — the registry-guard pattern that already stopped the action table
-drifting.
+### X3 — the entry points that still return a hardcoded 0 — **DONE**
+
+`report` was the last one standing, and it had the full shape: no summary, and
+`return 0` whatever happened. It now reports what it covered, fails when the dashboard
+could not be written, and says so when the dashboard contains **no hosts at all** — a
+valid HTML file built from nothing, previously announced as "report written to <path>",
+which invites the reader to believe their fleet is in it.
+
+The guard is the more valuable half, because this defect is not a bug in any one place —
+it is what happens by default every time someone adds a subcommand. Two rules, split by
+what an entry point actually is:
+
+- **work runners** (`report`, `advisory-check`, `upgrade-check`) must call
+  `print_summary()`, and must not end in a literal `return 0`.
+- **orchestrators** (`remote`, the group runner) print no digest of their own — the group
+  runner prints a per-host table and the remote path forwards the remote's summary — but
+  their status must still be *computed*, not constant.
+
+`_run_web` is in neither: it hands control to a server that runs until interrupted, so
+"what happened" is not a question it can answer at the end.
+
+Verified the guard fails with the fix reverted, rather than trusting that it would.
 
 ### X4 — the cross-cutting cases already on the tracker
 - **F-11 / QA-M5**: an unsupported distro exits 0. It should not.
