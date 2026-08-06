@@ -13,6 +13,37 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.113.0] — kernel posture, judging fewer things and getting them right
+
+A third `hardening-audit` axis: **`kernel`**, read straight out of `/proc/sys` with no
+`sysctl` binary, so it works inside the remote zipapp on a host with nothing installed.
+
+**The key list is deliberately short.** Lynis compares 38 sysctls against a fixed
+profile; on the reference machine two of its deviations were *requirements* —
+`net.ipv4.conf.all.forwarding` must be 1 on a host running libvirt and Docker, and
+`kernel.modules_disabled=1` would leave a workstation unable to load a module for newly
+attached hardware. This axis judges only keys whose right value does not depend on what
+the machine is for, and the saved report **names the ones it declines to judge, with
+the reason** — an explicit scope beats a hidden weighting.
+
+It also permits more than one right answer where there is one: `fs.suid_dumpable` is
+safe at `0` and at `2` (dumps written root-readable only), and only `1` exposes them.
+Lynis wants `0` and calls `2` a deviation, which is a preference reported as a defect.
+
+**ICMP redirects are computed rather than read**, because the single `conf/all` value
+everyone reads is wrong in both directions, and the two address families do not follow
+the same rule. Per the kernel's own `ip-sysctl` documentation, IPv4 accepts a redirect
+if *both* `all` and the interface are set when that interface forwards, or if *either*
+is set when it does not; IPv6 accepts one only when local forwarding is disabled. So
+fettle walks the interfaces and applies the real rule. That changed the answer both
+ways here: **no** IPv4 interface was accepting redirects (Lynis flagged `conf.default`,
+which only templates interfaces created later), while **ten** IPv6 interfaces were — a
+live exposure it reported as one generic "differs from profile".
+
+Settings the kernel does not have — `yama.ptrace_scope` without the Yama LSM, or a
+container's masked `/proc/sys` — collapse into one line instead of a dozen findings
+about knobs that were never offered. An unreadable `/proc/sys` is blindness, not a pass.
+
 ## [0.112.0] — service exposure, without the wall of text
 
 A second `hardening-audit` axis: **`services`**, reading `systemd-analyze security`.

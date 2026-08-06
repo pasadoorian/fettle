@@ -390,7 +390,7 @@ rather than packages, and elevates itself.
 | `-P` · | `pkg-audit` | package supply-chain audit → `~/.fettle/reports/` | apt/flatpak/snap provenance | dnf/yum repo provenance + flatpak/snap/containers/extensions |
 | `-V` | [`pkg-integrity`](#package-file-integrity---v--pkg-integrity) | `paccheck --sha256sum` against pacman's MTREE (falls back to `pacman -Qkk`) | `debsums` against the `.md5sums` dpkg installed (falls back to `dpkg --verify`) | `rpm -Va` against the rpmdb's file digests |
 | `-A` | `aur-audit` *(arch)* | AUR health table → `~/.fettle/reports/` | — | — |
-| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem hygiene, service exposure → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
+| `-H` | `hardening-audit` | is this system hardened? build flags (needs `checksec`), filesystem, service exposure, kernel settings → `~/.fettle/reports/` | same, via `dpkg-buildflags` baseline | same, via rpm's `%{build_cflags}` macros; binaries attributed with `rpm -qf` |
 | `-p` | `aur-precheck` *(arch)* | per-package pre-install check (RPC + IoC); bare = every installed AUR pkg | — | — |
 | `-U` | [`upgrade-check`](#upgrade-checker-ai--experimental) | *(experimental)* AI pre-upgrade safety check; needs `ANTHROPIC_API_KEY` | same | same |
 | — | [`advisory-check`](#security-advisories--cve-tracking--advisory-check-opt-in) | installed packages with known CVEs (fix available, or no fix yet) | same | same |
@@ -936,6 +936,7 @@ nothing else:
 | `binary` | were the installed binaries built with the distro's hardening flags? | `checksec` |
 | `filesystem` | can a local user tamper with shared directories? | nothing |
 | `services` | how much of the system can each running service reach? | systemd |
+| `kernel` | are the kernel's runtime protections switched on? | nothing |
 
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
 An axis that **can't** look says so in its own words — it never renders as a pass.
@@ -1107,6 +1108,45 @@ printed, and 18 unsafe rather than 42.
 On a host with no systemd this axis reports **not applicable** (it isn't blindness —
 there are no unit files to be exposed). Where systemd is installed but isn't the
 running init, as in most containers, it reports that it could not look, and says why.
+
+#### Kernel axis — are the runtime protections switched on?
+
+**In plain terms:** the kernel has a set of switches that make a bug harder to exploit
+— randomised memory layout, hiding kernel addresses from ordinary users, refusing
+symlink tricks in shared directories. This reads them straight out of `/proc/sys` (no
+`sysctl` binary, so it works inside the remote zipapp on a host with nothing installed).
+
+**The list is deliberately short, and that is the feature.** Lynis compares 38 sysctls
+against a fixed profile. On the reference machine two of its "deviations" were
+*requirements*: `net.ipv4.conf.all.forwarding` must be 1 on a host running libvirt and
+Docker, and `kernel.modules_disabled=1` would leave a workstation unable to load a
+module for newly attached hardware. fettle judges only keys whose right value doesn't
+depend on what the machine is *for* — and the saved report **names the ones it is
+declining to judge, with the reason**, so the scope is explicit rather than hidden.
+
+It also allows more than one right answer where there is one. `fs.suid_dumpable` is
+safe at `0` (no dumps from setuid processes) *and* at `2` (dumps readable only by
+root); only `1` exposes them. Lynis wants `0` and reports `2` as a deviation, which is
+a preference reported as a defect.
+
+**ICMP redirects are computed, not read.** Accepting one lets anything that can reach
+the host rewrite its route to a destination — a local man-in-the-middle. Whether one is
+*actually* accepted is not the `conf/all` value everyone reads, and the two address
+families don't even follow the same rule (from the kernel's own `ip-sysctl` docs):
+
+- **IPv4** — accepted if *both* `conf/all` and `conf/<iface>` are set when that
+  interface forwards, or if *either* is set when it doesn't.
+- **IPv6** — accepted if local forwarding is disabled, ignored if it's enabled.
+
+So fettle walks the interfaces and applies the real rule. On the reference machine that
+changed the answer in both directions: **no** IPv4 interface was accepting redirects
+(Lynis flagged `conf.default`, which only templates interfaces created *later*), while
+**ten** IPv6 interfaces were — a live exposure it reported only as one generic "differs
+from profile" line.
+
+Settings the kernel doesn't have (`yama.ptrace_scope` without the Yama LSM, or a
+container's masked `/proc/sys`) collapse into a single line rather than a dozen
+findings about knobs that were never offered.
 
 ### Package file integrity — `-V` / `pkg-integrity`
 

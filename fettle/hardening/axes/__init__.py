@@ -100,7 +100,7 @@ class AxisResult:
 # This tuple holds the axes that EXIST, and grows one entry per milestone. The table
 # above describes the design; listing an unbuilt axis here would make `run_all` report
 # it as blind on every host, which is a louder lie than not mentioning it.
-AXIS_NAMES = ("filesystem", "services")
+AXIS_NAMES = ("filesystem", "services", "kernel")
 
 # The binary axis predates this module and still lives in engine/report/score. It is
 # named here so `disable_axes = ["binary"]` works and so the help can list one set.
