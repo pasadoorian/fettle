@@ -221,6 +221,10 @@ class Output:
         """
         return bool(self._failures)
 
+    def summary_size(self) -> int:
+        """How many summary lines exist so far, across all three channels."""
+        return len(self._summary) + len(self._warnings) + len(self._failures)
+
     def failures_of(self, *kinds: str) -> list[str]:
         """The recorded failure lines of the given kind(s)."""
         return [line for line, kind in self._failures if kind in kinds]

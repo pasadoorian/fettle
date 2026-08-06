@@ -410,11 +410,23 @@ def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
         handler = HANDLERS.get(name)
         if handler is None:
             out.note(f"'{name}' not yet implemented — coming in a later milestone")
+            out.summary_warn("did NOT run — not implemented")
+            out.current_action = ""
             continue
+        before = out.summary_size()
         try:
             handler(backend, ctx)
         except NotImplementedError:
             out.note(f"'{name}' not yet implemented for the {backend.name} backend")
+            out.summary_warn(f"did NOT run — the {backend.name} backend does not "
+                             "implement it")
         finally:
+            # Every action gets a line, so a fourteen-action sweep can be read as a
+            # checklist. Without this, an action that found nothing said nothing, and a
+            # summary of two lines gave no way to tell "twelve checks were clean" from
+            # "twelve never ran" — which is the same question the `Not checked` block
+            # answers for coverage, asked about the actions themselves.
+            if out.summary_size() == before:
+                out.summary_add("nothing to report")
             out.current_action = ""
     out.print_summary()

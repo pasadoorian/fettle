@@ -132,7 +132,7 @@ Status of each feature's QA pass. `—` = not started.
 | Config file loading, safety gate, `--print-config` | — | — |
 | Reports and run-logs (paths, permissions, rotation) | — | — |
 | Output framing, colour, `--quiet`, `--verbose` | — | — |
-| **Terminology consistency across the whole CLI** | [terminology.md](terminology.md) | **swept — 4 findings fixed; naming rule written down and enforced by test; 1 open question** |
+| **Terminology consistency across the whole CLI** | [terminology.md](terminology.md) | **swept — 10 findings fixed; naming rule written down and enforced by test** |
 | **Exit codes** | [exit-codes.md](exit-codes.md) | **swept — 5 milestones, 4 findings fixed; the last instance of the entry-point defect closed and guarded** |
 
 At the close of the effort, this matrix is the answer to *"did we miss anything?"* — any row

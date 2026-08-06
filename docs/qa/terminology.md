@@ -3,7 +3,7 @@
 **The stated top priority of this pass**, and the row most likely to drift: nothing breaks
 when a new summary line invents its own vocabulary, so nothing catches it.
 
-Status: **swept — 9 findings fixed, 1 open question for Paul.**
+Status: **swept — 10 findings fixed, row closed.**
 
 ---
 
@@ -93,15 +93,24 @@ command names are left alone. A test enforces that no action ends in `-audit` or
 without being classified, and that no third verb (`scan`, `verify`, `inspect`, `analyse`)
 creeps in — a third vocabulary is how a CLI stops being learnable.
 
-## Open question for Paul
+### T-10 — an action that found nothing said nothing. FIXED
 
-**An action that ran and found nothing produces no summary line at all.** Six actions ran
-against the Debian guest just now and two appeared in the summary. The section headers show
-all six ran, but the summary — the part people read — is silent about four of them.
+Six actions ran against the Debian guest and **two** appeared in the summary. The section
+headers showed all six ran, but the summary — the part people read — was silent about
+four, so there was no way to tell "four checks were clean" from "four never ran".
 
-With `--everything` running fourteen actions this matters: a summary of two lines gives no
-way to tell "twelve checks were clean" from "twelve checks never ran". The counter-argument
-is real too — fourteen lines of `✓ nothing to report` is its own kind of noise.
+Paul's call: **one line per action, so you know everything ran.** An action that adds no
+summary line of its own gets `nothing to report`, and one that could not run says
+`did NOT run` rather than vanishing. The summary now reads as a checklist:
 
-Options are a line per action, a single closing "N actions ran, M had nothing to report", or
-leaving it. Not picked blind: it changes what every run looks like.
+```
+✓ orphans: nothing to report
+✓ rebuild-check: nothing to report
+✓ config-drift: nothing to report
+✓ auto-updates: ON (unattended-upgrades)
+✓ firmware-check: nothing to report
+! pkg-integrity: debsums: Not installed …
+```
+
+This is the same question the `Not checked` block answers about coverage, asked about the
+actions themselves: *how much of what you asked for actually happened?*

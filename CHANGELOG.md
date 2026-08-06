@@ -10,6 +10,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.105.0] — the summary is a checklist: one line per action
+
+Six actions ran against a test host and **two** appeared in the summary, because an action
+that finds nothing said nothing at all. The section headers showed all six ran, but the
+summary — the part people read — was silent about four of them. With `--everything`
+running fourteen actions, that leaves no way to tell "twelve checks were clean" from
+"twelve never ran".
+
+Every action now gets exactly one line:
+
+```
+✓ orphans: nothing to report
+✓ rebuild-check: nothing to report
+✓ config-drift: nothing to report
+✓ auto-updates: ON (unattended-upgrades)
+✓ firmware-check: nothing to report
+! pkg-integrity: debsums: Not installed (apt install debsums)
+```
+
+An action that reports something of its own keeps its own line — it does not also get a
+"nothing to report" — and one that could not run says `did NOT run` rather than
+disappearing from the list entirely.
+
+This is the same question the `Not checked` block answers about coverage, asked about the
+actions themselves: *how much of what you asked for actually happened?* Closes the
+terminology row.
+
 ## [0.104.0] — `--help` sweep: the CVE check was invisible in it
 
 Reported by Paul: `advisory-check` does not appear under "audit & security actions".

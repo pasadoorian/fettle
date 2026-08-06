@@ -154,3 +154,76 @@ def test_the_longform_block_does_not_claim_they_all_take_options():
     from fettle.cli import _LONGFORM_TITLE
 
     assert "take options" not in _LONGFORM_TITLE
+
+
+# -- one line per action, so the summary reads as a checklist -------------------
+def test_every_action_that_ran_gets_a_summary_line():
+    """Six actions ran against a real guest and two appeared in the summary, because an
+    action that finds nothing said nothing. A two-line summary gives no way to tell
+    "twelve checks were clean" from "twelve never ran"."""
+    from unittest.mock import patch
+
+    from fettle import actions as A
+    from fettle.backends.base import Context, PackageBackend
+    from fettle.config import Config
+    from fettle.output import Output
+
+    ran = ["clean", "orphans", "config_drift"]
+    out = Output(color=False)
+    ctx = Context(output=out, config=Config())
+
+    class Stub(PackageBackend):
+        name = "stub"
+        supported = set(ran)
+
+    # handlers that do nothing at all — the case that used to vanish
+    with patch.dict(A.HANDLERS, {n: (lambda b, c: None) for n in ran}):
+        A.run(ran, Stub(), ctx)
+
+    lines = out._summary + out._warnings + [ln for ln, _ in out._failures]
+    assert len(lines) == len(ran), lines
+    for name in ran:
+        assert any(ln.startswith(f"{name.replace('_', '-')}:") for ln in lines), name
+
+
+def test_an_action_that_could_not_run_says_so_rather_than_vanishing():
+    from unittest.mock import patch
+
+    from fettle import actions as A
+    from fettle.backends.base import Context, PackageBackend
+    from fettle.config import Config
+    from fettle.output import Output
+
+    out = Output(color=False)
+    ctx = Context(output=out, config=Config())
+
+    def unimplemented(b, c):
+        raise NotImplementedError
+
+    class Stub(PackageBackend):
+        name = "stub"
+        supported = {"clean"}
+
+    with patch.dict(A.HANDLERS, {"clean": unimplemented}):
+        A.run(["clean"], Stub(), ctx)
+    assert any("did NOT run" in ln for ln in out._warnings), out._warnings
+
+
+def test_an_action_that_reported_something_is_not_given_a_second_line():
+    from unittest.mock import patch
+
+    from fettle import actions as A
+    from fettle.backends.base import Context, PackageBackend
+    from fettle.config import Config
+    from fettle.output import Output
+
+    out = Output(color=False)
+    ctx = Context(output=out, config=Config())
+
+    class Stub(PackageBackend):
+        name = "stub"
+        supported = {"clean"}
+
+    with patch.dict(A.HANDLERS, {"clean": lambda b, c: c.output.summary_add("18 MiB freed")}):
+        A.run(["clean"], Stub(), ctx)
+    assert out._summary == ["clean: 18 MiB freed"], out._summary
