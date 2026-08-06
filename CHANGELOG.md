@@ -10,6 +10,28 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.90.0] — a vanished AUR package no longer gets a green tick
+
+`fettle -A` on a real 79-package host summarised as::
+
+    ✓ AUR audit of 79 package(s) — 9 no longer in the AUR, 7 flagged out-of-date
+    EXIT=0
+
+A green tick whose own words report nine findings. The body carried a `!` warning, but
+the summary — the part people read, and the part the dashboard and exit code key off —
+was green. An earlier fix had corrected the summary *text* to say what was found and left
+the *mark* alone, which is how it survived.
+
+It sat on the highest-signal supply-chain indicator fettle has. A package that disappears
+from the AUR is exactly what a package **deleted for malware** looks like from here: it is
+what Arch staff did to `firefox-patch-bin` and friends, and to 1,579 packages in June 2026.
+
+Now warns (still exit 0 — this is advisory) when either **event-shaped** signal is present:
+a package that vanished upstream, or one that changed maintainer since the last run. Both
+are things that *happened*. Out-of-date and orphaned stay counted in the text without
+raising the mark — on that same host 7 are flagged out-of-date more or less permanently,
+and a warning that fires every single run is how a warning stops being read.
+
 ## [0.89.0] — package integrity stops crying wolf on a clean machine
 
 The full lab matrix (64 pass · 6 issue · 0 FAIL · 8 skip) showed `pkg-integrity`

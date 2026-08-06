@@ -1,5 +1,6 @@
 """AUR audit (`-A`) — the update.sh-style health/metrics table."""
 
+import json
 import time
 from unittest.mock import patch
 
@@ -205,3 +206,60 @@ def test_maintainer_baseline_is_not_shared_with_pkg_audit(tmp_path):
     assert first_run is True and changes == []
     assert (tmp_path / ".cache/fettle/aur-maintainers-pkgaudit.json").is_file()
     assert (tmp_path / ".cache/fettle/aur-maintainers-audit.json").is_file()
+
+
+# -- the mark has to match the words -------------------------------------------
+def _summary_mark(tmp_path, capsys, foreign, info, snapshot=None):
+    """Run the audit and return the summary line's leading mark."""
+    if snapshot is not None:
+        p = tmp_path / ".cache/fettle"
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "aur-maintainers-audit.json").write_text(json.dumps(snapshot))
+    ctx = _ctx(tmp_path)
+    with patch("fettle.aur.common.foreign_packages", return_value=foreign), \
+         patch("fettle.aur.meta.fetch_info", return_value=info), \
+         patch("fettle.command.run", return_value=command.Proc(0, "", "")):
+        audit.run(ctx)
+    ctx.output.print_summary()
+    cap = capsys.readouterr()
+    line = next(ln for ln in (cap.out + cap.err).splitlines() if "AUR audit of" in ln)
+    return line.strip()[0], line
+
+
+def test_vanished_package_does_not_get_a_green_tick(tmp_path, capsys):
+    """The bug: `✓ AUR audit of 79 package(s) — 9 no longer in the AUR`, exit 0.
+
+    A package that disappeared from the AUR is what a package deleted for malware looks
+    like from here, and it was being reported under a green tick.
+    """
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
+    mark, line = _summary_mark(tmp_path, capsys, ["good", "vanished"], info)
+    assert mark == "!", line
+    assert "1 no longer in the AUR" in line
+
+
+def test_clean_audit_still_gets_a_green_tick(tmp_path, capsys):
+    """The other half: a warning that fires every run is not a warning."""
+    info = [{"Name": "good", "Maintainer": "alice", "LastModified": time.time()}]
+    mark, line = _summary_mark(tmp_path, capsys, ["good"], info)
+    assert mark == "✓", line
+
+
+def test_out_of_date_alone_stays_green(tmp_path, capsys):
+    """Standing states are counted in the text but do not raise the mark: on a real
+    79-package host 7 are flagged out-of-date more or less permanently, and warning on
+    that every run is how a warning stops being read."""
+    info = [{"Name": "stale", "Maintainer": "bob", "LastModified": time.time(),
+             "OutOfDate": 1}]
+    mark, line = _summary_mark(tmp_path, capsys, ["stale"], info)
+    assert mark == "✓", line
+    assert "flagged out-of-date" in line
+
+
+def test_maintainer_takeover_raises_the_mark(tmp_path, capsys):
+    """The other event-shaped signal: the package changed hands since the last run."""
+    info = [{"Name": "good", "Maintainer": "mallory", "LastModified": time.time()}]
+    mark, line = _summary_mark(tmp_path, capsys, ["good"], info,
+                               snapshot={"good": "alice"})
+    assert mark == "!", line
+    assert "maintainer change" in line

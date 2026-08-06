@@ -155,7 +155,20 @@ def run(ctx) -> None:
         summary += " — " + ", ".join(notes)
     if report:
         summary += f"; written to {report}"
-    out.summary_add(summary)
+    # The text was fixed to say what was found; the MARK was not, so the summary read
+    # `✓ AUR audit of 79 package(s) — 9 no longer in the AUR` and exited 0. A green tick
+    # whose own words report findings is the shape this QA pass exists to remove, and it
+    # sat on the highest-signal supply-chain indicator there is.
+    #
+    # Only the two EVENT-shaped signals raise the mark. A package that vanished upstream
+    # or changed hands is something that *happened* and wants looking at. Out-of-date and
+    # orphaned are standing states — on a real 79-package host, 7 are flagged out-of-date
+    # more or less permanently, and warning on those every single run is how a warning
+    # stops being read. They stay in the text, counted.
+    if missing or changes:
+        out.summary_warn(summary)
+    else:
+        out.summary_add(summary)
     if missing:
         out.warn(f"{len(missing)} installed AUR package(s) are NOT in the AUR any more "
                  "(deleted or renamed upstream) — a package removed for malware looks "
