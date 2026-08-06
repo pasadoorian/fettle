@@ -1,10 +1,13 @@
 # Changelog
 
-> **The 0.5.x line is undergoing a full feature-by-feature QA pass — use with caution.**
-> Each action is being specified, run against seven live systems, and fixed where it
-> misbehaves or explains itself badly (see `docs/qa/`). Behaviour can therefore change
-> between 0.5.x releases; read the entry before upgrading. **The next stable release will
-> be 0.6.0**, once the QA matrix is complete.
+> **The `0.x` line is under a full feature-by-feature QA pass — use with caution.** Each
+> action is specified, run against seven live systems, and fixed where it misbehaves or
+> explains itself badly (see `docs/qa/`). Behaviour can therefore change between releases;
+> read the entry before upgrading.
+>
+> 23 of 24 features and all ten cross-cutting areas are swept (`web` is on hold).
+> **The first stable release will be 1.0.0, and this is not it** — that release has a plan
+> and binary builds attached to it, rather than being a number to bump.
 
 All notable changes to fettle are recorded here. Newest first.
 

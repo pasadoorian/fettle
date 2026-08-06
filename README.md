@@ -7,14 +7,19 @@
 > **The 0.5.x line is undergoing a full feature-by-feature QA pass. Use with caution.**
 > Every action is being tested against seven live systems — Arch, Manjaro, Debian,
 > Ubuntu, Rocky, AlmaLinux and Fedora — and fixed where it misbehaves or explains itself
-> badly. That work is landing continuously in 0.5.x, so **behaviour can change between
+> badly. That work lands continuously on the `0.x` line, so **behaviour can change between
 > releases**: read [CHANGELOG.md](CHANGELOG.md) before upgrading, and check
 > [`docs/qa/`](docs/qa/) for what has been verified and what has not.
 >
-> **The next stable release will be 0.6.0**, once the QA matrix is complete.
+> **Where it stands:** 23 of 24 features and all ten cross-cutting areas have been swept
+> (`web` is on hold and marked experimental). **The first stable release will be 1.0.0**,
+> and it is not here yet — it has a release plan and binary builds attached to it rather
+> than being a version number to bump.
 >
-> The sweep has already found actions that reported success while doing nothing at all.
-> If you are running 0.5.x on something you care about, `--dry-run` first.
+> The sweep has found actions that reported success while doing nothing at all, a preview
+> that deleted run history, and an unattended flag that would purge a list fettle had
+> guessed at. If you are running a `0.x` release on something you care about, `--dry-run`
+> first.
 
 > *in fine fettle* — in good working order.
 

@@ -18,9 +18,30 @@ Every case is judged on three axes, not one. A case only passes if all three hol
 | **Truthful** | Does the output match what actually happened? Never let *"could not look"* render as *"clean"*, and never let *"nothing ran"* render as *"done"*. |
 | **Clear** | Would a competent sysadmin who has never read the source understand the output, the prompt, and the terminology — first time, without guessing? |
 
-**The Clear axis is currently the priority.** Terminology across fettle is inconsistent and
-in places actively misleading; fixing that is the point of this exercise as much as finding
-bugs. A case that works perfectly but explains itself badly is a **FAIL**, recorded as such.
+**The Clear axis was the stated priority**, and it was swept in the terminology row: every
+summary line now names the action that produced it, a green tick means "nothing needed from
+you", and the naming rule is written down and enforced by test. A case that works perfectly
+but explains itself badly is still a **FAIL**, recorded as such.
+
+## Where this stands (2026-08-06)
+
+**23 of 24 features swept**, `web` on hold by decision and marked experimental. **All ten
+cross-cutting rows swept.** Roughly 90 findings fixed across the pass, at v0.110.0 with
+1172 unit tests.
+
+**This is not 1.0.0 and is not claiming to be.** The version stays on the `0.x` line until
+the stable release, which has work attached to it — a release plan, and GitHub Actions
+building binaries — rather than being a number to bump. Two known items remain: the `web`
+sweep, and the `--quiet` refactor recorded in
+[selection-and-output.md](selection-and-output.md).
+
+### The one finding that recurred more than any other
+
+*Every subcommand with its own entry point independently forgot to print a summary and
+compute an exit code.* Found six times — `sys-audit`, `advisory-check`, `upgrade-check`,
+`aur-precheck`, the remote zipapp wrapper, and finally `report`. It is not a bug in any one
+place; it is what happens by default each time someone adds a subcommand, which is why it
+ends in a guard rather than a sixth fix.
 
 ## Targets
 
