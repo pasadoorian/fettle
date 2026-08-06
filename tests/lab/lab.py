@@ -361,6 +361,55 @@ def agent_exec(conf: dict, target: str, shell_cmd: str) -> None:
           check=False)
 
 
+CLOCK_TOLERANCE = 120  # seconds a guest may differ from the controller before it is a lie
+
+
+def sync_clock(target: str, addr: str, user: str) -> None:
+    """Step the guest's clock to the controller's, and prove it took.
+
+    **A reverted guest wakes up in the past.** `snapshot-revert --running` restores the
+    saved *memory* state, so the clock resumes at the moment the snapshot was taken and
+    then sits there: NTP is running but will not step a jump that large on its own.
+    Measured 2026-08-05, five days after the snapshots were made — guest clock
+    2026-07-31T14:23Z against a real 2026-08-05T22:18Z, with `timedatectl` reporting
+    *System clock synchronized: no*.
+
+    That is not cosmetic. Ubuntu's archive publishes Release files with a validity window,
+    and apt refuses one that has not started yet::
+
+        E: Release file for .../resolute-security/InRelease is not valid yet
+           (invalid for another 5d 4h 39min 45s)
+
+    which failed both `only-update` and `update` on that guest and will fail more of them
+    every day the snapshots age. It also **date-stamps the reports**: Fedora filed its
+    integrity report as `20260731-142302`, so the dashboard's staleness check and its
+    "what changed since last run" delta both read from the wrong day.
+
+    Setting the date rather than nudging NTP is deliberate — it is one command that works
+    on chrony, timesyncd and neither, which is three of the six guests' worth of variation
+    avoided. **Verified afterwards, not assumed:** an unverified sync would only move the
+    lie somewhere harder to see.
+    """
+    now = int(time.time())
+    ssh = ["ssh", *ssh_opts(), "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+           f"{user}@{addr}"]
+    subprocess.run([*ssh, f"sudo date -s @{now} >/dev/null 2>&1; "
+                          "sudo hwclock --systohc >/dev/null 2>&1; true"],
+                   capture_output=True, text=True)
+    check = subprocess.run([*ssh, "date +%s"], capture_output=True, text=True)
+    guest = check.stdout.strip()
+    if not guest.isdigit():
+        die(f"{target}: could not read the guest clock back after setting it "
+            f"({check.stderr.strip()[:120]!r}) — refusing to run against an unknown clock")
+    drift = abs(int(guest) - int(time.time()))
+    if drift > CLOCK_TOLERANCE:
+        die(f"{target}: clock is still {drift}s off after setting it. Package metadata "
+            "validity and report timestamps both depend on this; fix the guest before "
+            "trusting any result from it.")
+    if drift > 5:
+        print(f"    (clock stepped, {drift}s residual) ", end="", flush=True)
+
+
 def wait_ready(conf: dict, target: str, *, tries: int = 60) -> str:
     """Block until the guest is actually usable, and return its address.
 
@@ -398,6 +447,7 @@ def wait_ready(conf: dict, target: str, *, tries: int = 60) -> str:
                 capture_output=True, text=True)
             if probe.returncode == 0:
                 trust_host_key(addr, target)
+                sync_clock(target, addr, spec["user"])
                 return addr
         time.sleep(10)
         print("    ...")

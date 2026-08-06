@@ -160,6 +160,30 @@ line — because ssh keys `known_hosts` by whatever it actually connects to: the
 typed, or `HostName` when the config overrides it. `lab.py` connects by address while you
 type a name, so both have to be there or one of them prompts.
 
+## Reverted guests wake up in the past
+
+`snapshot-revert --running` restores the saved **memory** state, so a guest's clock resumes
+at the moment the snapshot was taken and stays there — NTP is running, but it will not step
+a jump that large by itself. Five days after the snapshots were made, the guests were five
+days behind.
+
+That breaks real things, not just cosmetics:
+
+* **apt refuses the archive.** Ubuntu publishes Release files with a validity window, and a
+  guest in the past gets `Release file ... is not valid yet (invalid for another 5d 4h)`.
+  Both `only-update` and `update` failed on that guest for this reason alone.
+* **Reports are filed on the wrong day.** A guest reporting from July 31 makes the dashboard
+  read every lab host as stale and computes its "what changed since last run" delta against
+  the wrong day.
+
+`wait_ready()` now steps the clock from the controller and **verifies it took** before
+returning, so every revert, reset and build is covered from one place. It sets the date
+outright rather than nudging NTP: one command that behaves the same on chrony, timesyncd,
+and a guest running neither. The check is not optional — an unverified sync would only move
+the lie somewhere harder to see — and a guest still more than two minutes out is a hard
+failure rather than a warning, because package metadata validity and report timestamps both
+silently depend on it.
+
 ## Known limits
 
 Even with VMs, some things stay out of reach, and the runner should report them as
