@@ -1,13 +1,14 @@
 # Changelog
 
-> **The `0.x` line is under a full feature-by-feature QA pass — use with caution.** Each
-> action is specified, run against seven live systems, and fixed where it misbehaves or
-> explains itself badly (see `docs/qa/`). Behaviour can therefore change between releases;
-> read the entry before upgrading.
+> **The `0.x` line is the unstable line — use with caution.** Every action has been
+> specified, run against seven live systems, and fixed where it misbehaved or explained
+> itself badly (see `docs/qa/`): 23 of 24 features and all ten cross-cutting areas are
+> swept, `web` excepted. Feature work continues on top of that, so behaviour can still
+> change between releases; read the entry before upgrading.
 >
-> 23 of 24 features and all ten cross-cutting areas are swept (`web` is on hold).
-> **The first stable release will be 1.0.0, and this is not it** — that release has a plan
-> and binary builds attached to it, rather than being a number to bump.
+> **The first stable release will be 1.0.0, and this is not it** — that release has a
+> plan, binary builds and a round of hands-on testing attached to it, rather than being a
+> number to bump.
 
 All notable changes to fettle are recorded here. Newest first.
 
