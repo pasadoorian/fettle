@@ -49,6 +49,7 @@ real unit-test coverage the bash originals never had.
   - [What works where](#what-works-where)
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [Optional: bash completion](#optional-bash-completion)
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
 - [Quick start](#quick-start)
 - [Reading the output](#reading-the-output)
@@ -284,6 +285,30 @@ Update with a plain `git pull`. To drop it in for the old updater:
 ```sh
 ln -sf ~/src/fettle/bin/fettle ~/update.sh
 ```
+
+### Optional: bash completion
+
+```sh
+source ~/src/fettle/contrib/fettle.bash                        # or, system-wide:
+sudo ln -s ~/src/fettle/contrib/fettle.bash /usr/share/bash-completion/completions/fettle
+```
+
+Completes every flag and action at the top level, and each subcommand's own options
+inside it — so `fettle report <TAB>` offers `--open` and `--backfill-json`, and does
+*not* offer `--dry-run`, because `fettle report --dry-run` is not a thing.
+`fettle sys-audit <TAB>` also offers the nine check categories and drops the ones you
+have already typed. `fettle -S <TAB>` completes as `sys-audit`, since that is what it
+runs.
+
+The script is about six lines and **knows nothing about fettle's options** — it asks
+`fettle` itself, so it cannot fall out of step with the CLI. Each tab press costs
+roughly 70 ms.
+
+Two things it deliberately does not do. It completes **names, not values**: no paths for
+`--config`, hosts for `remote`, or package names for `aur-precheck` (sys-audit's
+categories are the exception, being a fixed set). And it binds to the `fettle` command,
+so `python -m fettle` gets nothing — bash completes on the command name, and there the
+command is `python`.
 
 ### Optional: yay install-time supply-chain hook (Arch/Manjaro)
 

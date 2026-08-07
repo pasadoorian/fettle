@@ -14,6 +14,39 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.119.0] — bash completion, and now you can actually use it
+
+Third and last completion milestone. `contrib/fettle.bash` ships the script; the two
+previous releases built the machinery behind it.
+
+```sh
+source ~/src/fettle/contrib/fettle.bash                        # or, system-wide:
+sudo ln -s ~/src/fettle/contrib/fettle.bash /usr/share/bash-completion/completions/fettle
+```
+
+Completes every flag and action at the top level, and each subcommand's own options
+inside it. `fettle sys-audit <TAB>` also offers the nine check categories, minus any
+already typed; `fettle -S <TAB>` completes as sys-audit, since that is what it runs.
+
+The script is **about six lines and knows nothing about fettle's options** — it asks
+fettle itself, so it cannot fall out of step with the CLI. Roughly 70 ms per tab press.
+
+**Verified in a real bash process**, driving the actual completion function rather than
+only the helper behind it — a completion that passes its unit tests and does nothing
+when you press tab is the obvious failure mode here. Eleven cases, all correct: prefix
+matching (`fettle hard` → `hardening-audit`), subcommand contexts (`fettle report --`
+offers only report's flags), category filtering (`sys-audit tp` → `tpm`), and
+`aur-precheck` correctly offering nothing.
+
+**And the data-loss guard checked against reality**: 395 real run-logs in `~/.fettle`
+before eight tab presses, 395 after. Without the guard added in 0.117.0 each of those
+would have written a log and rotated the directory.
+
+Two deliberate limits, documented rather than left to be discovered: it completes
+**names, not values** (no paths for `--config`, hosts for `remote`, or package names for
+`aur-precheck` — sys-audit's categories being the fixed-set exception), and it binds to
+the `fettle` command, so `python -m fettle` gets nothing.
+
 ## [0.118.0] — completion knows every subcommand (still no shell script)
 
 Second of three milestones. Still internal — the bash script is M3 — but the helper now
