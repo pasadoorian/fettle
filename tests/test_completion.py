@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from fettle import cli, completion, runlog
+from fettle.secure import audit
 
 
 def _top(*before: str) -> list[str]:
@@ -130,11 +131,110 @@ def test_context_detection(before, want):
     assert completion.context(before) == want
 
 
-def test_inside_a_subcommand_nothing_is_offered_yet():
-    """M1 is top level only. Offering the top-level options here would be worse than
-    offering nothing — `fettle report --dry-run` is not a thing."""
-    assert _top("report") == []
-    assert _top("-S") == []
+# -- subcommand contexts -----------------------------------------------------
+
+@pytest.mark.parametrize("sub,parser_factory", [
+    ("report", lambda: cli.report_parser()),
+    ("web", lambda: cli.web_parser()),
+    ("upgrade-check", lambda: cli.upgrade_check_parser()),
+    ("advisory-check", lambda: cli.advisory_parser("advisory-check")),
+    ("advisory-update", lambda: cli.advisory_parser("advisory-update")),
+    ("sys-audit", lambda: audit.parser()),
+])
+def test_every_subcommand_option_is_offered(sub, parser_factory):
+    """The anti-drift guarantee, extended past the top level. Each subcommand's parser
+    is now module-level precisely so this can read it."""
+    assert completion.options(parser_factory()) <= set(_top(sub))
+
+
+def test_a_subcommand_does_not_offer_top_level_options():
+    """`fettle report --dry-run` is not a thing, and suggesting it teaches a CLI that
+    does not exist — worse than offering nothing."""
+    report = set(_top("report"))
+    assert "--dry-run" not in report
+    assert "clean" not in report
+    assert "--everything" not in report
+
+
+def test_a_suppressed_option_is_never_offered():
+    """`upgrade-check --collect` is the remote transport asking for a JSON snapshot.
+    Offering it invites someone to type it and get output they cannot use — the same
+    reason `--complete` keeps itself out of the list."""
+    assert "--collect" not in _top("upgrade-check")
+    # ...and it really is a live option, so this is a filter and not a typo
+    assert "--collect" in {o for a in cli.upgrade_check_parser()._actions
+                           for o in a.option_strings}
+
+
+def test_sys_audit_offers_its_categories_and_drops_the_ones_already_typed():
+    cands = set(_top("sys-audit"))
+    assert set(audit.CATEGORIES) <= cands
+    assert "remote" in cands                      # its sub-subcommand
+
+    after = set(_top("sys-audit", "tpm"))
+    assert "tpm" not in after
+    assert "secureboot" in after                  # the rest are still available
+
+
+def test_sys_audit_remote_switches_to_its_own_parser():
+    """A different flag set: `--sudo` exists there and `--list`/`--user` do not."""
+    cands = set(_top("sys-audit", "remote"))
+    assert "--sudo" in cands
+    assert "--list" not in cands and "--user" not in cands
+    assert set(audit.CATEGORIES) <= cands         # categories still apply
+
+
+def test_a_dispatch_shortcut_completes_as_its_subcommand():
+    """`fettle -S <TAB>` is inside sys-audit, because that is what it will run."""
+    assert _top("-S") == _top("sys-audit")
+
+
+def test_remote_offers_ssh_options_before_the_host_and_actions_after_it():
+    before = set(_top("remote"))
+    assert set(cli.REMOTE_FLAGS) <= before
+    assert "clean" not in before                  # actions are not valid before HOST
+
+    after = set(_top("remote", "somehost"))
+    assert {"clean", "update", "upgrade-check"} <= after
+    assert "--ssh-arg" not in after               # ssh options go before HOST
+
+
+def test_an_ssh_arg_value_is_not_mistaken_for_the_host():
+    """`--ssh-arg -p2222` consumes its value; treating it as HOST would flip the
+    context a word early and start offering actions where ssh options belong."""
+    assert "--ssh-arg" in _top("remote", "--ssh-arg", "-p2222")
+    assert "clean" not in _top("remote", "--ssh-arg", "-p2222")
+
+
+def test_remote_flags_match_what_the_runner_actually_parses():
+    """`REMOTE_FLAGS` is the weakest link in this design: `fettle remote` is hand-parsed,
+    so unlike every other context the constant is not read by the code it describes. This
+    scans the runner's own source, so adding a flag there without listing it fails here."""
+    src = Path(cli.__file__).read_text()
+    body = src.split("def _run_remote_maintenance(")[1].split("\ndef ")[0]
+    parsed = set(re.findall(r'tok == "(--?[a-z-]+)"', body))
+    parsed |= set(re.findall(r'tok in \(([^)]*)\)', body) and
+                  re.findall(r'"(--?[a-z-]+)"', re.findall(r'tok in \(([^)]*)\)', body)[0]))
+    parsed |= set(re.findall(r'tok\.startswith\("(--?[a-z-]+)=', body))
+    parsed |= set(re.findall(r'"(--?[a-z-]+)" in argv', body))
+
+    assert parsed, "the scan matched nothing — it has drifted from the runner's source"
+    assert parsed <= set(cli.REMOTE_FLAGS), f"parsed but not listed: {parsed - set(cli.REMOTE_FLAGS)}"
+
+
+def test_aur_precheck_offers_nothing():
+    """It takes AUR package names and no flags of its own. Package names are out of
+    scope, and an empty list is honest where offering flags it ignores would not be."""
+    assert _top("aur-precheck") == []
+
+
+def test_a_repeatable_option_keeps_being_offered():
+    """`--only` twice names two actions; `--ssh-arg` twice passes two ssh options.
+    Dropping them after one use would be wrong rather than merely tidy."""
+    assert "--only" in _top("--only", "clean")
+    assert "--ssh-arg" in _top("remote", "--ssh-arg", "-p2222")
+    # ...while a plain flag really is dropped, so the exemption is narrow
+    assert "--dry-run" not in _top("--dry-run")
 
 
 # -- robustness: a broken completion must not break the shell -----------------

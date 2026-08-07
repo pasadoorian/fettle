@@ -14,6 +14,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.118.0] — completion knows every subcommand (still no shell script)
+
+Second of three milestones. Still internal — the bash script is M3 — but the helper now
+answers for the whole CLI rather than only the top level.
+
+**Every subcommand parser moved to module level** (`report_parser()`, `web_parser()`,
+`advisory_parser()`, `upgrade_check_parser()`, and sys-audit's `parser()` /
+`remote_parser()`). They were built inside their runner functions, so nothing could ask
+what options a subcommand takes without running it. Pure refactor, no behaviour change —
+and it is what lets the anti-drift test cover the whole surface instead of a third of it.
+
+Each context now offers its own flags and nothing else: `fettle report <TAB>` does not
+suggest `--dry-run` or `clean`, because `fettle report --dry-run` is not a thing and
+suggesting it teaches a CLI that does not exist.
+
+- **sys-audit** adds its nine categories and its `remote` sub-subcommand, and drops
+  categories already typed — they are repeatable positionals, so this is the one place
+  it matters. `sys-audit remote` switches to that parser's own flag set.
+- **A dispatch shortcut completes as its subcommand**: `fettle -S <TAB>` is inside
+  sys-audit, because that is what it will run.
+- **remote** offers ssh options before HOST and forwarded actions after it. A
+  `--ssh-arg` value is not mistaken for the host, which would flip the context a word
+  early. HOST itself is deliberately not completed.
+- **aur-precheck** offers nothing: it takes package names and no flags of its own, and
+  an empty list is honest where offering flags it ignores would not be.
+
+**Options hidden from `--help` are never offered.** `upgrade-check --collect` is the
+remote transport asking for a JSON snapshot; suggesting it invites someone to type it
+and get output they cannot use.
+
+**Repeatable options keep being offered** — `--only` twice names two actions, `--ssh-arg`
+twice passes two ssh options. Derived from every parser rather than listed, so an
+`append` option added anywhere keeps working.
+
+Two constants now have source-scanning guards, because both are second copies of
+something: `SUBCOMMANDS` (checked in 0.117.0) and `REMOTE_FLAGS`. The latter is the
+weakest link by design — `fettle remote` is hand-parsed, so unlike every other context
+the constant is not read by the code it describes, and the test scans the runner's own
+source instead.
+
 ## [0.117.0] — groundwork for shell completion (not usable yet)
 
 First of three milestones adding bash completion. This one is **internal**: it adds the

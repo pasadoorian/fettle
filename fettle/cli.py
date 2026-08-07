@@ -160,6 +160,13 @@ SUBCOMMANDS = ("aur-precheck", "sys-audit", "remote", "upgrade-check", "report",
 # the routing.
 HIDDEN_FLAGS = frozenset({"--complete"})
 
+# `fettle remote` is hand-parsed rather than argparse'd (ssh options come before HOST
+# and forwarded actions after it, which argparse has no clean way to express), so there
+# is no parser for completion to read. These are the flags it accepts before HOST.
+# `tests/test_completion.py` scans the runner's own source and fails if a flag is added
+# there without being listed here.
+REMOTE_FLAGS = ("-h", "--help", "--ssh-arg", "--no-config")
+
 # Actions that never MUTATE the system.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
                      "auto_updates", "hardening_audit", "pkg_integrity",
@@ -786,13 +793,7 @@ def _fetch_remote_reports(host: str, ssh_args) -> None:
         remote._err(f"Could not fetch reports from {host}: {exc!r}")
 
 
-def _run_report(argv: list[str]) -> int:
-    """`fettle report` — regenerate ~/.fettle/report.html from all stored JSON.
-    Read-only, no sudo. `--backfill-json` converts pre-0.12 .txt files first."""
-    from types import SimpleNamespace
-
-    from . import htmlreport
-
+def report_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle report",
         description="Build a single HTML dashboard (~/.fettle/report.html) from all "
@@ -802,7 +803,17 @@ def _run_report(argv: list[str]) -> int:
                    help="one-off: give pre-0.12 .txt reports a JSON sibling first")
     p.add_argument("--config", metavar="PATH", type=Path, default=DEFAULT_CONFIG)
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
-    args = p.parse_args(argv)
+    return p
+
+
+def _run_report(argv: list[str]) -> int:
+    """`fettle report` — regenerate ~/.fettle/report.html from all stored JSON.
+    Read-only, no sudo. `--backfill-json` converts pre-0.12 .txt files first."""
+    from types import SimpleNamespace
+
+    from . import htmlreport
+
+    args = report_parser().parse_args(argv)
 
     out = Output(color=None)
     cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
@@ -856,9 +867,7 @@ def _run_report(argv: list[str]) -> int:
     return 1 if out.had_failures else 0
 
 
-def _run_web(argv: list[str]) -> int:
-    """`fettle web` — serve the NiceGUI web UI (localhost by default). Needs the
-    optional `web` extra; the core stays pure-stdlib and never imports it."""
+def web_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle web",
         description="[EXPERIMENTAL] Serve the fettle web UI (a browser dashboard over your stored "
@@ -869,7 +878,13 @@ def _run_web(argv: list[str]) -> int:
     p.add_argument("--port", type=int, default=8080, help="bind port (default 8080)")
     p.add_argument("--reload", action="store_true", help="dev auto-reload")
     p.add_argument("--show", action="store_true", help="open a browser on start")
-    args = p.parse_args(argv)
+    return p
+
+
+def _run_web(argv: list[str]) -> int:
+    """`fettle web` — serve the NiceGUI web UI (localhost by default). Needs the
+    optional `web` extra; the core stays pure-stdlib and never imports it."""
+    args = web_parser().parse_args(argv)
 
     # Said at run time, not only in the docs: this is the one surface that both
     # serves a page and runs privileged actions from a password typed into a browser,
@@ -898,13 +913,7 @@ def _web_runner():
     return run
 
 
-def _run_advisory(cmd: str, argv: list[str]) -> int:
-    """`fettle advisory-check` / `advisory-update` — distro CVE/advisory tracking.
-    Read-only; opt-in (not in the default `-a` set). Uses a rebuildable SQLite cache
-    under ~/.cache/fettle/, refreshed on-run when stale."""
-    from types import SimpleNamespace
-
-    from .advisories import check
+def advisory_parser(cmd: str) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog=f"fettle {cmd}",
         description=("Refresh the advisory cache." if cmd == "advisory-update" else
@@ -915,7 +924,17 @@ def _run_advisory(cmd: str, argv: list[str]) -> int:
     if cmd == "advisory-check":
         p.add_argument("--dry-run", action="store_true",
                        help="print findings but don't write a report")
-    args = p.parse_args(argv)
+    return p
+
+
+def _run_advisory(cmd: str, argv: list[str]) -> int:
+    """`fettle advisory-check` / `advisory-update` — distro CVE/advisory tracking.
+    Read-only; opt-in (not in the default `-a` set). Uses a rebuildable SQLite cache
+    under ~/.cache/fettle/, refreshed on-run when stale."""
+    from types import SimpleNamespace
+
+    from .advisories import check
+    args = advisory_parser(cmd).parse_args(argv)
 
     out = Output(color=None)
     cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)
@@ -938,12 +957,7 @@ def _run_advisory(cmd: str, argv: list[str]) -> int:
     return 1 if out.had_failures else 0
 
 
-def _run_upgrade_check(argv: list[str]) -> int:
-    from .ai import snapshot as ai_snapshot
-    from .ai import upgrade_check as uc
-    from .ai.client import resolve_auth
-    from .backends.base import Context
-
+def upgrade_check_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle upgrade-check",
         description="[EXPERIMENTAL] AI-assisted pre-upgrade safety check (Claude). "
@@ -968,7 +982,16 @@ def _run_upgrade_check(argv: list[str]) -> int:
     # API call, no UI. `fettle remote HOST upgrade-check` runs this on the remote,
     # then analyses locally with the local key.
     p.add_argument("--collect", action="store_true", help=argparse.SUPPRESS)
-    args = p.parse_args(argv)
+    return p
+
+
+def _run_upgrade_check(argv: list[str]) -> int:
+    from .ai import snapshot as ai_snapshot
+    from .ai import upgrade_check as uc
+    from .ai.client import resolve_auth
+    from .backends.base import Context
+
+    args = upgrade_check_parser().parse_args(argv)
 
     out = Output(color=(False if args.no_color else None), quiet=args.quiet)
     cfg, warnings = (Config(), []) if args.no_config else load_config(args.config)

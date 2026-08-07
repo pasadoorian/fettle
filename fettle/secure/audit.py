@@ -143,7 +143,7 @@ examples:
 """
 
 
-def _parse(argv: list[str]) -> argparse.Namespace:
+def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle sys-audit",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -160,10 +160,14 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--user", action="store_true",
                    help="run unprivileged (skip auto-sudo; partial results)")
-    return p.parse_args(argv)
+    return p
 
 
-def _remote(argv: list[str]) -> int:
+def _parse(argv: list[str]) -> argparse.Namespace:
+    return parser().parse_args(argv)
+
+
+def remote_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle sys-audit remote",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -180,7 +184,11 @@ def _remote(argv: list[str]) -> int:
     p.add_argument("-a", "--all", action="store_true", help="run every check on the host")
     p.add_argument("host", help="ssh host or ~/.ssh/config alias (e.g. server1, user@host)")
     p.add_argument("categories", nargs="*", help="check categories to run (or --all)")
-    args = p.parse_args(argv)
+    return p
+
+
+def _remote(argv: list[str]) -> int:
+    args = remote_parser().parse_args(argv)
 
     chosen = list(CATEGORIES) if args.all else [c.replace("_", "-") for c in args.categories]
     if not chosen:
