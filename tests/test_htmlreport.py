@@ -629,3 +629,117 @@ def test_the_filter_does_not_reach_inside_an_entry(tmp_path):
     only — otherwise filtering would collapse or reveal them as a side effect."""
     text = _adv_multi(tmp_path, [("/srv/a/venv", "1.0"), ("/srv/b/venv", "2.0")])
     assert "querySelectorAll('details[data-host]')" in text
+
+
+# -- hardening axes on the dashboard (v0.120.0) ------------------------------
+#
+# The axes shipped in v0.111.0-0.116.1 but nothing on the dashboard knew about them:
+# the card rendered only the binary packages, the severity filter ranked only the
+# binary bands, and the host verdict counted only those bands. A machine whose one
+# finding was a world-writable /tmp therefore read as clean — the same
+# silence-reads-as-a-pass failure the audit itself exists to prevent, in a different
+# surface.
+
+def _axes_data(*, packages=None, findings=None, blind=(), na=""):
+    return {
+        "band_tally": {}, "scan": {}, "packages": packages or [],
+        "axes": [{
+            "axis": "filesystem", "title": "Filesystem hygiene", "checked": 7,
+            "not_applicable": na,
+            "tally": {}, "notes": [],
+            "findings": findings if findings is not None else [{
+                "check": "sticky-bit", "subject": "/tmp", "severity": "High",
+                "summary": "world-writable (0777) with no sticky bit",
+                "detail": "world-writable (0777) with no sticky bit — any local user "
+                          "can delete or replace another user's files here",
+                "fix": "chmod +t /tmp"}],
+            "not_checked": [{"what": w, "why": y, "package": ""} for w, y in blind],
+        }],
+    }
+
+
+def test_axis_findings_render_on_the_hardening_card():
+    html = htmlreport._render_hardening(_axes_data())
+    assert "world-writable (0777) with no sticky bit" in html
+    assert "chmod +t /tmp" in html
+    assert "filesystem" in html
+    assert ">High<" in html
+
+
+def test_the_long_detail_is_not_what_the_table_shows():
+    """`summary` is the label; the sentence explaining why belongs in the saved text
+    report, not in a table cell."""
+    html = htmlreport._render_hardening(_axes_data())
+    assert "another user's files" not in html
+
+
+def test_a_report_with_only_axis_findings_is_not_hidden():
+    """`_is_empty` tested `packages` alone, so a run whose findings all came from the
+    filesystem/kernel/ssh axes vanished from the dashboard entirely."""
+    entry = {"tool": "hardening-audit", "data": _axes_data()}
+    assert htmlreport._is_empty(entry) is False
+
+
+def test_an_axis_that_could_not_look_also_keeps_the_report_visible():
+    """Blindness is not emptiness. A card that disappears because every axis was blind
+    tells the reader nothing was wrong."""
+    entry = {"tool": "hardening-audit",
+             "data": _axes_data(findings=[],
+                                blind=[("the SSH config was NOT checked", "needs root")])}
+    assert htmlreport._is_empty(entry) is False
+    assert "NOT checked" in htmlreport._render_hardening(entry["data"])
+
+
+def test_a_genuinely_empty_hardening_report_is_still_hidden():
+    entry = {"tool": "hardening-audit", "data": {"packages": [], "axes": []}}
+    assert htmlreport._is_empty(entry) is True
+
+
+def test_axis_findings_rank_for_the_severity_filter():
+    """Without this a host whose only finding is a High axis result filters out as
+    "nothing above Low"."""
+    entry = {"tool": "hardening-audit", "data": _axes_data()}
+    assert htmlreport._entry_rank(entry) == htmlreport._SEV_RANK["High"]
+
+
+def test_axis_findings_reach_the_host_verdict():
+    lines = htmlreport._host_problems(
+        {"reports": [{"tool": "hardening-audit", "data": _axes_data()}], "logs": []}, stale_days=7)
+    joined = " ".join(text for _, text in lines)
+    assert "system hardening finding" in joined
+    assert any(rank == htmlreport._SEV_RANK["High"] for rank, _ in lines)
+
+
+def test_an_axis_verdict_is_not_capped_like_the_binary_bands():
+    """The binary bands are capped at rank 2 because every real desktop has
+    Critical-band packages, so uncapped they would make every host red forever. An axis
+    finding is the opposite: specific, rare and actionable."""
+    lines = htmlreport._host_problems({"reports": [
+        {"tool": "hardening-audit",
+         "data": {**_axes_data(),
+                  "axes": [{**_axes_data()["axes"][0],
+                            "findings": [{"check": "x", "subject": "/tmp",
+                                          "severity": "Critical", "summary": "s",
+                                          "detail": "d", "fix": ""}]}]}}], "logs": []},
+        stale_days=7)
+    assert any(rank == htmlreport._SEV_RANK["Critical"] for rank, _ in lines)
+
+
+def test_a_pre_axes_report_still_renders():
+    """Reports written before v0.111.0 have no `axes` key at all, and stored reports
+    are forever."""
+    old = {"band_tally": {"High": 2}, "scan": {"analyzed": 100},
+           "packages": [{"band": "High", "score": 9, "package": "p", "binaries": 1,
+                         "checks": {"relro": 1}, "has_privileged": False}]}
+    html = htmlreport._render_hardening(old)
+    assert "High" in html
+    assert htmlreport._is_empty({"tool": "hardening-audit", "data": old}) is False
+
+
+def test_legacy_lowercase_severities_normalise():
+    """v0.111.0-0.119.0 wrote "high"/"medium"/"low" before the scale was unified."""
+    data = _axes_data(findings=[{"check": "c", "subject": "/tmp", "severity": "high",
+                                 "summary": "s", "detail": "d", "fix": ""}])
+    assert htmlreport._entry_rank({"tool": "hardening-audit", "data": data}) == \
+        htmlreport._SEV_RANK["High"]
+    assert ">High<" in htmlreport._render_hardening(data)

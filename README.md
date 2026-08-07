@@ -971,6 +971,13 @@ nothing else:
 Every axis is on by default; turn one off with `[hardening] disable_axes = ["binary"]`.
 An axis that **can't** look says so in its own words — it never renders as a pass.
 
+Findings print as a table per axis — severity, subject, and what is wrong — ranked
+worst first on one **Critical / High / Medium / Low** scale shared with the binary axis.
+The table deliberately drops the *why* and the fix; both are kept in full in the saved
+report under `~/.fettle/reports/`, the same split the binary axis already makes between
+its on-screen ranking and its full matrix. The HTML dashboard shows every axis finding
+with its fix, and counts them toward the host's verdict.
+
 #### Binary axis — were these built hardened?
 
 **In plain terms:** when a program is compiled it can be given built-in *safety
@@ -1093,7 +1100,7 @@ Absent paths aren't findings — most containers have no `/boot`.
 
 The severities are deliberately not flat: a missing `nosuid` (a setuid binary would
 keep its privileges) and a missing `noexec` (a payload can be run where it landed) are
-**medium**; a missing `nodev` is **low**, because planting a device node already needs
+**Medium**; a missing `nodev` is **Low**, because planting a device node already needs
 the root you'd have to have to mount the filesystem in the first place.
 
 ```toml

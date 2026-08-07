@@ -271,5 +271,7 @@ def test_findings_render_worst_first():
         Finding(check="c", subject="/high", detail="d", severity=HIGH),
         Finding(check="c", subject="/med", detail="d", severity=MEDIUM),
     ])
-    order = [ln.split()[1] for ln in arender.screen([res])[1:]]
-    assert order == ["/high", "/med", "/low"]
+    # [0] is the axis tally line, [1] the table header; the rows follow.
+    lines = arender.screen([res])
+    assert lines[1].split() == ["SEVERITY", "SUBJECT", "FINDING"]
+    assert [ln.split()[1] for ln in lines[2:]] == ["/high", "/med", "/low"]

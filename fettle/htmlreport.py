@@ -356,6 +356,60 @@ def _hardening_distro(data: dict) -> str:
     return name[0] if name else ""
 
 
+def _axis_findings(data: dict) -> list[dict]:
+    """Every finding from the non-binary hardening axes, flattened.
+
+    Added in v0.120.0. Reports written between v0.111.0 and then have an ``axes`` key;
+    older ones have none, and both must keep rendering — stored reports are forever.
+    """
+    out = []
+    for axis in data.get("axes") or []:
+        if not isinstance(axis, dict):
+            continue
+        for f in axis.get("findings") or []:
+            out.append({**f, "axis": axis.get("axis", "")})
+    return out
+
+
+def _render_axes(data: dict) -> str:
+    """The filesystem/services/kernel/ssh/firewall/cert findings, worst first.
+
+    Also renders what each axis could *not* look at. An axis that was blind and an axis
+    that found nothing look identical if only the findings are shown, which is the one
+    thing this whole audit is built not to do.
+    """
+    findings = _axis_findings(data)
+    blind, na = [], []
+    for axis in data.get("axes") or []:
+        if not isinstance(axis, dict):
+            continue
+        title = str(axis.get("title") or axis.get("axis") or "")
+        if axis.get("not_applicable"):
+            na.append(f"{title}: {axis['not_applicable']}")
+        for nc in axis.get("not_checked") or []:
+            blind.append(f"{nc.get('what', '')}"
+                         + (f" — {nc.get('why')}" if nc.get("why") else ""))
+
+    out = ""
+    if findings:
+        findings.sort(key=lambda f: _SEV_RANK.get(_sev(f.get("severity")), 1),
+                      reverse=True)
+        rows = "".join(
+            f'<tr><td><span class="pill b-{_esc(_sev(f.get("severity")))}">'
+            f'{_esc(_sev(f.get("severity")))}</span></td>'
+            f'<td>{_esc(str(f.get("axis", "")))}</td>'
+            f'<td>{_esc(str(f.get("subject", "")))}</td>'
+            f'<td>{_esc(str(f.get("summary") or f.get("detail", "")))}</td>'
+            f'<td class=muted>{_esc(str(f.get("fix", "")))}</td></tr>' for f in findings)
+        out += ('<table><tr><th>severity</th><th>axis</th><th>subject</th>'
+                f'<th>finding</th><th>fix</th></tr>{rows}</table>')
+    for line in blind:
+        out += f'<div class="muted">? {_esc(line)}</div>'
+    for line in na:
+        out += f'<div class="muted">n/a — {_esc(line)}</div>'
+    return out
+
+
 def _render_hardening(data: dict) -> str:
     tally = data.get("band_tally") or {}
     chips = "".join(f'<span class="chip b-{b}">{tally.get(b,0)} {b}</span>'
@@ -383,7 +437,14 @@ def _render_hardening(data: dict) -> str:
                  f'<th>bins</th><th>missing</th></tr>{rows}</table>')
     rest = sum(tally.get(b, 0) for b in ("Medium", "Low"))
     tail = f'<div class="muted">+ {rest} Medium/Low package(s)</div>' if rest else ""
-    return f'{chips}{meta}{table or "<div class=muted>no Critical/High packages</div>"}{tail}'
+    binary = f'{chips}{meta}{table or "<div class=muted>no Critical/High packages</div>"}{tail}'
+    axes = _render_axes(data)
+    if not axes:
+        return binary
+    # One report, one card: the axes come from the same action and the same saved file,
+    # so splitting them onto a card of their own would contradict where the data lives.
+    return (f'<div class="muted">binaries</div>{binary}'
+            f'<div class="muted" style="margin-top:.6rem">system</div>{axes}')
 
 
 def _pkg_cell(f: dict) -> str:
@@ -663,8 +724,13 @@ def _is_empty(entry: dict) -> bool:
     tool = entry.get("tool")
     if tool in ("pkg-audit", "aur-ioc-scan"):        # stale-flag-ok: stored reports
         return not data.get("findings")
-    if tool in ("obsolete-pkgs", "alien-pkgs", "hardening-audit"):
+    if tool in ("obsolete-pkgs", "alien-pkgs"):
         return not data.get("packages")
+    if tool == "hardening-audit":
+        # `packages` alone was the test until v0.120.0, so a run whose only findings
+        # came from the filesystem/kernel/ssh axes vanished from the dashboard.
+        return not (data.get("packages") or _axis_findings(data)
+                    or any((a or {}).get("not_checked") for a in data.get("axes") or []))
     if tool == "aur-audit":
         return not (data.get("packages") or data.get("not_found_in_aur")
                     or data.get("maintainer_changes"))
@@ -694,7 +760,7 @@ def _entry_badge(entry: dict) -> str:
 # friendly descriptions shown before the technical section name, e.g.
 # "Package Supply-Chain Audit (pkg-audit)".
 _SECTION_LABELS = {
-    "hardening-audit": "Binary Hardening Audit",
+    "hardening-audit": "System Hardening Audit",
     "pkg-audit": "Package Supply-Chain Audit",
     "aur-audit": "AUR Package Health",
     "aur-ioc-scan": "AUR Threat Scan",           # stale-flag-ok: stored reports
@@ -752,6 +818,10 @@ def _entry_rank(entry: dict) -> int:
              for f in (data.get("findings") or [])]
     ranks += [_SEV_RANK.get(_sev(b), 1) for b, n in (data.get("band_tally") or {}).items()
               if n]
+    # Hardening axis findings rank too. Without this a host whose only finding is a
+    # world-writable /tmp filters out as "nothing above Low", which is the same
+    # silence-reads-as-a-pass failure the audit itself exists to prevent.
+    ranks += [_SEV_RANK.get(_sev(f.get("severity")), 1) for f in _axis_findings(data)]
     counts = data.get("level_counts") or {}
     if counts.get("error"):
         ranks.append(3)
@@ -884,6 +954,19 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
                 out.append((min(2, _SEV_RANK.get(_sev(worst), 1)),
                             f"{n} package{'s' if n != 1 else ''} missing build "
                             "hardening"))
+            # The axes are counted separately and NOT capped at 2, unlike the binary
+            # bands above. That cap exists because every real desktop has Critical-band
+            # packages, so letting them drive a host's verdict would make every host
+            # red forever. An axis finding is the opposite kind of thing: a
+            # world-writable /tmp is specific, rare and actionable, and a host that has
+            # one should say so rather than reading as clean.
+            axis = _axis_findings(data)
+            if axis:
+                worst = max((_sev(f.get("severity")) for f in axis),
+                            key=lambda s: _SEV_RANK.get(s, 1))
+                out.append((_SEV_RANK.get(worst, 1),
+                            f"{len(axis)} system hardening "
+                            f"finding{'s' if len(axis) != 1 else ''} ({worst})"))
         elif tool in ("sys-audit", "pkg-integrity"):
             counts = data.get("level_counts") or {}
             label = "firmware/boot" if tool == "sys-audit" else "package file integrity"

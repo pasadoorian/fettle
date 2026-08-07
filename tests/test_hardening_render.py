@@ -1,166 +1,174 @@
-"""HS2: table rendering — compact on-screen table, full matrix, band summary."""
+"""Rendering the axes: the on-screen table, the saved report, and the short-label rule.
 
-from unittest.mock import patch
+The load-bearing test here is :func:`test_every_finding_has_a_label_that_fits_a_table`.
+`Finding.short()` derives its label by splitting `detail` on an em-dash, which works
+because details are written as ``<what is wrong> — <why it matters>`` — and would fail
+silently the moment somebody wrote one in a different shape, rendering a 140-character
+paragraph into a table cell. So the rule is checked against every finding the real axes
+can produce, rather than trusted.
+"""
 
-from fettle.hardening import baseline as bl
-from fettle.hardening import report
-from fettle.hardening.engine import Deviation
+from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 
-def _dev(path, check):
-    return Deviation(path=path, check=check, got="x", want=("good",))
+import pytest
 
+from fettle.hardening.axes import (CRITICAL, HIGH, LOW, MEDIUM, SEVERITY_ORDER,
+                                   AxisResult, Finding)
+from fettle.hardening.axes import certs, filesystem, kernel, render, ssh
 
-def _reports(devs, pkgmap, scorer=None, setuid=False):
-    with patch("fettle.hardening.score.is_setuid", return_value=setuid):
-        return report.apply(devs, pkgmap, report.Exclusions(), scorer)[0]
-
-
-# xorg-server (canary+relro, setuid) vs netpbm (many, one canary each)
-DEVS = ([_dev("/usr/lib/Xorg.wrap", "canary"), _dev("/usr/lib/Xorg.wrap", "relro")]
-        + [_dev(f"/usr/bin/np{i}", "canary") for i in range(3)])
-PKGMAP = {"/usr/lib/Xorg.wrap": "xorg-server",
-          **{f"/usr/bin/np{i}": "netpbm" for i in range(3)}}
-
-
-# -- _tabulate ---------------------------------------------------------------
-def test_tabulate_aligns_columns():
-    out = report._tabulate(["A", "BB"], [["x", "yyy"], ["zz", "w"]],
-                           aligns=["l", "r"])
-    # header, separator, two rows
-    assert len(out) == 4
-    # every line padded to the same visual width (columns line up)
-    assert out[0].startswith("A ")            # 'A' padded to width 2
-    assert "yyy" in out[1] or "---" in out[1]  # separator row present
-    # right-aligned column: 'w' pushed right under 'yyy'
-    assert out[3].rstrip().endswith("w")
+# Wide enough to be readable at 80 columns after the SEVERITY and SUBJECT columns, and
+# short enough that a row stays scannable. Two wrapped lines is the practical ceiling.
+_MAX_LABEL = 80
 
 
-def test_tabulate_widens_to_longest_cell():
-    out = report._tabulate(["P", "X"],
-                           [["short", "1"], ["a-much-longer-value", "2"]])
-    # second column lines up at the same offset in header and every row
-    off = out[0].index("X")
-    assert out[2].index("1") == off and out[3].index("2") == off
+def _every_real_finding() -> list[Finding]:
+    """One of each finding the axes can emit, built from deliberately bad inputs."""
+    found: list[Finding] = []
+
+    # ssh — the axis whose details do NOT take the em-dash shape, so every one of these
+    # carries an explicit summary. If that ever regresses this is what catches it.
+    found += ssh.findings_for({
+        "permitrootlogin": "yes", "passwordauthentication": "yes",
+        "permitemptypasswords": "yes", "hostbasedauthentication": "yes",
+        "ignorerhosts": "no", "gatewayports": "yes", "x11forwarding": "yes",
+        "permittunnel": "ethernet", "maxauthtries": "20", "ciphers": "3des-cbc",
+        "macs": "hmac-md5", "kexalgorithms": "diffie-hellman-group1-sha1",
+        "hostkeyalgorithms": "ssh-dss"})
+    found += ssh.findings_for({"permitrootlogin": "yes", "passwordauthentication": "no"})
+    found += ssh.findings_for({"passwordauthentication": "yes"})
+    return found
 
 
-# -- band summary ------------------------------------------------------------
-def test_band_summary_leads_with_band_counts():
-    reports = _reports(DEVS, PKGMAP, setuid=True)  # xorg becomes Critical
-    s = report.band_summary(reports)
-    assert s.startswith("1 Critical")            # highest band first
-    assert "worst first" in s
+def test_every_finding_has_a_label_that_fits_a_table():
+    findings = _every_real_finding()
+    assert len(findings) >= 12, "the sample stopped covering the axis — check the inputs"
+    for f in findings:
+        label = f.short()
+        assert label, f"{f.check} has no short form at all"
+        assert len(label) <= _MAX_LABEL, (
+            f"{f.check}: short form is {len(label)} chars and would fill the table:\n"
+            f"  {label}\n"
+            f"Give it an explicit summary= if the detail is not '<what> — <why>'.")
+        assert "—" not in label, f"{f.check}: the em-dash split did not happen"
 
 
-def test_band_summary_empty():
-    assert report.band_summary([]).startswith("no hardening")
+def test_the_long_detail_survives_for_the_report():
+    """The table drops the explanation; the report must not. Losing it in both places
+    would trade scannability for the reason to care, which is the wrong trade."""
+    f = ssh.findings_for({"permitrootlogin": "yes", "passwordauthentication": "yes"})[0]
+    assert len(f.detail) > len(f.short())
+    assert "reachable by guessing" in f.detail
+    body = render.report_body([AxisResult(name="ssh", title="SSH", checked=1,
+                                          findings=[f])])
+    assert any("reachable by guessing" in line for line in body)
+    assert any("PermitRootLogin prohibit-password" in line for line in body)
 
 
-# -- compact on-screen table -------------------------------------------------
-def test_render_screen_columns_and_sort():
-    reports = _reports(DEVS, PKGMAP, setuid=True)
-    lines = report.render_screen(reports)
-    assert lines[0].split() == ["BAND", "SCORE", "P", "PACKAGE", "BINS",
-                                "MISSING", "(worst-weighted", "first)"]
-    body = lines[2:]  # skip header + separator
-    # xorg-server ranks first (Critical, privileged)
-    assert body[0].startswith("Critical")
-    assert "xorg-server" in body[0] and "!" in body[0]
+# -- the on-screen table -----------------------------------------------------
+
+def _res(*findings: Finding) -> AxisResult:
+    return AxisResult(name="t", title="Test axis", checked=9, findings=list(findings))
 
 
-def test_render_screen_missing_is_weight_ordered():
-    # setuid -> High, so it's shown on screen; check the MISSING column order
-    reports = _reports([_dev("/usr/bin/x", "runpath"), _dev("/usr/bin/x", "canary")],
-                       {"/usr/bin/x": "p"}, setuid=True)
-    row = report.render_screen(reports)[2]
-    # canary (weight 3) must appear before runpath (weight 0.5)
-    assert row.index("canary") < row.index("runpath")
+def test_the_table_has_a_header_and_one_row_per_finding():
+    rows = render.table(_res(
+        Finding(check="a", subject="/tmp", detail="world-writable — anything", severity=HIGH),
+        Finding(check="b", subject="/var", detail="mounted without nodev — meh", severity=LOW)))
+
+    assert rows[0].split() == ["SEVERITY", "SUBJECT", "FINDING"]
+    assert rows[1].startswith("High")
+    assert "/tmp" in rows[1] and "world-writable" in rows[1]
+    assert "anything" not in rows[1]           # the why stays out of the table
 
 
-def test_render_screen_privilege_marker_only_when_privileged():
-    # canary+relro+pie = 8 -> High (shown), not privileged -> no '!'
-    reports = _reports([_dev("/usr/bin/x", c) for c in ("canary", "relro", "pie")],
-                       {"/usr/bin/x": "p"}, setuid=False)
-    row = report.render_screen(reports)[2]
-    assert "!" not in row
+def test_rows_are_ordered_worst_first():
+    rows = render.table(_res(
+        Finding(check="c", subject="c", detail="c", severity=LOW),
+        Finding(check="a", subject="a", detail="a", severity=CRITICAL),
+        Finding(check="b", subject="b", detail="b", severity=MEDIUM),
+        Finding(check="d", subject="d", detail="d", severity=HIGH)))
+    assert [r.split()[0] for r in rows[1:]] == ["Critical", "High", "Medium", "Low"]
 
 
-def test_render_screen_only_shows_critical_and_high():
-    # only Xorg.wrap is setuid -> Critical (shown); netpbm's canary = Medium (hidden)
-    only_xorg = lambda p: p == "/usr/lib/Xorg.wrap"   # noqa: E731
-    with patch("fettle.hardening.score.is_setuid", side_effect=only_xorg):
-        reports = report.apply(DEVS, PKGMAP, report.Exclusions())[0]
-    lines = report.render_screen(reports)
-    body = "\n".join(lines)
-    assert "xorg-server" in body            # Critical shown
-    assert "netpbm" not in body             # Medium not shown on screen
-    assert lines[-1].startswith("… plus") and "Medium" in lines[-1]
+def test_a_long_subject_takes_its_own_row_rather_than_being_truncated():
+    """A systemd unit name cut mid-hash is not one you can look up, and overflowing it
+    in place pushes the finding off the right margin and ruins the alignment."""
+    unit = "rumble-agent-4b7a89f3-5659-48e1-bfb9-e9787dae3cf6.service"
+    rows = render.table(_res(Finding(check="x", subject=unit,
+                                     detail="exposure 9.6 UNSAFE — something",
+                                     severity=MEDIUM)))
+
+    assert rows[1] == f"{'Medium':<10}{unit}"          # whole name, its own row
+    assert "exposure 9.6 UNSAFE" in rows[2]            # finding starts on the next
+    assert rows[2].startswith(" " * 40)                # ...in the FINDING column
 
 
-def test_render_screen_none_severe_collapses_to_one_line():
-    # only a Medium package -> no table, just a summary pointing at the file
-    reports = _reports([_dev("/usr/bin/x", "canary")], {"/usr/bin/x": "p"},
-                       setuid=False)
-    lines = report.render_screen(reports)
-    assert len(lines) == 1
-    assert lines[0].startswith("no Critical or High packages") and "Medium" in lines[0]
+def test_a_short_subject_stays_on_one_row():
+    rows = render.table(_res(Finding(check="x", subject="/tmp",
+                                     detail="short — why", severity=HIGH)))
+    assert len(rows) == 2
+    assert rows[1].startswith("High      /tmp")
 
 
-def test_render_screen_empty():
-    assert report.render_screen([]) == [
-        "no hardening deviations from the distro baseline."]
+def test_an_axis_with_no_findings_has_no_table():
+    assert render.table(_res()) == []
 
 
-# -- full matrix (file) ------------------------------------------------------
-_BASE = bl.Baseline(name="arch (test)",
-                    criteria={"relro": ("Full RELRO",), "canary": ("Canary Found",),
-                              "pie": ("PIE Enabled",)},
-                    notes=["GCC supplies PIE and stack canary by default"])
-_SCAN = {"analyzed": 4371, "static": 49, "unreadable": 0}
+# -- severity vocabulary -----------------------------------------------------
+
+def test_the_scale_matches_the_binary_axis():
+    """One vocabulary across the whole action, so a reader holds one scale and the
+    dashboard can rank across both halves."""
+    from fettle.hardening.score import BAND_ORDER
+
+    assert list(SEVERITY_ORDER) == list(BAND_ORDER)
 
 
-def test_matrix_has_every_criterion_column_and_dot_for_conforms():
-    reports = _reports(DEVS, PKGMAP, setuid=True)
-    text = "\n".join(report.render(reports, {"excluded_check": 0,
-                                             "excluded_package": 0,
-                                             "excluded_path": 0}, _BASE, _SCAN))
-    # abbreviated headers present
-    assert "fortify" in text and "canary" in text and "runpath" in text
-    # a package missing only canary/relro shows "." in the columns it conforms to
-    assert "." in text
-    assert "4371 ELF" in text           # scan stats retained
-    assert "xorg-server" in text
+@pytest.mark.parametrize("axis_findings", [
+    lambda: filesystem.run(None, _ctx_missing()).findings,
+])
+def test_axes_emit_only_known_severities(axis_findings):
+    for f in axis_findings():
+        assert f.severity in SEVERITY_ORDER
 
 
-def test_matrix_row_shows_score_band_and_counts():
-    reports = _reports([_dev("/usr/bin/x", "canary"), _dev("/usr/bin/y", "canary")],
-                       {"/usr/bin/x": "netpbm", "/usr/bin/y": "netpbm"})
-    text = "\n".join(report.render(reports, {"excluded_check": 0,
-                                             "excluded_package": 0,
-                                             "excluded_path": 0}, _BASE, _SCAN))
-    # netpbm: 2 binaries each missing canary -> canary column count = 2, score 3 (worst)
-    line = next(ln for ln in text.splitlines() if ln.startswith("netpbm"))
-    assert "netpbm" in line and " 3 " in f" {line} " and "Medium" in line
+def _ctx_missing():
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from fettle.config import Config
+    return SimpleNamespace(root=Path("/nonexistent-for-tests"), config=Config())
 
 
-def test_render_clean_report_unchanged():
-    text = "\n".join(report.render([], {"excluded_check": 0, "excluded_package": 0,
-                                        "excluded_path": 0}, _BASE, _SCAN))
-    assert "No deviations" in text
+def test_severity_words_are_capitalised_everywhere():
+    """They were lower-case while the binary axis said Critical/High/Medium/Low, so one
+    screen carried two vocabularies for the same idea."""
+    assert (CRITICAL, HIGH, MEDIUM, LOW) == ("Critical", "High", "Medium", "Low")
 
 
-# -- RJ2: structured JSON payload -------------------------------------------
-def test_to_dict_serializes_scored_packages():
-    reports = _reports(DEVS, PKGMAP, setuid=True)
-    d = report.to_dict(reports, {"excluded_check": 1, "excluded_package": 0,
-                                 "excluded_path": 0}, _BASE, _SCAN)
-    assert d["baseline"]["name"] == "arch (test)"
-    assert d["scan"]["analyzed"] == 4371
-    assert d["excluded"]["excluded_check"] == 1
-    assert d["band_tally"]["Critical"] == 1                 # xorg-server
-    pkgs = {p["package"]: p for p in d["packages"]}
-    assert pkgs["xorg-server"]["band"] == "Critical"
-    assert pkgs["xorg-server"]["has_privileged"] is True
-    assert pkgs["xorg-server"]["checks"] == {"relro": 1, "canary": 1}
-    import json
-    json.dumps(d)                                           # must be serializable
+# -- certs, whose severity depends on a clock --------------------------------
+
+def test_certificate_labels_are_short_too():
+    now = datetime(2026, 8, 7, tzinfo=timezone.utc)
+    paths = [__import__("pathlib").Path("/etc/nginx/a.pem")]
+    from unittest.mock import patch
+
+    from fettle import command
+    for value, want in (("Aug  1 00:00:00 2026 GMT", "expired"),
+                        ((now + timedelta(days=5)).strftime("%b %d %H:%M:%S %Y GMT"),
+                         "expires in")):
+        with patch("fettle.command.run",
+                   return_value=command.Proc(0, f"notAfter={value}\nsubject=CN=x\n", "")):
+            found, _ = certs.findings_for(paths, now, 30)
+        assert len(found) == 1
+        assert want in found[0].short()
+        assert len(found[0].short()) <= _MAX_LABEL
+
+
+def test_kernel_labels_are_short_too():
+    from pathlib import Path
+    root = Path("/nonexistent")
+    for f in kernel.redirect_findings(root):
+        assert len(f.short()) <= _MAX_LABEL

@@ -14,6 +14,44 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.120.0] — the hardening axes reach the dashboard, and read as a table
+
+The axes shipped in 0.111.0–0.116.1 and then sat in two places that had not been
+taught about them: the terminal printed them as prose, and the HTML dashboard did not
+print them at all.
+
+**On screen: a table per axis** — severity, subject, what is wrong — ranked worst
+first. The previous layout gave each finding a wrapped sentence with its remedy
+underneath, so five findings filled the terminal and none of them could be scanned.
+The table drops the *why* and the fix; both are kept in full in the saved report, the
+same split the binary axis already makes between its on-screen ranking and its full
+matrix. A subject too wide for its column (a 56-character systemd unit name) takes a
+row of its own rather than being truncated mid-hash or shunting the finding off the
+margin.
+
+**One severity scale.** The axes said `high`/`medium`/`low` while the binary axis said
+`Critical`/`High`/`Medium`/`Low`, so a single screen carried two vocabularies for the
+same idea and nothing could rank across them. Now one scale everywhere. `Critical` is
+defined for the shared ordering; no axis emits it today, which is worth saying rather
+than pretending the scale is shorter than it is.
+
+**The dashboard had four separate gaps, not one.** The card rendered only binary
+packages; the severity filter ranked only binary bands; the host verdict counted only
+binary bands; and `_is_empty` tested `packages` alone, so a run whose findings all came
+from the filesystem, kernel or ssh axes **vanished from the dashboard entirely**. A
+machine whose one finding was a world-writable `/tmp` read as clean — the same
+silence-reads-as-a-pass failure the audit exists to prevent, in a different surface.
+All four are fixed, and blindness now shows on the card too.
+
+Unlike the binary bands, an axis finding is **not** capped at Medium in the host
+verdict. That cap exists because every real desktop has Critical-band packages, so
+uncapped they would make every host red forever; an axis finding is the opposite kind
+of thing — specific, rare and actionable.
+
+The section is also no longer labelled "Binary Hardening Audit", which it stopped being
+in 0.111.0. Reports written before the axes existed, and those written with the
+lower-case scale, both still render.
+
 ## [0.119.0] — bash completion, and now you can actually use it
 
 Third and last completion milestone. `contrib/fettle.bash` ships the script; the two

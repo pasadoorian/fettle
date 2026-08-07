@@ -36,13 +36,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Severity is deliberately three words rather than a 0-100 score. Lynis's hardening
-# index is a single number whose weighting nobody can see, which makes it feel precise
-# and be unarguable; three bands with a stated meaning are less impressive and more
-# useful. The binary axis keeps its own scoring — it is comparing thousands of
-# binaries against each other, which is the case a score is actually for.
-HIGH, MEDIUM, LOW = "high", "medium", "low"
-SEVERITY_ORDER = (HIGH, MEDIUM, LOW)
+# Severity is deliberately a word rather than a 0-100 score. Lynis's hardening index is
+# a single number whose weighting nobody can see, which makes it feel precise and be
+# unarguable; bands with a stated meaning are less impressive and more useful. The binary
+# axis keeps its own *scoring* — it is comparing thousands of binaries against each
+# other, which is the case a score is actually for — but it lands in these same bands.
+#
+# One scale, deliberately: these were lower-case while the binary axis said
+# "Critical/High/Medium/Low", so a single screen carried two vocabularies for the same
+# idea and neither the combined report nor the dashboard could rank across them.
+# `Critical` is defined for that shared ordering; no axis emits it today, and saying so
+# is better than pretending the scale is shorter than it is.
+CRITICAL, HIGH, MEDIUM, LOW = "Critical", "High", "Medium", "Low"
+SEVERITY_ORDER = (CRITICAL, HIGH, MEDIUM, LOW)
 
 
 @dataclass
@@ -60,6 +66,22 @@ class Finding:
     detail: str       # why it matters, in a sentence
     severity: str = MEDIUM
     fix: str = ""     # optional concrete remedy
+    # Short form for the on-screen table. Usually derived: see `short()`.
+    summary: str = ""
+
+    def short(self) -> str:
+        """The table cell — what is wrong, without the explanation of why.
+
+        ``detail`` is written as ``<what is wrong> — <why it matters>``, so the first
+        clause is already the label a table wants and setting ``summary`` by hand at
+        twenty call sites would mostly restate it. Where a detail does not take that
+        shape, ``summary`` is given explicitly.
+
+        `tests/test_hardening_render.py` asserts every finding a real axis produces has
+        a short form that actually fits a column, so a detail written in the wrong shape
+        fails a test rather than quietly rendering a paragraph into a table cell.
+        """
+        return self.summary or self.detail.split(" — ")[0]
 
 
 @dataclass

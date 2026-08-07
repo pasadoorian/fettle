@@ -119,6 +119,7 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
     if root_login == "yes" and passwords:
         out.append(Finding(
             check="ssh-root-password-login", subject="PermitRootLogin", severity=HIGH,
+            summary="root can log in with a password",
             detail="root can log in directly with a password, so the account that "
                    "matters most is reachable by guessing from anywhere that can "
                    "reach this port",
@@ -126,6 +127,7 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
     elif root_login == "yes":
         out.append(Finding(
             check="ssh-root-login", subject="PermitRootLogin", severity=MEDIUM,
+            summary="root can log in directly",
             detail="root can log in directly — every administrative action arrives "
                    "unattributed, and there is no second step to compromise",
             fix="PermitRootLogin prohibit-password (or no)"))
@@ -134,6 +136,7 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
         # default, and a host whose users have no keys yet legitimately needs it.
         out.append(Finding(
             check="ssh-password-auth", subject="PasswordAuthentication", severity=LOW,
+            summary="password authentication is enabled",
             detail="password authentication is enabled, so every account is reachable "
                    "by guessing — the host's safety rests on password strength and on "
                    "rate limiting rather than on key possession",
@@ -142,24 +145,27 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
     if config.get("permitemptypasswords", "").lower() == "yes":
         out.append(Finding(
             check="ssh-empty-passwords", subject="PermitEmptyPasswords", severity=HIGH,
+            summary="accounts with no password can log in",
             detail="accounts with an empty password can log in over the network",
             fix="PermitEmptyPasswords no"))
     if config.get("hostbasedauthentication", "").lower() == "yes":
         out.append(Finding(
             check="ssh-hostbased-auth", subject="HostbasedAuthentication",
-            severity=MEDIUM,
+            severity=MEDIUM, summary="host-based authentication is enabled",
             detail="trusts the client host's own claim about which user it is, so "
                    "compromising one trusted host reaches the accounts on this one",
             fix="HostbasedAuthentication no"))
     if config.get("ignorerhosts", "").lower() == "no":
         out.append(Finding(
             check="ssh-rhosts", subject="IgnoreRhosts", severity=MEDIUM,
+            summary="per-user .rhosts files are honoured",
             detail="honours per-user .rhosts files, so a user can grant host-based "
                    "access to their own account without administrator involvement",
             fix="IgnoreRhosts yes"))
     if config.get("gatewayports", "").lower() in ("yes", "clientspecified"):
         out.append(Finding(
             check="ssh-gatewayports", subject="GatewayPorts", severity=MEDIUM,
+            summary="forwarded ports bind to every interface",
             detail="ports forwarded by a client are bound to every interface, so a "
                    "user's tunnel is reachable by the whole network rather than only "
                    "by this host",
@@ -167,12 +173,14 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
     if config.get("x11forwarding", "").lower() == "yes":
         out.append(Finding(
             check="ssh-x11", subject="X11Forwarding", severity=LOW,
+            summary="X11 forwarding is offered",
             detail="X11 forwarding is offered; a compromised server can read the "
                    "connecting client's keystrokes and screen through it",
             fix="X11Forwarding no, unless remote GUI applications are needed"))
     if config.get("permittunnel", "").lower() not in ("", "no"):
         out.append(Finding(
             check="ssh-permittunnel", subject="PermitTunnel", severity=LOW,
+            summary="clients may create tunnel devices",
             detail="clients may create layer-2/3 tunnel devices, which bridges "
                    "networks rather than forwarding a port",
             fix="PermitTunnel no"))
@@ -183,6 +191,7 @@ def findings_for(config: dict[str, str]) -> list[Finding]:
     if tries > 6:
         out.append(Finding(
             check="ssh-maxauthtries", subject="MaxAuthTries", severity=LOW,
+            summary=f"{tries} authentication attempts allowed per connection",
             detail=f"allows {tries} authentication attempts per connection, which "
                    f"multiplies how fast a guessing attack can work",
             fix="MaxAuthTries 6 or fewer"))
