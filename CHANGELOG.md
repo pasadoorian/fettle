@@ -14,6 +14,38 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.117.0] — groundwork for shell completion (not usable yet)
+
+First of three milestones adding bash completion. This one is **internal**: it adds the
+machinery and its guards, but ships no shell script, so nothing changes for a user yet.
+
+**`fettle --complete <cword> -- <words...>`** — a hidden helper that prints the
+candidates valid at a given word position, one per line. Routed before argparse (the
+words are arbitrary half-typed input, which the pipeline parser would reject with a
+usage error), and it never raises, never exits non-zero, and prints nothing rather than
+an error: a broken completion must not break the user's shell.
+
+Candidates are **derived from the real parser** rather than listed by hand — 90 of them
+at the top level, covering every option string, every action in all three of its
+interchangeable spellings, the word aliases, the subcommands and the dispatch shortcuts.
+That derivation is the anti-drift mechanism; encoding fettle's CLI a second time in bash
+is how the two would come apart, and this project has already spent a QA pass on bugs of
+exactly that class.
+
+**A data-loss guard, which is the reason this needed care.** Writing a run-log rotates
+the directory to `keep` entries, and completion shells out to fettle on *every tab
+press* — so without a guard, tab-completing would quietly evict real run history a few
+keystrokes at a time. That is the identical bug measured and fixed for `--dry-run`
+(eleven real logs down to nine after one preview). `--complete` is now in the no-record
+set, verified end to end: two tab presses write zero logs, a real run still writes one.
+
+Two new constants keep the second copies honest: `SUBCOMMANDS` (the routing table's
+names) and `HIDDEN_FLAGS` (real flags absent from `--help`). Tests read `cli.py`'s own
+source and fail if either drifts from what is actually routed. `HIDDEN_FLAGS` also
+teaches the stale-flag sweep that `--complete` is a real spelling — without it, that
+sweep reported the new module's own documentation as advising a flag fettle does not
+accept.
+
 ## [0.116.1] — a template unit could have blanked every service's owner
 
 Two fixes in the `services` axis, both found by profiling the finished feature rather

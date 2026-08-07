@@ -64,7 +64,11 @@ def is_active() -> bool:
 
 # Subcommands that must NOT be run-logged: long-running servers whose output never
 # ends (a transcript would grow unbounded and never finalize).
-_NO_RECORD = frozenset({"web"})
+# `--complete` is here for a data-loss reason, the same one `--dry-run` is in `_skip`:
+# writing a run-log rotates the directory to `keep` entries, and shell completion shells
+# out to fettle on every tab press. Without this, tab-completing would quietly evict real
+# run history a few keystrokes at a time. Guarded by a test, not by this comment.
+_NO_RECORD = frozenset({"web", "--complete"})
 
 
 def _skip(argv=()) -> bool:

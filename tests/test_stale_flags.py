@@ -56,6 +56,11 @@ def _valid() -> tuple[set, set]:
             [sys.executable, "-m", "fettle", cmd, "--help"],
             capture_output=True, text=True, cwd=ROOT).stdout
         flags |= set(re.findall(r"(?:^|\s)(--?[A-Za-z][A-Za-z0-9-]*)", help_text))
+    # Flags routed before argparse and hidden from `--help` are still flags fettle
+    # accepts — they just have no help line to be discovered from. Without this the
+    # sweep reports the completion helper's own documentation as advising a spelling
+    # fettle no longer takes, which is the opposite of true.
+    flags |= set(cli.HIDDEN_FLAGS)
     words = ({w.replace("_", "-") for w in cli.ACTION_NAMES} | set(cli.ACTION_NAMES)
              | set(cli.WORD_ALIASES) | set(SUBCOMMANDS))
     return flags, words

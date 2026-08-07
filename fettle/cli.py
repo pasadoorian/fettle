@@ -145,6 +145,21 @@ SHORTCUT_HELP = [
 # (both alias -u/update): `fettle upgrade` == `fettle update` (install upgrades).
 WORD_ALIASES = {"upgrade": "update"}
 
+# Every subcommand `_main` routes on, in the order it checks them. Named here rather
+# than only inside the routing so shell completion has one list to read instead of a
+# second copy to keep in step; `tests/test_completion.py` reads this module's source
+# and fails if a routed name is missing from it.
+SUBCOMMANDS = ("aur-precheck", "sys-audit", "remote", "upgrade-check", "report", "web",
+               "advisory-check", "advisory-update")
+
+# Real flags that `_main` intercepts before argparse and that are deliberately absent
+# from `--help`: machine interfaces, not things to advise a person to type. Named here
+# because the stale-flag guard builds its "flags fettle accepts" set from the parsers
+# and the help output, so without this it correctly reports `--complete` as a spelling
+# fettle no longer accepts. `tests/test_completion.py` checks this stays in step with
+# the routing.
+HIDDEN_FLAGS = frozenset({"--complete"})
+
 # Actions that never MUTATE the system.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
                      "auto_updates", "hardening_audit", "pkg_integrity",
@@ -1215,6 +1230,14 @@ _RETIRED_NOTE = {
 
 
 def _main(argv: list[str]) -> int:
+    # Shell completion, routed before anything else — including the retired-flag check
+    # below, which would happily "helpfully" error on a half-typed word. Everything here
+    # is arbitrary partial input from a user mid-keystroke, so it must never reach a
+    # parser, never load config, and never elevate. See fettle/completion.py.
+    if argv and argv[0] == "--complete":
+        from . import completion
+        return completion.main(argv[1:])
+
     retired = next((t for t in argv if t in _RETIRED), None)
     if retired is not None:
         name = _RETIRED[retired]
