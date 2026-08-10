@@ -259,7 +259,7 @@ class PackageBackend(abc.ABC):
     # own per-distro providers that decline internally when they cannot answer. Keeping
     # them out of each backend's `supported` set would mean every backend had to
     # remember to add them, and the one that forgot would silently drop the action.
-    UNIVERSAL_ACTIONS = frozenset({"sys_audit", "advisory_check"})
+    UNIVERSAL_ACTIONS = frozenset({"sys_audit", "advisory_check", "compromise_check"})
 
     # Actions that need no root **on this distro**. Whether an action needs
     # privileges is genuinely per-family, and treating it as universal made fettle ask

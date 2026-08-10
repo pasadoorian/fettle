@@ -11,6 +11,63 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.1.0] — `compromise-check`: the action, not yet its checks
+
+The first milestone of a new feature family. fettle could tell you a package you
+installed was in the June 2026 AUR wave; it could not tell you whether the implant that
+wave dropped is still on the machine. That is a different question from every other one
+fettle asks — *is this configured safely* has a fix command, *is something already here*
+has an investigation — so it is a different action.
+
+**This release ships the action and its plumbing. It ships no checks.** `fettle -M`
+runs, and says exactly that. The first real checks (unowned systemd units, user-scope
+persistence, timers and cron) land in the next milestone.
+
+### Added
+
+- **`compromise-check` / `-M`**, read-only, opt-in, and **included in `--everything`
+  where it runs last** — after `advisory-check`, because an update removes a vulnerable
+  package and does not remove an implant. Available as a flag, a long flag and a bare
+  word, on every distro family.
+- **`[compromise] disable_checks`** in the config, deliberately separate from
+  `[hardening] disable_axes`. Someone silencing a chatty hardening axis must not silence
+  a rootkit check as a side effect. A name that matches no group is reported, not
+  ignored — believing a rootkit check is off when it is running, and believing it is on
+  when it is not, are equally bad and equally silent.
+- **A real-user filter** for the user-scope checks to come. wopr has **32 `nixbld*`
+  accounts pointing at `/var/empty`**; sweeping every UID ≥ 1000 would walk 34 home
+  directories to examine one and then report "34 users checked", which is true and
+  useless. Accounts with no home or a `nologin` shell are skipped, counted, and the
+  count is printed.
+
+### The invariant, in the place it matters most
+
+An action that examined nothing **must not render like one that examined everything and
+found nothing wrong**. With no check groups built, every run is currently that case,
+which made this the right milestone to pin it: the run says "nothing was examined" in
+the summary *and* in the not-checked block, and a test asserts the output contains none
+of the wording fettle uses elsewhere for a genuine all-clear. Reverting either line
+fails two tests.
+
+The same rule covers the privilege split. Most of what this action will read is
+root-only — other users' homes, the at-job spool, `/sys/fs/bpf` — but the system-scope
+half needs nothing special, so it degrades rather than refusing, and names the half it
+could not reach. `compromise-check` is classified read-only **and** needs-root, the same
+pair as `sys-audit` and `pkg-integrity`; the remote path resolves it the same way, which
+is asserted rather than assumed after that classification went wrong once in each
+direction during the QA pass.
+
+### Changed
+
+- **The action-naming rule got wider, rather than the name getting worse.** The
+  terminology guard rejected `compromise-check`: `-check` meant "asks whether something
+  is PENDING or NEEDED", and nothing about a compromise is pending. `compromise-audit`
+  was the alternative and is worse — every `-audit` is `<the thing being graded>-audit`,
+  and a compromise is the *finding*, not the subject. The rule now distinguishes a
+  **yes/no question about current state** (`-check`) from a **graded inventory**
+  (`-audit`), which was checked against all eleven existing action names and fits every
+  one.
+
 ## [1.0.2]
 
 Follow-through on 1.0.1: the manual moved to the wiki, and the things that pointed at

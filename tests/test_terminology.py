@@ -18,17 +18,28 @@ SRC = pathlib.Path(__file__).resolve().parent.parent / "fettle"
 
 # The naming rule, written down so it can be applied rather than argued about each time:
 #
-#   <thing>-audit   judges what you ALREADY HAVE and grades it
+#   <thing>-audit   judges what you ALREADY HAVE and grades it — a graded inventory
 #                   (pkg-audit, aur-audit, sys-audit, hardening-audit)
-#   <thing>-check   asks whether something is PENDING or NEEDED
-#                   (rebuild-check, advisory-check, firmware-check)
+#   <thing>-check   asks a yes/no question about the system's current state
+#                   (rebuild-check, advisory-check, firmware-check, compromise-check)
 #   bare noun       names the thing it manages or reports, with no verb
 #                   (clean, orphans, update, kernel, config-drift, pkg-integrity)
 #
 # The rule is descriptive: it was derived from the names that already existed, and it
 # fits all of them. It exists so the NEXT action does not have to be guessed at.
+#
+# `compromise-check` is the first action that arrived and did not fit, which is what
+# this guard is for. The -check line used to read "asks whether something is PENDING or
+# NEEDED", and nothing about a compromise is pending — it either happened or it did
+# not. Renaming it `compromise-audit` was the alternative and is worse: every -audit
+# name is `<the thing being graded>-audit`, and a compromise is the *finding*, not the
+# subject, so it would be the only one whose subject is not a thing you have. The
+# generalisation above ("a yes/no question about current state" vs "a graded
+# inventory") was checked against all eleven existing names and fits every one, so the
+# rule got wider rather than the name getting worse.
 AUDITS = {"pkg_audit", "aur_audit", "sys_audit", "hardening_audit"}
-CHECKS = {"rebuild_check", "python_rebuild_check", "advisory_check", "firmware_check"}
+CHECKS = {"rebuild_check", "python_rebuild_check", "advisory_check", "firmware_check",
+          "compromise_check"}
 
 
 def test_every_audit_and_check_follows_the_naming_rule():

@@ -87,6 +87,15 @@ class Config:
     #   certificate_warn_days (int, default 30) — how far ahead an expiry is worth
     #     reporting. Expired is always reported.
     hardening: dict = field(default_factory=dict)
+    # Compromise indicators (fettle compromise-check) — has something already got in?
+    # Kept separate from [hardening] on purpose: the two actions are separately
+    # opt-in-able, and someone silencing a chatty hardening axis must not silence a
+    # rootkit check as a side effect.
+    #   disable_checks (list of group names) — switch a check group off entirely. All
+    #     are on by default, and an unrecognised name is reported rather than ignored:
+    #     believing a rootkit check is off when it is running, or on when it is not,
+    #     are equally bad and equally silent.
+    compromise: dict = field(default_factory=dict)
     # Report/log storage (fettle/reports.py). Keys: keep (how many of each report
     # type per host to retain, default 10 — also the depth of the dashboard's
     # change history), dir (base dir override, default

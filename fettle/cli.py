@@ -64,6 +64,10 @@ AUDIT_ACTIONS = [
     # --everything) but had no flag, so the one section a user scans for audits did not
     # list it at all — you had to already know the subcommand existed.
     (("-D", "--advisory-check"), "advisory_check"),
+    # -M for coMpromise: -c/-C are taken by clean and container-update. A different
+    # question from -H, which is why it is a different action: -H asks whether the
+    # system is CONFIGURED safely, -M asks whether something is ALREADY HERE.
+    (("-M", "--compromise-check"), "compromise_check"),
 ]
 # Pipeline actions with no flag of their own: each already has a subcommand
 # (`fettle sys-audit`, `fettle advisory-check`), and they became pipeline actions so
@@ -94,6 +98,10 @@ PIPELINE_ONLY_ACTIONS = {"sys_audit"}
 #   advisory-check last -- run after the update it reports what is STILL unfixed, which
 #                          is the actionable number. Before the update it would mostly
 #                          list things the update was about to fix.
+#   compromise-check after that -- the final question, and the one an update cannot
+#                          answer. Patching removes a vulnerable package; it does not
+#                          remove an implant that is already running. Running it last
+#                          means it describes the system as it will be left.
 #
 # The remaining audits are genuinely order-independent, but pkg-audit and aur-audit are
 # kept adjacent: both query the AUR RPC, and the second benefits from the first's
@@ -123,6 +131,7 @@ EVERYTHING_ACTIONS = [
     "hardening_audit",
     "sys_audit",
     "advisory_check",
+    "compromise_check",
 ]
 FLAG_ACTIONS = MAINTENANCE_ACTIONS + AUDIT_ACTIONS
 ACTION_NAMES = {action for *_, action in FLAG_ACTIONS}
@@ -171,7 +180,7 @@ REMOTE_FLAGS = ("-h", "--help", "--ssh-arg", "--no-config")
 # Actions that never MUTATE the system.
 READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
                      "auto_updates", "hardening_audit", "pkg_integrity",
-                     "advisory_check", "sys_audit"}
+                     "advisory_check", "sys_audit", "compromise_check"}
 
 # "Read-only" and "needs no root" are different questions, and they come apart in
 # BOTH directions. Each exception is listed rather than derived, because assuming
@@ -188,8 +197,13 @@ READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
 #       through interfaces that are root-only; unprivileged it says so and checks far
 #       less. It elevates itself when run as `fettle sys-audit`, and needs the pipeline
 #       to do the same when it runs as one action among many.
+#   read-only, needs root   -> compromise-check reads other users' home directories,
+#       the at-job spool and /sys/fs/bpf, none of which an ordinary user can open. Like
+#       sys-audit it still runs and still answers unprivileged — the system-scope
+#       persistence checks need nothing special — and it names the half it could not
+#       reach rather than reporting a clean result over an unasked question.
 _MUTATES_BUT_NO_ROOT = {"container_update"}
-_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity", "sys_audit"}
+_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity", "sys_audit", "compromise_check"}
 
 # Elevation keys off this set; READ_ONLY_ACTIONS above keeps its literal meaning.
 NO_ROOT_ACTIONS = (READ_ONLY_ACTIONS - _READ_ONLY_BUT_NEEDS_ROOT) | _MUTATES_BUT_NO_ROOT
@@ -229,6 +243,10 @@ ACTION_HELP = {
                       "fix you have not applied and (the distinctive part) those with "
                       "no fix released yet -> ~/.fettle/reports/",
     "pkg_integrity": "do installed files still match what the package shipped? (paccheck/debsums/rpm -Va) -> ~/.fettle/reports/",
+    "compromise_check": "is something ALREADY here? persistence no package installed, "
+                        "loader and kernel tampering, processes running from memory. "
+                        "Reports anomalies to investigate, never fixes -> "
+                        "~/.fettle/reports/",
 }
 
 # Sits directly under the audit flags as its own group, because that is where someone

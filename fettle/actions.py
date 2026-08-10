@@ -32,6 +32,7 @@ TITLES = {
     "container_update": "Container images",
     "sys_audit": "System & firmware security audit",
     "advisory_check": "Security advisories (CVEs)",
+    "compromise_check": "Compromise indicators",
 }
 
 
@@ -335,6 +336,7 @@ HANDLERS = {
     "container_update": lambda b, c: _container_update(c),
     "sys_audit": lambda b, c: _sys_audit(c),
     "advisory_check": lambda b, c: _advisory_check(c),
+    "compromise_check": lambda b, c: _compromise_check(b, c),
 }
 
 
@@ -405,6 +407,11 @@ def _pkg_integrity(backend: "PackageBackend", ctx: "Context") -> None:
 def _aur_audit(ctx: "Context") -> None:
     from .aur import audit
     audit.run(ctx)
+
+
+def _compromise_check(backend: "PackageBackend", ctx: "Context") -> None:
+    from .compromise import audit
+    audit.run(backend, ctx)
 
 
 def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
