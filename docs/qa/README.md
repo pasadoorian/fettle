@@ -23,17 +23,16 @@ summary line now names the action that produced it, a green tick means "nothing 
 you", and the naming rule is written down and enforced by test. A case that works perfectly
 but explains itself badly is still a **FAIL**, recorded as such.
 
-## Where this stands (2026-08-06)
+## Where the pass finished (2026-08-06)
 
 **23 of 24 features swept**, `web` on hold by decision and marked experimental. **All ten
 cross-cutting rows swept.** Roughly 90 findings fixed across the pass, at v0.110.0 with
 1172 unit tests.
 
-**This is not 1.0.0 and is not claiming to be.** The version stays on the `0.x` line until
-the stable release, which has work attached to it — a release plan, and GitHub Actions
-building binaries — rather than being a number to bump. Two known items remain: the `web`
-sweep, and the `--quiet` refactor recorded in
-[selection-and-output.md](selection-and-output.md).
+**This pass is what 1.0.0 rests on.** The release that followed it has a plan, packaging
+for four distro families, and GitHub Actions building and verifying every artifact — see
+`packaging/README.md`. Two known items were deliberately left: the `web` sweep, and the
+`--quiet` refactor recorded in [selection-and-output.md](selection-and-output.md).
 
 ### The one finding that recurred more than any other
 

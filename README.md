@@ -2,26 +2,9 @@
   <img src="assets/fettle-logo-800w.png" alt="fettle" width="440">
 </p>
 
-> # **⚠️ NOTE: THIS IS BETA CODE — USE AT YOUR OWN RISK.**
+> # **This is 1.0.0 — the first official and tested release of fettle.**
 >
-> **The 0.5.x line is undergoing a full feature-by-feature QA pass. Use with caution.**
-> Every action is being tested against seven live systems — Arch, Manjaro, Debian,
-> Ubuntu, Rocky, AlmaLinux and Fedora — and fixed where it misbehaves or explains itself
-> badly. That work lands continuously on the `0.x` line, so **behaviour can change between
-> releases**: read [CHANGELOG.md](CHANGELOG.md) before upgrading, and check
-> [`docs/qa/`](docs/qa/) for what has been verified and what has not.
->
-> **Where it stands:** the sweep is finished — 23 of 24 features and all ten
-> cross-cutting areas (`web` is on hold and marked experimental) — and feature work
-> continues on top of it: the multi-axis `hardening-audit`, and bash completion.
-> **The first stable release will be 1.0.0**, and it is not here yet: it has a release
-> plan, binary builds and a round of hands-on testing attached to it, rather than being
-> a version number to bump.
->
-> The sweep has found actions that reported success while doing nothing at all, a preview
-> that deleted run history, and an unattended flag that would purge a list fettle had
-> guessed at. If you are running a `0.x` release on something you care about, `--dry-run`
-> first.
+> The web interface (`fettle web`) is still experimental.
 
 > *in fine fettle* — in good working order.
 
@@ -2159,7 +2142,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | young (beta), two distro families |
+| Maturity / ecosystem | established, widely packaged, large community | 1.0.0, four distro families (Arch, Debian, RHEL, Fedora) |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **Binary build-hardening audit** (did packages escape the distro's build flags?) | ❌ | ✅ `hardening-audit` (`-H`, via checksec) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |
