@@ -170,23 +170,38 @@ jobs:
       - name: list what will be attached
         run: ls -l staged/
 
+      # Written outside staged/ and moved in, so the glob cannot expand to include the
+      # file being created — `sha256sum * > SHA256SUMS` in the same directory is a
+      # classic way to checksum an empty file that is about to be your checksums.
+      - name: checksums
+        run: |
+          ( cd staged && sha256sum -- * ) > sums.tmp
+          mv sums.tmp staged/SHA256SUMS
+          cat staged/SHA256SUMS
+
+      - name: release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          # Fails if there is no section for this version, on purpose: the fallback
+          # would be GitHub's auto-generated commit list, which for a release like
+          # 1.0.0 is a wall of "packaging P4: …" lines and says nothing a user wants.
+          packaging/release-notes.sh "$VERSION" > NOTES.md
+          cat NOTES.md
+
       # `gh` rather than a third-party release action: it ships on the runner, it is
       # maintained by GitHub, and for a security tool one fewer third party with write
       # access to the release page is worth a couple of extra lines.
       #
       # --draft is deliberate. The release is assembled but not announced, so a bad
       # build can be deleted before anyone sees it. Publishing is a human step.
-      #
-      # --generate-notes is a placeholder; P5 replaces it with the CHANGELOG section for
-      # this version, which is already written per release and should not be written
-      # twice.
       - name: create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.guard.outputs.version }}
           PRERELEASE: ${{ needs.guard.outputs.prerelease }}
         run: |
-          flags="--draft --generate-notes"
+          flags="--draft --notes-file NOTES.md"
           [ "$PRERELEASE" = "true" ] && flags="$flags --prerelease"
           # shellcheck disable=SC2086
           gh release create "$GITHUB_REF_NAME" $flags \

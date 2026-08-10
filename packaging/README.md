@@ -48,6 +48,21 @@ package **and installs it in a clean container of its own distro**, and finally 
 a **draft** release. Publishing is a human step, so a bad build can be deleted before
 anyone sees it.
 
+Two things are generated at publish time rather than written by hand:
+
+**`SHA256SUMS`**, over every attached file, verifiable with
+`sha256sum -c SHA256SUMS --ignore-missing`. It is written outside the staging directory
+and moved in, because `sha256sum * > SHA256SUMS` in the same directory is a classic way
+to checksum an empty file that is about to be your checksums.
+
+**The release notes**, from `CHANGELOG.md`'s section for that version
+(`packaging/release-notes.sh`). The entry is already written by hand for every release
+with the reasoning in it, so generating the page from it means one account of each
+change rather than two that can disagree. It **fails** if the version has no section —
+the fallback would be GitHub's auto-generated commit list, which for a release like
+1.0.0 is a wall of `packaging P4: …` lines and says nothing a user wants. A short table
+explaining what each artifact is gets appended, since that part is identical every time.
+
 **The guard is `packaging/check-tag.sh`,** and it exists because a release tagged
 `v1.0.0` whose packages call themselves `0.120.0` installs, runs, and lies about what it
 is — every bug report afterwards then names a version that was never built. It is a

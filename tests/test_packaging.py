@@ -12,6 +12,7 @@ lines buried in YAML.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ("install.sh", "version.sh", "check-tag.sh",
-           "deb/build.sh", "rpm/build.sh", "arch/build.sh", "zipapp/build.sh")
+           "deb/build.sh", "rpm/build.sh", "arch/build.sh", "zipapp/build.sh",
+           "release-notes.sh")
 
 
 def _run(script: str, *args: str, cwd: Path | None = None):
@@ -187,3 +189,63 @@ def test_the_archive_name_cannot_collide_with_github_source_archives():
     build = (ROOT / "packaging/zipapp/build.sh").read_text()
     assert "-zipapp.tar.gz" in build
     assert "-zipapp.zip" in build
+
+
+# -- release-notes.sh --------------------------------------------------------
+#
+# The changelog entry is written by hand for every release, with the reasoning in it.
+# Generating the release page from it means one account of each change rather than two,
+# and no chance of the two disagreeing.
+
+def test_notes_are_the_changelog_section_for_that_version():
+    import fettle
+
+    out = _run("release-notes.sh", fettle.__version__)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.startswith(f"## [{fettle.__version__}]")
+
+
+def test_notes_stop_at_the_next_release():
+    """An off-by-one in the range would attach every previous release's notes to this
+    one, which reads as a plausible changelog and is wrong from the second line on."""
+    versions = re.findall(r"^## \[([0-9][^\]]*)\]", (ROOT / "CHANGELOG.md").read_text(),
+                          re.M)
+    assert len(versions) > 2, "need at least three entries to test a boundary"
+    newest, following = versions[0], versions[1]
+
+    body = _run("release-notes.sh", newest).stdout
+    assert f"## [{following}]" not in body
+
+
+def test_the_oldest_entry_works_even_with_no_following_heading():
+    """The last section has no `## [` after it, so the range has to end at EOF."""
+    versions = re.findall(r"^## \[([0-9][^\]]*)\]", (ROOT / "CHANGELOG.md").read_text(),
+                          re.M)
+    out = _run("release-notes.sh", versions[-1])
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.startswith(f"## [{versions[-1]}]")
+
+
+def test_a_version_with_no_changelog_section_fails_loudly():
+    """The important one. The fallback would be GitHub's auto-generated commit list —
+    for a release like 1.0.0 that is a wall of "packaging P4: …" lines saying nothing a
+    user wants, and it would ship without anyone noticing."""
+    out = _run("release-notes.sh", "9.9.9")
+    assert out.returncode == 1
+    assert "9.9.9" in out.stderr
+    assert "CHANGELOG.md" in out.stderr
+
+
+def test_notes_explain_what_each_artifact_is():
+    """Six files on a release page with no explanation is unhelpful, and this part is
+    identical every time, so it is generated rather than retyped."""
+    import fettle
+
+    body = _run("release-notes.sh", fettle.__version__).stdout
+    for fragment in (".deb", ".rpm", ".pkg.tar.zst", "zipapp", "fettle.pyz",
+                     "python 3.11", "SHA256SUMS"):
+        assert fragment in body, f"the notes never mention {fragment}"
+
+
+def test_release_notes_needs_an_argument():
+    assert _run("release-notes.sh").returncode != 0
