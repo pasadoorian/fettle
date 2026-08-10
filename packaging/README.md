@@ -143,11 +143,27 @@ the zipapp artifact so they are the same thing) and embeds it with
 flag rather than falling through to the staging path, because that path's exception
 points at a temp directory and not at the mistake.
 
-**The axes must be listed explicitly** (`--include-module=fettle.hardening.axes.…`).
-fettle loads them by computed name, which no compiler can see, and if they are missing
-the binary does **not** crash: the framework catches the import error and reports each
-axis as *blind*, so a broken build looks like a cautious one. The smoke test asserts the
-axes produce real results.
+**The axes get a `--include-module` each, and a smoke test.** fettle loads them by a
+computed module name that no compiler can see. Measured rather than assumed:
+`--include-package=fettle` already pulls them in, so those flags are *redundant* — a
+build made without them was compiled and all six axes were present. They stay as
+belt-and-braces, derived from `AXIS_NAMES` so a seventh cannot be forgotten, but they
+are not what makes it work.
+
+The check that matters is `packaging/binary/smoke.sh`, which every build runs before its
+output becomes an artifact. If an axis is ever lost the binary does **not** crash — the
+framework catches the ImportError and reports it as *blind*. Demonstrated by compiling
+one with two axes deliberately excluded:
+
+```
+  Filesystem: not checked (see below)
+  Kernel: not checked (see below)
+```
+
+Exit code 0, no error, an audit that looks careful and examined nothing. The smoke test
+turns that into a failed build. It also asserts the binary knows it is a binary, that
+`fettle remote` can still build its zipapp, and that config parsing works — always by
+checking for *positive results* rather than a zero exit.
 
 Verified end to end in a container, as an unprivileged user with passwordless sudo:
 

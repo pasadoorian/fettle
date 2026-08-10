@@ -249,3 +249,36 @@ def test_notes_explain_what_each_artifact_is():
 
 def test_release_notes_needs_an_argument():
     assert _run("release-notes.sh").returncode != 0
+
+
+# -- the compiled binary's build ---------------------------------------------
+
+def test_the_axis_list_is_derived_not_hardcoded():
+    """A literal list in the build script is a second copy of AXIS_NAMES, and the day a
+    seventh axis is added the build would drop it silently — the binary would compile,
+    run, and report that axis as blind forever."""
+    build = (ROOT / "packaging/binary/build.sh").read_text()
+    assert "AXIS_NAMES" in build, "the axis list must come from fettle, not a literal"
+
+    from fettle.hardening.axes import AXIS_NAMES
+    for axis in AXIS_NAMES:
+        assert f'"{axis}"' not in build and f"'{axis}'" not in build, \
+            f"{axis} appears as a literal — the list has been hardcoded again"
+
+
+def test_the_build_smoke_tests_its_own_output():
+    """A binary that fails the smoke test must never become an artifact, so the call has
+    to be in the build rather than something a person remembers to run."""
+    build = (ROOT / "packaging/binary/build.sh").read_text()
+    assert "smoke.sh" in build
+
+
+def test_the_smoke_test_checks_for_positive_results():
+    """The failures here are silent — a binary missing its axes exits 0 and audits
+    nothing — so "it ran" is not evidence. These are the assertions that make it a
+    test rather than a launch."""
+    smoke = (ROOT / "packaging/binary/smoke.sh").read_text()
+    assert "did not complete" in smoke, "must detect axes reported as blind"
+    assert "(binary)" in smoke, "must check the build reports its own kind"
+    assert "FileNotFoundError" in smoke, "must detect a missing embedded zipapp"
+    assert "checked" in smoke, "must check something was actually examined"

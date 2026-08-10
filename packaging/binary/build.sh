@@ -29,8 +29,23 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$outdir"
 
-# The six hardening axes, by name, because static analysis cannot find them.
-axes="filesystem services kernel ssh firewall certs"
+# The hardening axes, named explicitly because they are loaded by a COMPUTED module name
+# that static analysis cannot see.
+#
+# MEASURED, and not what I first wrote: `--include-package=fettle` below already pulls
+# them in, so these flags are redundant. A build made without them was compiled and
+# smoke-tested, and all six axes were present. They are kept as belt-and-braces for the
+# one thing here that fails *silently* — see smoke.sh — but they are not what makes it
+# work, and a comment claiming otherwise would send the next person down a false trail.
+#
+# Derived from AXIS_NAMES rather than listed, so a seventh axis cannot be forgotten.
+axes=$(cd "$here" && python3 -c "
+import sys
+sys.path.insert(0, '.')
+from fettle.hardening.axes import AXIS_NAMES
+print(' '.join(AXIS_NAMES))
+")
+[ -n "$axes" ] || { echo "binary/build.sh: could not read AXIS_NAMES" >&2; exit 1; }
 includes=""
 for axis in $axes; do
     includes="$includes --include-module=fettle.hardening.axes.$axis"
@@ -71,4 +86,10 @@ ENTRY
     "$work/fettle-main.py" )
 
 install -m 755 "$work/fettle" "$outdir/fettle"
+
+# A binary that fails the smoke test never becomes an artifact. The failures that matter
+# here are silent — a build missing the axes runs, exits 0, and audits nothing — so this
+# is not optional polish.
+sh "$here/packaging/binary/smoke.sh" "$outdir/fettle"
+
 echo "$outdir/fettle"

@@ -37,9 +37,19 @@ have shipped a bug nobody could diagnose:
   context, so the binary compiles and then dies at startup. The build generates a
   two-line absolute-import entry, the same shape `remote.build_zipapp` already uses.
 
-The six hardening axes are listed explicitly for the compiler, because fettle loads them
-by computed name. If they were missing the binary would not crash — the framework
-reports each as *blind*, so a broken build would look like a cautious one.
+**Every build now smoke-tests its own output** (`packaging/binary/smoke.sh`) and fails
+if the binary is wrong, because the failures that matter here are silent. fettle loads
+its six hardening axes by a computed module name; if one is lost the binary does not
+crash — the framework reports it as *blind*, so the audit looks careful and examines
+nothing. Demonstrated by compiling one with two axes excluded: exit 0, no error, and
+`Filesystem: not checked`. The smoke test asserts positive results — six axes, none
+blind, real subjects examined, `fettle remote` able to build its zipapp — rather than a
+zero exit.
+
+The axes also get an explicit `--include-module` each, derived from `AXIS_NAMES` so a
+seventh cannot be forgotten. Worth recording that these turned out to be *redundant*:
+`--include-package=fettle` already includes them, verified by building without them.
+They stay as belt-and-braces for a silent failure, not because they are load-bearing.
 
 **`fettle remote` works from the binary too.** It ships fettle to a host by building a
 zipapp from fettle's own `.py` files, which a compiled build does not have — it failed
