@@ -143,7 +143,7 @@ the zipapp artifact so they are the same thing) and embeds it with
 flag rather than falling through to the staging path, because that path's exception
 points at a temp directory and not at the mistake.
 
-**The axes get a `--include-module` each, and a smoke test.** fettle loads them by a
+**The axes get a Nuitka include flag each, and a smoke test.** They are loaded by a
 computed module name that no compiler can see. Measured rather than assumed:
 `--include-package=fettle` already pulls them in, so those flags are *redundant* — a
 build made without them was compiled and all six axes were present. They stay as
