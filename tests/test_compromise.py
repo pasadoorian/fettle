@@ -90,11 +90,15 @@ def test_not_in_the_default_set():
 
 
 def test_examining_nothing_never_reads_as_clean(tmp_path, capsys):
-    """The whole point of the skeleton milestone.
+    """The invariant, in the action where breaking it would be worst.
 
-    With no groups built, the action must say so in three places — the not-checked
-    block, the summary line, and by the absence of any success wording. A reader who
-    sees only the summary must still know that nothing was examined.
+    An empty root gives every group nothing to read, so all of them come back blind.
+    The run must say so on screen *and* in the summary, and must use none of the
+    wording fettle uses elsewhere for a genuine all-clear.
+
+    This caught a real bug when the first check group landed: `actions.run` fills an
+    empty summary with "nothing to report", so a fully-blind compromise-check
+    summarised itself as clean while the screen above it said "not checked".
     """
     ctx = _ctx(tmp_path)
     caudit.run(_Backend(), ctx)
@@ -102,9 +106,7 @@ def test_examining_nothing_never_reads_as_clean(tmp_path, capsys):
     text = capsys.readouterr().out
 
     assert "nothing was examined" in text
-    assert "no check groups are implemented yet" in text
-    # No wording that could be read as a pass. "clean" and "nothing to report" are the
-    # two phrases the rest of fettle uses for a genuine all-clear.
+    assert "not checked" in text
     lowered = text.lower()
     assert "nothing to report" not in lowered
     assert "no compromise" not in lowered
@@ -117,7 +119,28 @@ def test_summary_line_stands_alone(tmp_path):
     caudit.run(_Backend(), ctx)
     warnings = ctx.output._warnings
     assert warnings, "an examined-nothing run must warn"
-    assert any("nothing was examined" in w and "implemented" in w for w in warnings)
+    assert any("nothing was examined" in w and "could not look" in w for w in warnings)
+
+
+def test_a_group_that_found_nothing_is_allowed_to_say_so(tmp_path, monkeypatch):
+    """The mirror of the test above, and just as necessary.
+
+    "Could not look" must not render as "found nothing" — but "looked and found
+    nothing" must not be dressed up as blindness either. A group that genuinely ran
+    and was clean adds no warning, and the pipeline's own "nothing to report" is then
+    the correct summary.
+    """
+    from fettle.compromise import CheckResult
+
+    class _Clean:
+        @staticmethod
+        def run(backend, ctx):
+            return CheckResult(name="persistence", title="Boot persistence", checked=482)
+
+    monkeypatch.setattr(compromise, "_module", lambda name: _Clean)
+    ctx = _ctx(tmp_path)
+    caudit.run(_Backend(), ctx)
+    assert ctx.output._warnings == []
 
 
 def test_a_group_that_raises_is_blind_not_clean(tmp_path, monkeypatch):

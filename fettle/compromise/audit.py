@@ -110,6 +110,14 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
         parts = [f"{total[s]} {s}" for s in arender.SEVERITY_ORDER if total.get(s)]
         out.summary_warn(f"{named} — {', '.join(parts)}")
         _preserve_banner(out, total)
+    elif not any(r.ran for r in results):
+        # Every group was blind or not applicable, so nothing was examined — and
+        # `actions.run` fills an empty summary with "nothing to report", which here
+        # would be the exact lie this action exists to avoid. The screen already says
+        # "not checked"; the summary has to say it too, because the summary is what a
+        # sweep of fifteen actions is read from.
+        blind = ", ".join(r.name for r in results if not r.ran) or "every check"
+        out.summary_warn(f"nothing was examined — {blind} could not look, see above")
 
     if not ctx.dry_run:
         try:

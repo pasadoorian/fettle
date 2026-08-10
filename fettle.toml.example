@@ -51,6 +51,18 @@
 #priv_multiplier    = 3
 #weights = { canary = 3, relro = 3, pie = 2, fortify_source = 2, cfi = 1, rpath = 1, runpath = 0.5 }
 
+# Compromise indicators (`fettle -M` / `compromise-check`) -- is something ALREADY here?
+# A different question from the hardening audit above, which is why it is a different
+# action and a different config section: silencing a chatty hardening axis must not
+# silence a rootkit check as a side effect.
+#
+# Every group is on by default. A name that is not a group is reported rather than
+# ignored -- believing a check is off when it is running, and believing it is on when
+# it is not, are equally bad and equally silent.
+#[compromise]
+#disable_checks = ["persistence"]   # groups: persistence
+
+
 # Reports & run logs. Reports go to ~/.fettle/reports/<host>/, per-run transcripts
 # to ~/.fettle/logs/<host>/ — timestamped, 0600, and rotated to the newest `keep`
 # per host + type. <host> is `local` locally or the target of `fettle remote <host>`.

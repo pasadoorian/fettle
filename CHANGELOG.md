@@ -11,6 +11,68 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.2.0] — boot persistence: what starts at boot that no package installed
+
+`compromise-check`'s first real check group, and the one that closes the gap the whole
+feature was proposed for. The June 2026 AUR wave persisted with a systemd unit —
+`Restart=always`, dropped in `/etc/systemd/system`, payload under `/var/lib`.
+`pkg-audit` could tell you a package you installed was in that wave. Nothing could tell
+you whether the unit it dropped is still on the machine.
+
+### Added
+
+- **`persistence` check group.** Every real `.service` and `.timer` under
+  `/etc/systemd/system`, `/usr/local/lib/systemd/system` and `/usr/lib/systemd/system`,
+  matched against the package database. Each unowned unit reports the binary it runs and
+  whether anything vouches for *that*, because a unit nobody owns pointing at a binary
+  nobody owns is a different claim from a hand-written unit starting `/usr/bin/rsync`.
+- **`/usr/lib/systemd/system` is scanned**, despite being the distribution's own
+  directory and costing 480 stats. All 480 of its units are package-owned on the
+  reference machine, which makes an unowned one there a file in the distro's unit
+  directory that the distro did not put there — the place an implant would most want to
+  be.
+- **`[compromise] disable_checks`** now has a group name to take, and is documented in
+  `fettle.toml.example`.
+
+### The gap this closes, proved rather than asserted
+
+`hardening-audit`'s services axis already reports unpackaged units — but only above an
+exposure score of 7.0, because there unpackaged-ness is one input into a judgement about
+*reach*. The AUR wave's unit runs one binary and opens no sockets, so it scores low and
+that check skips it. A test builds that exact unit, runs it past the services axis, and
+asserts the axis finds nothing; feeding the same unit through at exposure 8.5 produces a
+finding, so the threshold is demonstrably the reason and not something incidental.
+
+### Calibration — three rules that sounded right and were wrong
+
+Measured on the reference desktop before shipping, because the difference between an
+actionable check and homework is entirely how often it fires on a healthy machine.
+
+- **Symlinks and `.wants/` are excluded: 41 findings become 2.** Both are what
+  `systemctl enable` creates. They carry no content and each points at a unit examined
+  here on its own merits.
+- **`Restart=always` is not a signal.** It is in **27 of the 480** distro units and in
+  *both* legitimate unowned agents on the reference machine. Escalating on it would have
+  produced two High findings and a preservation banner on a clean box. It is now printed
+  as context and never scored.
+- **An unowned binary is not a signal either.** Every vendor install is unowned by
+  definition. What survived is the target's *location*: `/opt` and `/usr/local` are
+  where the FHS puts software the package manager did not install, while `/tmp`,
+  `/dev/shm` and the `/var` state directories are not places a service binary belongs.
+
+### Fixed
+
+- **A fully blind run summarised itself as clean.** With every group unable to look, the
+  action added no summary line, so `actions.run`'s "an action that said nothing gets
+  *nothing to report*" fallback filled it in — while the screen directly above said "not
+  checked". The exact inversion this action exists to avoid, found by the M1.1 invariant
+  test the moment a real group landed. A blind run now says so in the summary too.
+- **A dead unit was graded `High` and given the preservation banner.** Found on the
+  first live run, on a healthy machine: a unit pointing at a binary that no longer
+  exists (a vendor had renamed it). A unit whose target is missing cannot execute
+  anything, which makes it the *least* dangerous state here rather than the most. Now
+  `Low`, and worded as the hygiene finding it is.
+
 ## [1.1.0] — `compromise-check`: the action, not yet its checks
 
 The first milestone of a new feature family. fettle could tell you a package you
