@@ -1,0 +1,34 @@
+# Maintainer: Paul Asadoorian <paul@rihackers.com>
+#
+# Built by packaging/arch/build.sh, which stages the source tarball beside this file.
+# The package() step calls packaging/install.sh — the same script the .deb and .rpm use,
+# so all three ship the identical layout.
+#
+# If this ever becomes an AUR package, `source` gains the GitHub release URL and
+# `sha256sums` stops being SKIP; everything else here is already AUR-shaped.
+
+pkgname=fettle
+pkgver=0.0.0          # replaced by build.sh from pyproject.toml
+pkgrel=1
+pkgdesc="Cross-distribution Linux maintenance and supply-chain tool"
+arch=('any')          # pure python, no compiled anything
+url="https://github.com/pasadoorian/fettle"
+license=('MIT')
+depends=('python')    # Arch's python is 3.13; fettle needs nothing else
+optdepends=(
+  'checksec: binary hardening axis of `fettle -H`'
+  'pacman-contrib: paccache retention for `fettle -c`'
+  'fwupd: firmware update checks'
+  'openssl: TLS certificate expiry axis of `fettle -H`'
+)
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')   # built locally from the checkout, not fetched
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  sh packaging/install.sh "$pkgdir" /usr
+
+  # Arch keeps licences here rather than only in doc/. install.sh puts one in
+  # /usr/share/doc/fettle for every distro; this is the Arch-conventional copy.
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
