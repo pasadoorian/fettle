@@ -13,10 +13,10 @@
 >
 > **Where it stands:** the sweep is finished — 23 of 24 features and all ten
 > cross-cutting areas (`web` is on hold and marked experimental) — and feature work
-> continues on top of it, most recently the multi-axis `hardening-audit`. **The first
-> stable release will be 1.0.0**, and it is not here yet: it has a release plan, binary
-> builds and a round of hands-on testing attached to it, rather than being a version
-> number to bump.
+> continues on top of it: the multi-axis `hardening-audit`, and bash completion.
+> **The first stable release will be 1.0.0**, and it is not here yet: it has a release
+> plan, binary builds and a round of hands-on testing attached to it, rather than being
+> a version number to bump.
 >
 > The sweep has found actions that reported success while doing nothing at all, a preview
 > that deleted run history, and an unattended flag that would purge a list fettle had
