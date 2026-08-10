@@ -14,6 +14,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.122.0] — the binary ships, and a bug only a bare container could find
+
+`packaging/binary/archive.sh` packs the compiled binary as
+`fettle-<version>-linux-x86_64.tar.gz` / `.zip` with the example config, the completion
+script and a `RUNNING.md`. The release workflow builds it, smoke-tests it, and installs
+it from the archive in a container with nothing else in it.
+
+**A real bug, found by testing the archive rather than the build.** In a bare
+`debian:13` container fettle died on its very first section header:
+
+```
+UnicodeEncodeError: 'ascii' codec can't encode character '\u25b8'
+```
+
+`\u25b8` is `▸`. A normal CPython coerces the C locale to UTF-8 (PEP 538/540), so with
+no `LANG` set — a container, a cron job, a minimal server — output still works. **The
+interpreter Nuitka bundles does not.** In the same container the zipapp printed fine
+under the system python while the binary crashed, which is what identified it as
+Nuitka's behaviour rather than fettle's. The entry point now forces UTF-8 on both
+streams, and the smoke test runs a check under `env -i` so it cannot return unseen.
+
+**The glibc floor is measured, and it is not the build host's glibc.** The outer binary
+needs only `GLIBC_2.34`; the *libpython Nuitka bundles* needs `2.38`, and that is the
+real limit. Verified by running it on eight distros: it works on Ubuntu 24.04, Debian
+13, Fedora 40+ and Arch, and does not on Ubuntu 22.04, Debian 12 or RHEL/Rocky/Alma 9.
+Those three are covered by their own distro package and by the zipapp, both on the same
+release page — and worth noting that building in an older container would remove the
+limitation entirely, since the floor follows the bundled python.
+
+**The stale-flag sweep now knows an artifact filename is not a flag.** It read
+`fettle-1.0.0-linux-x86_64.tar.gz` as advising a `-linux-x86_64` option, having already
+done the same with `-zipapp`. A flag is never followed by a dot and more word
+characters; every archive suffix is. Its canary covers both directions, including that a
+flag ending a sentence is still caught.
+
 ## [0.121.0] — fettle can be compiled, and still knows how to become root and travel
 
 Groundwork for the prebuilt binary. `packaging/binary/build.sh` compiles fettle with

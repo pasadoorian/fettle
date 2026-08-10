@@ -30,6 +30,13 @@ _TICKED = re.compile(r"`(?<![\w-])(-{1,2}[A-Za-z][\w-]*)`")
 # ("fettle refuses to...") and treating those as commands gives ~100 false positives.
 _WORD = re.compile(r"`fettle\s+([a-z][a-z0-9-]{2,})")
 _SSH_OPT = re.compile(r"^-o[A-Z]")               # `-oProxyCommand=…` is ssh's, not ours
+# An artifact filename is not a flag. `fettle-1.0.0-linux-x86_64.tar.gz` and
+# `fettle-1.0.0-zipapp.zip` both look like `fettle …-something` to the context regex, and
+# the packaging docs name them constantly. A real flag is never followed by a dot and
+# more word characters, while every archive suffix is — so that is the discriminator.
+# (A flag ending a sentence, `--dry-run.`, is followed by a dot and then whitespace, and
+# is still caught.)
+_FILENAME = re.compile(r"\.\w")
 
 # History, not advice: these record retired spellings on purpose.
 _SKIP_PARTS = {".git", "__pycache__", "matrix-logs"}
@@ -90,7 +97,8 @@ def sweep() -> list[str]:
                 continue
             if _ALLOW in line or _ALLOW in text[:400]:   # line, or whole-file opt-out
                 continue
-            found = set(_CTX.findall(line))
+            found = {m.group(1) for m in _CTX.finditer(line)
+                     if not _FILENAME.match(line[m.end(1):m.end(1) + 2])}
             if re.search(r"(?<![.\w])fettle\b", line):
                 found |= set(_TICKED.findall(line))
             hits += [f"{rel}:{n}: {t} -- {line.strip()[:70]}"
@@ -119,10 +127,19 @@ def test_the_sweep_can_actually_see_a_stale_reference(tmp_path, monkeypatch):
     canary = ROOT / "_stale_flag_canary.md"
     canary.write_text("Run `fettle -I` then `fettle aur-ioc-scan`, "
                       "or `fettle --totally-made-up`.\n"
-                      "But `fettle -p pkg` is real and `pacman -Qtdq` is not ours.\n")
+                      "But `fettle -p pkg` is real and `pacman -Qtdq` is not ours.\n"
+                      # The filename rule, both directions: an artifact name is not a
+                      # flag, and a real stale flag ENDING A SENTENCE still is.
+                      "Download fettle-1.0.0-linux-x86_64.tar.gz or "
+                      "fettle-1.0.0-zipapp.zip today.\n"
+                      "The old spelling was `fettle --gone-for-good`.\n")
     try:
         found = " ".join(sweep())
     finally:
         canary.unlink()
     assert "-I" in found and "aur-ioc-scan" in found and "--totally-made-up" in found
     assert "-p" not in found.replace("--totally-made-up", "") and "-Qtdq" not in found
+    # artifact filenames are not flags...
+    assert "-linux-x86_64" not in found and "-zipapp" not in found
+    # ...but a flag followed by a full stop still is, or the rule is too greedy
+    assert "--gone-for-good" in found

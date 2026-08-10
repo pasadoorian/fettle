@@ -175,6 +175,44 @@ python:  sudo env PYTHONPATH=/tmp/src /usr/sbin/python3 -m fettle -V --config �
 Both correct for their case, the config pin preserved in both — and the python path
 byte-identical to what it always was, which is what says the change is additive.
 
+### What it runs on — measured, not inferred
+
+`packaging/binary/archive.sh` packs it as `fettle-<version>-linux-x86_64.tar.gz` and
+`.zip`, with the example config, the completion script and a `RUNNING.md`. No launcher:
+the binary carries its own interpreter.
+
+The glibc floor does **not** come from the build host's glibc, which is the natural
+guess and wrong. The outer binary needs only `GLIBC_2.34`; the **libpython Nuitka
+bundles** needs `GLIBC_2.38`, and that is the real limit. Verified by running it:
+
+| works | does not work |
+|---|---|
+| Ubuntu 24.04 (2.39) | Ubuntu 22.04 (2.35) |
+| Debian 13 (2.41) | Debian 12 (2.36) |
+| Fedora 40+ (2.40) | RHEL / Rocky / AlmaLinux 9 (2.34) |
+| Arch, Manjaro (2.44) | |
+
+Three of fettle's supported platforms are in the right-hand column. They are covered by
+their own distro package and by the zipapp, both on the same release page, so nobody is
+left without an artifact — but it is worth knowing that **building in an older container
+would remove the limitation entirely**, since the floor follows the bundled python.
+
+### The locale bug, which only a bare container finds
+
+A normal CPython coerces the C locale to UTF-8 (PEP 538/540), so on a machine with no
+`LANG` set — a container, a cron job, a minimal server — `sys.stdout.encoding` is still
+utf-8. **The interpreter Nuitka bundles does not do that.** It reports ascii, and fettle
+died on its very first section header:
+
+```
+UnicodeEncodeError: 'ascii' codec can't encode character '\u25b8'
+```
+
+`\u25b8` is `▸`. In the same bare `debian:13` container the zipapp printed fine under
+the system python and the binary crashed, which is what identified it as Nuitka's rather
+than fettle's. The generated entry point now reconfigures both streams to UTF-8, and the
+smoke test runs a check under `env -i` so it cannot come back unseen.
+
 ## The python 3.11 floor, which is the fiddly part
 
 fettle needs python **3.11 or newer**, and `python3` is *not* reliably that:

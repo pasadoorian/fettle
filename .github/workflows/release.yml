@@ -75,6 +75,8 @@ jobs:
             artifact: fettle-arch
           - name: zipapp
             artifact: fettle-zipapp
+          - name: binary
+            artifact: fettle-binary
     steps:
       - uses: actions/checkout@v4
 
@@ -104,6 +106,18 @@ jobs:
             zipapp)
               sudo apt-get -qq install -y zip >/dev/null
               packaging/zipapp/build.sh
+              ;;
+            binary)
+              # Nuitka needs a C toolchain (the runner has gcc) and its own venv, per
+              # the project's rule that nothing is installed into a shared interpreter.
+              sudo apt-get -qq install -y zip >/dev/null
+              python3 -m venv venv-nuitka-build
+              venv-nuitka-build/bin/pip -q install nuitka
+              # build.sh smoke-tests its own output and fails the job if the binary is
+              # wrong — the failures that matter here are silent, so this is the gate.
+              packaging/binary/build.sh
+              packaging/binary/archive.sh
+              rm -f dist/fettle          # the archives carry it; no bare file to attach
               ;;
           esac
 
@@ -144,6 +158,15 @@ jobs:
                 dnf -q -y install python3.11 tar gzip >/dev/null
                 cd /tmp && tar -xzf /d/fettle-*-zipapp.tar.gz && cd fettle-*/
                 ./fettle --version
+                ./fettle -H --dry-run | grep -q "Filesystem hygiene"'
+              ;;
+            binary)
+              # debian:13 with NOTHING installed — no python, no locale. It is where the
+              # UnicodeEncodeError on `▸` was found: Nuitka's bundled interpreter does
+              # not coerce the C locale to UTF-8 the way a normal CPython does.
+              docker run --rm -v "$PWD/dist":/d:ro debian:13 sh -c '
+                cd /tmp && tar -xzf /d/fettle-*-linux-x86_64.tar.gz && cd fettle-*/
+                ./fettle --version | grep -q "(binary)"
                 ./fettle -H --dry-run | grep -q "Filesystem hygiene"'
               ;;
           esac

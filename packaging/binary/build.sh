@@ -67,6 +67,24 @@ sh "$here/packaging/zipapp/pyz.sh" "$work/fettle.pyz"
 cat > "$work/fettle-main.py" <<'ENTRY'
 import sys
 
+# Force UTF-8 on the output streams before anything prints.
+#
+# A normal CPython coerces the C locale to UTF-8 (PEP 538/540), so on a machine with no
+# LANG set — a container, a cron job, a minimal server — `sys.stdout.encoding` is still
+# utf-8. The interpreter Nuitka bundles does NOT do that coercion: it reports ascii, and
+# fettle dies on its very first section header with
+#
+#   UnicodeEncodeError: 'ascii' codec can't encode character '\u25b8'
+#
+# which is `▸`. Measured in a bare debian:13 container, where the zipapp printed fine
+# under the system python and the binary crashed. Forcing it here makes the binary match
+# every other artifact rather than inventing a policy.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import fettle.cli
 
 sys.exit(fettle.cli.main())

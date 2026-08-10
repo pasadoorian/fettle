@@ -49,6 +49,7 @@ real unit-test coverage the bash originals never had.
   - [What works where](#what-works-where)
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [Optional: the prebuilt binary](#optional-the-prebuilt-binary)
   - [Optional: bash completion](#optional-bash-completion)
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
 - [Quick start](#quick-start)
@@ -285,6 +286,25 @@ Update with a plain `git pull`. To drop it in for the old updater:
 ```sh
 ln -sf ~/src/fettle/bin/fettle ~/update.sh
 ```
+
+### Optional: the prebuilt binary
+
+A single self-contained executable — no python needed, nothing to install. Attached to
+each release as `fettle-<version>-linux-x86_64.tar.gz` / `.zip`.
+
+```sh
+tar -xzf fettle-*-linux-x86_64.tar.gz && cd fettle-*/
+sudo install -m 755 fettle /usr/local/bin/fettle
+```
+
+It needs **glibc 2.38 or newer**, so it runs on Ubuntu 24.04, Debian 13, Fedora 40+ and
+Arch, but **not** on Ubuntu 22.04, Debian 12 or RHEL/Rocky/AlmaLinux 9. On those, use
+the distro package or the zipapp — both are on the same release page and both work
+everywhere. The limit comes from the python runtime compiled into the binary, not from
+fettle.
+
+`fettle --version` prints `(binary)` for this build, so a bug report says which artifact
+it came from.
 
 ### Optional: bash completion
 

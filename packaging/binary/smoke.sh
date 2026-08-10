@@ -80,6 +80,21 @@ case "$remote" in
 $remote" ;;
 esac
 
+# -- output with no locale set -----------------------------------------------
+# The interpreter Nuitka bundles does not coerce the C locale to UTF-8 the way a normal
+# CPython does, so with no LANG set it reports ascii and fettle dies on its first
+# section header (`▸`). That is every container, cron job and minimal server. Measured,
+# not imagined — it is why the entry point reconfigures the streams.
+bare=$(env -i "$bin" -H --dry-run 2>&1) || fail "failed with an empty environment:
+$bare"
+case "$bare" in
+    *UnicodeEncodeError*) fail "UnicodeEncodeError with no locale set — the entry point
+         is not forcing UTF-8 on the output streams" ;;
+esac
+printf '%s' "$bare" | grep -q "Filesystem hygiene" \
+    || fail "no axis output with an empty environment"
+ok "runs with no locale set"
+
 # -- the config parser, which needs tomllib ----------------------------------
 "$bin" --print-config >/dev/null 2>&1 || fail "--print-config failed (tomllib missing?)"
 ok "config parsing works"
