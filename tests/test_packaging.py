@@ -21,7 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ("install.sh", "version.sh", "check-tag.sh",
-           "deb/build.sh", "rpm/build.sh", "arch/build.sh")
+           "deb/build.sh", "rpm/build.sh", "arch/build.sh", "zipapp/build.sh")
 
 
 def _run(script: str, *args: str, cwd: Path | None = None):
@@ -129,3 +129,61 @@ def test_install_sh_produces_a_runnable_tree(tmp_path):
     text = wrapper.read_text()
     assert "python3.11" in text
     assert "3, 11" in text, "the python3 fallback must still check the version"
+
+
+# -- the shared launcher template --------------------------------------------
+#
+# The interpreter search is the fiddly part of both launchers, and it exists because
+# `python3` is 3.9 on RHEL 9 and 3.10 on Ubuntu 22.04. It lives in one template
+# (packaging/wrapper.sh.in) precisely so the packaged launcher and the one in the zipapp
+# archive cannot drift; these check the substitution actually produced something, since
+# a sed that matched nothing fails silently and ships a launcher with a literal
+# placeholder in it.
+
+def _generated_wrappers(tmp_path):
+    """The packaged launcher and the archive's, both freshly generated."""
+    assert _run("install.sh", str(tmp_path)).returncode == 0
+    packaged = (tmp_path / "usr/bin/fettle").read_text()
+
+    template = (ROOT / "packaging/wrapper.sh.in").read_text()
+    archive = (template
+               .replace("@SETUP@", 'here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)')
+               .replace("@TARGET@", '"$here/fettle.pyz"'))
+    return packaged, archive
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="packaging targets Linux")
+def test_no_placeholder_survives_into_a_launcher(tmp_path):
+    """A sed that matches nothing leaves `@SETUP@` in the shipped script, which then
+    fails at run time with a syntax error nobody can place."""
+    for text in _generated_wrappers(tmp_path):
+        assert "@SETUP@" not in text
+        assert "@TARGET@" not in text
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="packaging targets Linux")
+def test_both_launchers_keep_the_interpreter_search(tmp_path):
+    packaged, archive = _generated_wrappers(tmp_path)
+    for text in (packaged, archive):
+        assert "python3.11" in text
+        assert "3, 11" in text, "the python3 fallback must still check the version"
+        assert "sudo dnf install python3.11" in text, "the failure message must help"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="packaging targets Linux")
+def test_the_two_launchers_differ_only_in_where_they_point(tmp_path):
+    """If they ever diverge beyond the substitution, the template has stopped being the
+    single source and one of them is about to rot."""
+    packaged, archive = _generated_wrappers(tmp_path)
+    strip = lambda t: [ln for ln in t.splitlines()                       # noqa: E731
+                       if "PYTHONPATH" not in ln and "fettle.pyz" not in ln
+                       and "-m fettle" not in ln and "dirname" not in ln]
+    assert strip(packaged) == strip(archive)
+
+
+def test_the_archive_name_cannot_collide_with_github_source_archives():
+    """GitHub attaches its own `fettle-<version>.zip` and `.tar.gz` to every tag. The
+    zipapp archives carry a `-zipapp` suffix so both can exist on one release page."""
+    build = (ROOT / "packaging/zipapp/build.sh").read_text()
+    assert "-zipapp.tar.gz" in build
+    assert "-zipapp.zip" in build

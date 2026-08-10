@@ -50,35 +50,14 @@ find "$libdir" -name '*.py[co]' -delete 2>/dev/null || true
 # a python upgrade, python falls back to the .py beside them: slower, never wrong.
 python3 -m compileall -q "$libdir/fettle" >/dev/null 2>&1 || true
 
-cat > "$bindir/fettle" <<EOF
-#!/bin/sh
-# fettle lives in $PREFIX/lib/fettle rather than site-packages — see packaging/install.sh.
-PYTHONPATH="$PREFIX/lib/fettle\${PYTHONPATH:+:\$PYTHONPATH}"
-export PYTHONPATH
-
-# fettle needs python 3.11 or newer, and \`python3\` is NOT reliably that: on RHEL 9 and
-# Rocky 9 it is 3.9, and on Ubuntu 22.04 it is 3.10, while both have a newer interpreter
-# available under a versioned name. Running fettle under the old one fails somewhere
-# further in, with an error about whatever 3.11 feature it reached first.
-#
-# The versioned names are tried first because their name alone guarantees the version —
-# no interpreter has to be started to find out, which keeps the common path free of an
-# extra process (bash completion runs this on every tab press). The list is an
-# optimisation, not the correctness: a python newer than anything named here is found by
-# the \`python3\` fallback below, which checks properly.
-for _py in python3.14 python3.13 python3.12 python3.11; do
-    command -v "\$_py" >/dev/null 2>&1 && exec "\$_py" -m fettle "\$@"
-done
-if command -v python3 >/dev/null 2>&1 &&
-   python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; then
-    exec python3 -m fettle "\$@"
-fi
-
-echo "fettle: needs python 3.11 or newer, and none was found." >&2
-echo "  RHEL/Rocky/Alma 9:  sudo dnf install python3.11" >&2
-echo "  Ubuntu 22.04:       sudo apt install python3.11" >&2
-exit 1
-EOF
+# The launcher comes from the shared template so it cannot drift from the one in the
+# zipapp archive — see packaging/wrapper.sh.in for why the interpreter search is not
+# just `exec python3`. @SETUP@ is deliberately a ONE-LINE substitution: sed cannot emit a
+# literal newline in a replacement portably, and the alternatives (a second tool, or an
+# awk incantation) are more moving parts than a semicolon.
+sed -e "s|@SETUP@|PYTHONPATH=\"$PREFIX/lib/fettle\${PYTHONPATH:+:\$PYTHONPATH}\"; export PYTHONPATH|" \
+    -e "s|@TARGET@|-m fettle|" \
+    "$here/packaging/wrapper.sh.in" > "$bindir/fettle"
 chmod 755 "$bindir/fettle"
 
 install -m 644 "$here/contrib/fettle.bash" "$compdir/fettle"

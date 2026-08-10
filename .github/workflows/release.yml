@@ -73,6 +73,8 @@ jobs:
             artifact: fettle-rpm
           - name: arch
             artifact: fettle-arch
+          - name: zipapp
+            artifact: fettle-zipapp
     steps:
       - uses: actions/checkout@v4
 
@@ -98,6 +100,10 @@ jobs:
                 cp -a /src /home/build/fettle && chown -R build /home/build/fettle
                 su build -c "cd /home/build/fettle && packaging/arch/build.sh /home/build/out"
                 mkdir -p /src/dist && cp /home/build/out/*.pkg.tar.zst /src/dist/'
+              ;;
+            zipapp)
+              sudo apt-get -qq install -y zip >/dev/null
+              packaging/zipapp/build.sh
               ;;
           esac
 
@@ -129,6 +135,16 @@ jobs:
                 pacman -U --noconfirm /d/fettle-*.pkg.tar.zst >/dev/null
                 fettle --version
                 fettle -H --dry-run | grep -q "Filesystem hygiene"'
+              ;;
+            zipapp)
+              # Rocky 9 on purpose: its python3 is 3.9, so this proves the launcher
+              # finds a supported interpreter rather than running under the old one.
+              # Nothing is installed here — the archive has to work as extracted.
+              docker run --rm -v "$PWD/dist":/d:ro rockylinux/rockylinux:9 sh -c '
+                dnf -q -y install python3.11 tar gzip >/dev/null
+                cd /tmp && tar -xzf /d/fettle-*-zipapp.tar.gz && cd fettle-*/
+                ./fettle --version
+                ./fettle -H --dry-run | grep -q "Filesystem hygiene"'
               ;;
           esac
 

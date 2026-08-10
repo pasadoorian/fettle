@@ -6,10 +6,27 @@ Three distro packages, all built from one staged layout so they cannot drift apa
 packaging/
   install.sh          stages the installed tree into $DESTDIR — the single source of layout
   version.sh          prints the version from pyproject.toml — the single source of version
+  check-tag.sh        the release guard: does the git tag match that version?
+  wrapper.sh.in       the `fettle` launcher template — the single source of the
+                      interpreter search, used by the packages AND the zipapp archive
   deb/build.sh        → dist/fettle_<version>_all.deb
   rpm/build.sh        → dist/fettle-<version>-1.noarch.rpm      (+ fettle.spec)
   arch/build.sh       → dist/fettle-<version>-1-any.pkg.tar.zst (+ PKGBUILD)
+  zipapp/build.sh     → dist/fettle.pyz
+                        dist/…-zipapp.tar.gz  and  dist/…-zipapp.zip
 ```
+
+
+The zipapp is the artifact that runs **everywhere** — any distro, any architecture, as
+long as there is a python 3.11+. The Nuitka binary that comes later is built against one
+glibc and therefore does not; this is what covers the machines it misses. It is built by
+fettle's own `remote.build_zipapp`, the same function `fettle remote` uses to ship itself
+to a host, so the file people download and the one that lands on a remote machine cannot
+become different things.
+
+The `-zipapp` suffix is not decoration: GitHub attaches its own *Source code (zip)* and
+*(tar.gz)* to every tag, named `fettle-<version>.zip` and `.tar.gz`. Without the suffix
+these would collide on the release page.
 
 Every script writes to `dist/`, which is gitignored, and takes an optional output
 directory as its first argument.
