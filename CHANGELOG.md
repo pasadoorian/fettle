@@ -14,6 +14,33 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.122.2] — the test suite stops testing the developer's laptop
+
+Also found by the dress rehearsal, and worse than the lint problem: **CI had been failing
+on every push since at least 2026-08-06** and nobody looked, because the suite was being
+run locally and called green. Five tests passed on the Arch development box and failed
+everywhere else — they were asserting on the *host*, not on fettle:
+
+- **`test_dry_run_lists_actions_without_elevating`** and **`test_bare_action_words_work`**
+  asserted `rc == 0`. With `--distro arch` forced on a machine with no pacman, `update`
+  correctly reports "could not determine what is pending" and the run exits 1 — fettle
+  being truthful, which the tests read as fettle being broken. They now assert what they
+  are actually about: that both actions dispatched, in order.
+- **`test_config_drift_lists_pacnew`** mocked `pacdiff -o`, a command
+  `check_config_drift` stopped calling when it changed to walking `/etc` (pacdiff cannot
+  see a `.pacsave`). With `ctx.root` left at `/` it was reading the developer's own
+  `/etc` and passing because there happened to be `.pacnew` files in it. It now builds a
+  tree under `tmp_path`, and a second test covers the clean case.
+- **Two secureboot tests** asserted a message that branches on `is_root()`, so they
+  passed for a normal user and failed under `sudo pytest` or in any container. The
+  helper now pins the uid rather than inheriting whoever ran the suite.
+- **`test_a_tag_that_is_not_a_version_tag_is_rejected`** pinned exit code 1, but
+  `${1:?…}` exits 1 under bash and **2 under dash** — and `/bin/sh` is dash on Debian and
+  Ubuntu, including the runner. It now asserts non-zero.
+
+Verified on Manjaro as a user and on Ubuntu 24.04 as root, since between them those two
+cover every difference above.
+
 ## [0.122.1] — the lint rules are now stated, not inherited
 
 Found by the release pipeline's first real run, which is what a dress rehearsal is for.

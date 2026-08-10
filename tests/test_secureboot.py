@@ -14,7 +14,14 @@ from fettle.secure.base import Scan
 _NOW = datetime(2026, 7, 8)
 
 
-def _run(*, tools, cmd_out, capsys, verbose=False):
+def _run(*, tools, cmd_out, capsys, verbose=False, as_root=False):
+    """`as_root` is pinned rather than inherited from whoever runs the suite.
+
+    Two tests below assert on a message that branches on `scan.is_root()`, so they
+    passed for the developer (non-root) and failed under `sudo pytest` or in any
+    container, which runs as root by default. A test's verdict must not depend on the
+    uid of the person running it.
+    """
     out = Output(color=False, verbose=verbose)
 
     def fake_run(cmd, *, as_user=None, capture=False):
@@ -25,7 +32,8 @@ def _run(*, tools, cmd_out, capsys, verbose=False):
 
     scan = Scan(output=out, root=Path("/"), verbose=verbose)
     with patch("fettle.command.run", side_effect=fake_run), \
-         patch("fettle.command.which", side_effect=lambda n: n in tools):
+         patch("fettle.command.which", side_effect=lambda n: n in tools), \
+         patch.object(Scan, "is_root", lambda self: as_root):
         secureboot.check(scan, now=_NOW)
     cap = capsys.readouterr()
     return cap.out + cap.err

@@ -75,7 +75,10 @@ def test_a_tag_that_is_not_a_version_tag_is_rejected(tag):
     """`1.0.0` without the `v` is the plausible mistake, and it must not be treated as
     a match by accident."""
     out = _run("check-tag.sh", tag)
-    assert out.returncode == 1
+    # Non-zero, not specifically 1: `${1:?…}` exits 1 under bash and 2 under dash, and
+    # /bin/sh is dash on Debian and Ubuntu — including the CI runner. Pinning the exact
+    # code made this a test of which shell happened to be /bin/sh.
+    assert out.returncode != 0
 
 
 def test_check_tag_needs_an_argument():

@@ -169,12 +169,34 @@ def test_python_rebuild_notes_orphaned_dir_as_cruft(tmp_path, capsys):
 
 
 # -- config drift ------------------------------------------------------------
-def test_config_drift_lists_pacnew(capsys):
-    responses = {("pacdiff", "-o"): "/etc/pacman.conf.pacnew\n"}
-    with patch("fettle.command.run", side_effect=_fake(responses, [])), \
-         patch("fettle.command.which", return_value=True):
-        ArchBackend().check_config_drift(_ctx())
-    assert "/etc/pacman.conf.pacnew" in capsys.readouterr().out
+def test_config_drift_lists_pacnew(tmp_path, capsys):
+    """Reads a real /etc under `ctx.root`, because that is what the code does.
+
+    This mocked `pacdiff -o` and asserted on the output — but check_config_drift stopped
+    calling pacdiff and now WALKS `ctx.root / "etc"` (pacdiff is a merge tool and cannot
+    see a .pacsave, whose base file is gone by definition). With `ctx.root` left at `/`
+    the test was reading the developer's own /etc, so it passed on the Arch box that had
+    .pacnew files lying around and failed everywhere else — asserting on the host rather
+    than on fettle.
+    """
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "pacman.conf.pacnew").write_text("")
+    (etc / "sudoers.pacsave").write_text("")
+
+    ArchBackend().check_config_drift(_ctx(root=tmp_path))
+
+    out = capsys.readouterr().out
+    assert "pacman.conf.pacnew" in out
+    assert "sudoers.pacsave" in out, \
+        "a .pacsave is why the pacdiff call was replaced by a walk"
+
+
+def test_config_drift_on_a_clean_tree_says_so(tmp_path, capsys):
+    """The other half: an /etc with nothing pending must report that, not stay silent."""
+    (tmp_path / "etc").mkdir()
+    ArchBackend().check_config_drift(_ctx(root=tmp_path))
+    assert "no pending config-file merges" in capsys.readouterr().out
 
 
 # -- firmware (base-class impl, distro-neutral) ------------------------------

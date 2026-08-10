@@ -147,9 +147,16 @@ def test_print_config_exits_zero(capsys):
 
 
 def test_dry_run_lists_actions_without_elevating(capsys):
-    rc = main(["--distro", "arch", "--dry-run", "-u", "-c"])
+    """What this is about is dispatch and the dry-run gate, not the exit status.
+
+    It used to assert `rc == 0`, which quietly made it a test of the HOST: with
+    `--distro arch` forced on a machine with no pacman, `update` correctly reports
+    "could not determine what is pending" and the run exits 1 — fettle being truthful,
+    not fettle being broken. It passed on the Arch development box and failed on every
+    CI runner, which is how it went unnoticed for days.
+    """
+    main(["--distro", "arch", "--dry-run", "-u", "-c"])
     out = capsys.readouterr().out
-    assert rc == 0
     assert "Cleaning caches" in out
     assert "Updating packages" in out
     assert "would run:" in out  # dry-run shows commands, executes nothing
@@ -284,10 +291,13 @@ def test_retired_action_explains_where_it_went(capsys):
 
 
 def test_bare_action_words_work(capsys):
-    rc = main(["--distro", "arch", "--dry-run", "clean", "update"])
+    """`fettle clean update` == `fettle -c -u`. The evidence is that both actions ran
+    and in that order — the exit status depends on whether the host has pacman, which
+    is not what this test is about. See the note above."""
+    main(["--distro", "arch", "--dry-run", "clean", "update"])
     out = capsys.readouterr().out
-    assert rc == 0
     assert "Cleaning caches" in out and "Updating packages" in out
+    assert out.index("Cleaning caches") < out.index("Updating packages")
 
 
 def test_unknown_action_word_errors():
