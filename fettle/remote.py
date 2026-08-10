@@ -109,9 +109,43 @@ sys.exit(fettle.cli.main())
 """
 
 
+def bundled_zipapp() -> Path | None:
+    """The zipapp embedded in a compiled build, or ``None`` in a normal install.
+
+    A compiled build has no ``.py`` files to stage — Nuitka turns them into the binary —
+    so :func:`build_zipapp` cannot construct one and fails with a bare
+    ``FileNotFoundError`` traceback pointing at Nuitka's scratch directory. The build
+    therefore embeds a prebuilt one (``--include-data-files``, see
+    ``packaging/binary/build.sh``) and this finds it.
+    """
+    from .util import frozen_binary
+
+    if not frozen_binary():
+        return None
+    candidate = Path(__file__).resolve().parent / "fettle.pyz"
+    return candidate if candidate.is_file() else None
+
+
 def build_zipapp(dest: Path) -> None:
     """Package the fettle module into a runnable ``dest`` (.pyz), stdlib-only."""
     import fettle
+
+    from .util import frozen_binary
+
+    if frozen_binary():
+        bundled = bundled_zipapp()
+        if bundled is None:
+            # Loudly, and never by falling through to the staging below: that path
+            # would raise FileNotFoundError from inside shutil.copytree, which says
+            # nothing about the actual cause. A binary built without the data file has
+            # a broken `fettle remote` and should say so in those words.
+            raise RuntimeError(
+                "this build has no bundled zipapp, so `fettle remote` cannot ship "
+                "fettle to a host. It was compiled without "
+                "--include-data-files=…/fettle.pyz=fettle/fettle.pyz — see "
+                "packaging/binary/build.sh.")
+        shutil.copyfile(bundled, dest)
+        return
 
     pkg = Path(fettle.__file__).resolve().parent
     with tempfile.TemporaryDirectory() as td:

@@ -12,8 +12,10 @@ packaging/
   deb/build.sh        → dist/fettle_<version>_all.deb
   rpm/build.sh        → dist/fettle-<version>-1.noarch.rpm      (+ fettle.spec)
   arch/build.sh       → dist/fettle-<version>-1-any.pkg.tar.zst (+ PKGBUILD)
+  zipapp/pyz.sh       → just the .pyz — shared with the binary, which embeds one
   zipapp/build.sh     → dist/fettle.pyz
                         dist/…-zipapp.tar.gz  and  dist/…-zipapp.zip
+  binary/build.sh     → dist/fettle  (Nuitka, single x86_64 executable)
 ```
 
 
@@ -130,6 +132,16 @@ have produced a bug nobody could diagnose:
   relative import needing package context, so the binary compiles and then dies at
   startup. The build generates a two-line absolute-import entry instead — the same thing
   `remote.build_zipapp` already does, so the two artifacts start the same way.
+
+**`fettle remote` needs an embedded zipapp.** It ships fettle to a host by building a
+`.pyz` from fettle's own `.py` files — which a compiled build does not have, so it failed
+with a bare `FileNotFoundError` traceback naming Nuitka's scratch directory and nothing
+about the cause. The build now produces a zipapp (`packaging/zipapp/pyz.sh`, shared with
+the zipapp artifact so they are the same thing) and embeds it with
+`--include-data-files`; `remote.build_zipapp` copies it out instead of staging. About
+800 KB on a 13 MB binary. A build made *without* it raises an error naming the missing
+flag rather than falling through to the staging path, because that path's exception
+points at a temp directory and not at the mistake.
 
 **The axes must be listed explicitly** (`--include-module=fettle.hardening.axes.…`).
 fettle loads them by computed name, which no compiler can see, and if they are missing

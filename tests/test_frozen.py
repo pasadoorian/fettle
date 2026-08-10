@@ -175,3 +175,69 @@ def test_version_is_plain_for_a_normal_install(capsys):
     out = capsys.readouterr().out
     assert "(binary)" not in out
     assert out.startswith("fettle ")
+
+
+# -- `fettle remote` from a compiled build ------------------------------------
+#
+# build_zipapp stages a .pyz by copying fettle's own .py files off disk. A compiled
+# build has none — Nuitka turns them into the binary — so it failed with a bare
+# FileNotFoundError traceback pointing at Nuitka's scratch directory, which says nothing
+# about the cause. Measured before fixing:
+#
+#   File ".../fettle/remote.py", line 120, in build_zipapp
+#   File ".../shutil.py", line 652, in copytree
+#   FileNotFoundError: [Errno 2] No such file or directory: '/tmp/onefile_…/fettle'
+#
+# The build now embeds a prebuilt zipapp and this copies it out instead.
+
+def test_a_compiled_build_ships_its_embedded_zipapp(monkeypatch, tmp_path):
+    from fettle import remote
+
+    embedded = tmp_path / "fettle.pyz"
+    embedded.write_bytes(b"PK\x03\x04 pretend zipapp")
+    monkeypatch.setattr(util, "frozen_binary", lambda: "/opt/fettle/fettle")
+    monkeypatch.setattr(remote, "bundled_zipapp", lambda: embedded)
+
+    dest = tmp_path / "shipped.pyz"
+    remote.build_zipapp(dest)
+    assert dest.read_bytes() == embedded.read_bytes()
+
+
+def test_a_compiled_build_without_one_says_so_in_those_words(monkeypatch, tmp_path):
+    """It must NOT fall through to the staging path. That raises FileNotFoundError from
+    inside shutil.copytree, which names a temp directory and not the actual mistake —
+    a binary compiled without the data file has a broken `fettle remote`."""
+    from fettle import remote
+
+    monkeypatch.setattr(util, "frozen_binary", lambda: "/opt/fettle/fettle")
+    monkeypatch.setattr(remote, "bundled_zipapp", lambda: None)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        remote.build_zipapp(tmp_path / "shipped.pyz")
+
+    message = str(excinfo.value)
+    assert "fettle remote" in message
+    assert "include-data-files" in message, "name the build flag that was missing"
+    assert "packaging/binary/build.sh" in message, "and where to fix it"
+
+
+def test_a_normal_install_still_stages_from_source(tmp_path):
+    """The 99% path, unchanged: a real zipapp built from the checkout on disk."""
+    import zipfile
+
+    from fettle import remote
+
+    dest = tmp_path / "fettle.pyz"
+    remote.build_zipapp(dest)
+
+    assert dest.is_file()
+    names = zipfile.ZipFile(dest).namelist()
+    assert "__main__.py" in names
+    assert any(n.startswith("fettle/hardening/axes/") for n in names), \
+        "the axes travel to remote hosts too"
+
+
+def test_bundled_zipapp_is_none_for_a_normal_install():
+    from fettle import remote
+
+    assert remote.bundled_zipapp() is None

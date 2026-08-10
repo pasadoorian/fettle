@@ -43,6 +43,12 @@ done
 # semantics to argue with, so this generates a two-line entry point that imports
 # absolutely — the same thing remote.build_zipapp already does for the zipapp, which
 # makes the two artifacts start the same way.
+# `fettle remote` builds a zipapp by copying fettle's own .py files off disk, and a
+# compiled build has none — it fails with a bare FileNotFoundError traceback. So one is
+# built here and embedded as a data file; remote.build_zipapp copies it out instead.
+# About 800 KB on a 12 MB binary.
+sh "$here/packaging/zipapp/pyz.sh" "$work/fettle.pyz"
+
 cat > "$work/fettle-main.py" <<'ENTRY'
 import sys
 
@@ -61,6 +67,7 @@ ENTRY
     --quiet \
     $includes \
     --include-package=fettle \
+    --include-data-files="$work/fettle.pyz=fettle/fettle.pyz" \
     "$work/fettle-main.py" )
 
 install -m 755 "$work/fettle" "$outdir/fettle"

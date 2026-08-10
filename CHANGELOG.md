@@ -14,7 +14,7 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [0.121.0] — fettle can be compiled, and still knows how to become root
+## [0.121.0] — fettle can be compiled, and still knows how to become root and travel
 
 Groundwork for the prebuilt binary. `packaging/binary/build.sh` compiles fettle with
 Nuitka into a single ~12 MB x86_64 executable — but building it was the easy half.
@@ -40,6 +40,15 @@ have shipped a bug nobody could diagnose:
 The six hardening axes are listed explicitly for the compiler, because fettle loads them
 by computed name. If they were missing the binary would not crash — the framework
 reports each as *blind*, so a broken build would look like a cautious one.
+
+**`fettle remote` works from the binary too.** It ships fettle to a host by building a
+zipapp from fettle's own `.py` files, which a compiled build does not have — it failed
+with a bare `FileNotFoundError` traceback naming Nuitka's scratch directory. The build
+now embeds a prebuilt zipapp and `remote.build_zipapp` copies that out instead. Verified
+by intercepting the upload and running the captured file: it is a complete, working
+fettle, axes and all. A build made without the data file raises an error naming the
+missing flag rather than failing inside `shutil.copytree`, where the exception says
+nothing about the cause.
 
 **`fettle --version` now reports the build kind** (`fettle 0.121.0 (binary)`), so a bug
 report says which artifact it came from.

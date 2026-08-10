@@ -22,16 +22,7 @@ version=$("$here/packaging/version.sh")
 
 mkdir -p "$outdir"
 
-# Built by fettle's own remote.build_zipapp — the same function `fettle remote` uses to
-# ship itself to a host. One builder, so the artifact people download and the one that
-# lands on a remote machine cannot become different things.
-( cd "$here" && python3 -c "
-import sys
-from pathlib import Path
-sys.path.insert(0, '.')
-from fettle.remote import build_zipapp
-build_zipapp(Path(sys.argv[1]))
-" "$outdir/fettle.pyz" )
+sh "$here/packaging/zipapp/pyz.sh" "$outdir/fettle.pyz"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
