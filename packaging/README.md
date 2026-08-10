@@ -14,6 +14,29 @@ packaging/
 Every script writes to `dist/`, which is gitignored, and takes an optional output
 directory as its first argument.
 
+## Releasing
+
+Pushing a version tag is the decision to release — nothing else triggers
+`.github/workflows/release.yml`, so a normal merge to main cannot cut one by accident.
+That matters here: fettle bumps its version on nearly every commit, so a
+merge-triggered release would have produced well over a hundred of them.
+
+```bash
+packaging/check-tag.sh "v$(packaging/version.sh)"   # pre-flight, always passes
+git tag v1.0.0 && git push --tags
+```
+
+The workflow runs the guard first, then the suite on 3.11/3.12/3.13, then builds each
+package **and installs it in a clean container of its own distro**, and finally creates
+a **draft** release. Publishing is a human step, so a bad build can be deleted before
+anyone sees it.
+
+**The guard is `packaging/check-tag.sh`,** and it exists because a release tagged
+`v1.0.0` whose packages call themselves `0.120.0` installs, runs, and lies about what it
+is — every bug report afterwards then names a version that was never built. It is a
+script rather than a few lines of YAML so `tests/test_packaging.py` can exercise it and
+so you can run it before tagging.
+
 ## Building locally
 
 ```bash
@@ -109,3 +132,16 @@ the six hardening axes, which are loaded by a **computed** module name. If they 
 packaged, the axis framework catches the import error and reports each one as *blind*
 rather than crashing — so a broken package would look like a cautious one. Seeing the
 axes report real results is what proves the tree is complete.
+
+### One trap worth knowing about the spec file
+
+**rpm expands macros inside comments.** An unescaped `%install` in a comment at the top
+of `fettle.spec` made rpm 4.16 (Rocky 9) treat that line as the start of the install
+section and swallow the entire preamble — it then reported Name, Version, Release,
+Summary and License as missing, none of which was true. rpm 4.20 on the development
+machine parsed the same file without complaint, so it failed **only** in a Rocky
+container.
+
+Every `%` in a comment in that file is doubled for this reason. It is also the clearest
+argument for building each package in its own distro rather than trusting one host:
+nothing about the local build hinted at it.

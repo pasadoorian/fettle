@@ -1,8 +1,14 @@
 # fettle — RPM spec for the RHEL family (RHEL/Rocky/Alma/CentOS Stream) and Fedora.
 #
 # Built by packaging/rpm/build.sh, which makes the source tarball this expects. The
-# %install step calls packaging/install.sh, the same script the .deb and the Arch
+# %%install step calls packaging/install.sh, the same script the .deb and the Arch
 # package use, so all three ship the identical layout.
+#
+# NOTE: rpm expands macros INSIDE COMMENTS, so every `%` here is doubled. An unescaped
+# `%%install` in this very comment made rpm 4.16 (Rocky 9) treat line 4 as the start of
+# the install section and swallow the whole preamble — it then reported Name, Version,
+# Release, Summary and License as missing, none of which was true. rpm 4.20 on the
+# development machine parsed it fine, so this only failed in a Rocky container.
 
 Name:           fettle
 Version:        %{_fettle_version}

@@ -55,13 +55,16 @@ jobs:
 
       - name: arch — build, install on Arch, run
         run: |
-          # makepkg refuses to run as root and containers are root by default, so this
-          # builds as a normal user inside the container. It fails with a message that
-          # reads like a permissions bug rather than the policy one it is.
-          docker run --rm -v "$PWD":/src -w /src archlinux:latest sh -c '
+          # makepkg refuses to run as root and containers are root by default. Building
+          # in a COPY inside the container rather than chown'ing the mounted
+          # workspace: chown -R on the bind mount changes ownership on the host too,
+          # which breaks every later step in the job.
+          docker run --rm -v "$PWD":/src archlinux:latest sh -c '
             pacman -Sy --noconfirm --needed base-devel >/dev/null 2>&1
-            useradd -m build && chown -R build /src
-            su build -c "packaging/arch/build.sh"'
+            useradd -m build
+            cp -a /src /home/build/fettle && chown -R build /home/build/fettle
+            su build -c "cd /home/build/fettle && packaging/arch/build.sh /home/build/out"
+            mkdir -p /src/dist && cp /home/build/out/*.pkg.tar.zst /src/dist/'
           docker run --rm -v "$PWD/dist":/d:ro archlinux:latest sh -c '
             pacman -Sy --noconfirm >/dev/null
             pacman -U --noconfirm /d/fettle-*.pkg.tar.zst >/dev/null

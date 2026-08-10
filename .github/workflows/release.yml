@@ -1,0 +1,178 @@
+name: release
+
+# Pushing a version tag is the decision to release — nothing else triggers this, so a
+# normal merge to main cannot cut a release by accident. fettle bumps its version on
+# nearly every commit, so a merge-triggered release would have produced well over a
+# hundred of them.
+#
+#   git tag v1.0.0 && git push --tags
+#
+# The release is created as a DRAFT. Look at it, then publish by hand.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # creating a release and uploading assets
+
+jobs:
+  # ---------------------------------------------------------------------------
+  guard:
+    name: tag matches pyproject.toml
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          version=$(packaging/check-tag.sh "$GITHUB_REF_NAME")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # PEP 440 pre-release markers — a version that is not purely numeric is not a
+          # final release, and GitHub should not mark it "Latest".
+          if printf '%s' "$version" | grep -qE '(a|b|rc|dev)[0-9]*$'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  test:
+    name: tests (${{ matrix.python-version }})
+    needs: guard
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+
+  # ---------------------------------------------------------------------------
+  # Re-run here rather than trusting ci.yml: a tag can be pushed at a moment when main
+  # is red, and "the tests passed on some earlier commit" is a different claim from
+  # "the tests pass on the commit this release is built from".
+  packages:
+    name: ${{ matrix.name }}
+    needs: [guard, test]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: deb
+            artifact: fettle-deb
+          - name: rpm
+            artifact: fettle-rpm
+          - name: arch
+            artifact: fettle-arch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build ${{ matrix.name }}
+        run: |
+          case "${{ matrix.name }}" in
+            deb)
+              packaging/deb/build.sh
+              ;;
+            rpm)
+              docker run --rm -v "$PWD":/src -w /src rockylinux/rockylinux:9 sh -c '
+                dnf -q -y install rpm-build python3 >/dev/null
+                packaging/rpm/build.sh'
+              ;;
+            arch)
+              # makepkg refuses to run as root and containers are root by default. Building
+              # in a COPY inside the container rather than chown'ing the mounted
+              # workspace: chown -R on the bind mount changes ownership on the host too,
+              # which breaks every later step in the job.
+              docker run --rm -v "$PWD":/src archlinux:latest sh -c '
+                pacman -Sy --noconfirm --needed base-devel >/dev/null 2>&1
+                useradd -m build
+                cp -a /src /home/build/fettle && chown -R build /home/build/fettle
+                su build -c "cd /home/build/fettle && packaging/arch/build.sh /home/build/out"
+                mkdir -p /src/dist && cp /home/build/out/*.pkg.tar.zst /src/dist/'
+              ;;
+          esac
+
+      # Building proves the metadata parses. Installing proves the layout is right, and
+      # the layout is where these go wrong — so every package is installed into a clean
+      # container of its own distro and actually run, before it is allowed near the
+      # release page.
+      - name: install and run ${{ matrix.name }}
+        run: |
+          case "${{ matrix.name }}" in
+            deb)
+              docker run --rm -v "$PWD/dist":/d:ro debian:12 sh -c '
+                apt-get -qq update >/dev/null
+                apt-get -qq install -y /d/fettle_*.deb >/dev/null
+                fettle --version
+                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+              ;;
+            rpm)
+              # Rocky 9's python3 is 3.9, so this also proves the boolean Requires pulls
+              # a newer interpreter in rather than refusing on the whole EL9 family.
+              docker run --rm -v "$PWD/dist":/d:ro rockylinux/rockylinux:9 sh -c '
+                dnf -q -y install /d/fettle-*.rpm >/dev/null
+                fettle --version
+                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+              ;;
+            arch)
+              docker run --rm -v "$PWD/dist":/d:ro archlinux:latest sh -c '
+                pacman -Sy --noconfirm >/dev/null
+                pacman -U --noconfirm /d/fettle-*.pkg.tar.zst >/dev/null
+                fettle --version
+                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  publish:
+    name: draft the release
+    needs: [guard, packages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: staged
+          merge-multiple: true
+
+      - name: list what will be attached
+        run: ls -l staged/
+
+      # `gh` rather than a third-party release action: it ships on the runner, it is
+      # maintained by GitHub, and for a security tool one fewer third party with write
+      # access to the release page is worth a couple of extra lines.
+      #
+      # --draft is deliberate. The release is assembled but not announced, so a bad
+      # build can be deleted before anyone sees it. Publishing is a human step.
+      #
+      # --generate-notes is a placeholder; P5 replaces it with the CHANGELOG section for
+      # this version, which is already written per release and should not be written
+      # twice.
+      - name: create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+        run: |
+          flags="--draft --generate-notes"
+          [ "$PRERELEASE" = "true" ] && flags="$flags --prerelease"
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" $flags \
+            --title "fettle $VERSION" \
+            staged/*
