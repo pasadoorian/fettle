@@ -11,6 +11,48 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.0.1]
+
+### Changed
+
+- **The README is now a front page, not a manual.** It had grown to 2200 lines, which
+  is a length nobody reads and a length that hides the three things a new reader
+  actually needs: what fettle is, whether it runs on their machine, and how to install
+  it. It keeps exactly those — plus the per-action support matrix, the topgrade
+  comparison and a quick start — and is 464 lines. Everything else moved verbatim to
+  the [wiki](https://github.com/pasadoorian/fettle/wiki), split into nine pages that
+  follow the sections it already had. No documentation was dropped; every heading and
+  every line of the old README is either still on the front page or on a wiki page.
+- **`hardening-audit` is now a feature family in its own right.** "What it does" listed
+  four families and left `-H` out of all of them — it is not a supply-chain question and
+  it is not maintenance, so it had nowhere to be described and simply wasn't. It is now
+  family four of five: *is this machine configured safely?*, across seven axes. The
+  three families whose names are easy to confuse (Package supply chain, System supply
+  chain, System hardening) are disambiguated in one sentence rather than two.
+- The opening section also now names the three things that cut across every family —
+  running over SSH with nothing installed on the far side, the saved reports and the
+  `fettle report` dashboard, and the experimental AI upgrade check. All three existed
+  and none was mentioned before the reader was 1500 lines in.
+
+### Added
+
+- **An install section for the zipapp.** The Installation section pointed at it twice —
+  "use the zipapp" is the advice for every system the prebuilt binary's glibc floor
+  excludes — but never said how to install one. It now does, including the detail that
+  makes the difference between working and not: the `fettle` launcher resolves
+  `fettle.pyz` *beside itself*, so the two files install into the same directory.
+
+### Fixed
+
+- Four stale claims in the topgrade comparison, each contradicted by the README section
+  above it: platforms said Arch and Debian only (RHEL has been supported since v0.46.0),
+  integrations omitted dnf and containers, maturity claimed four distro families
+  including Fedora while Supported distributions explicitly declines to claim Fedora as
+  one, and the hardening row still described `-H` as a binary-only checksec wrapper,
+  which it stopped being when the six non-binary axes landed in v0.111.0-v0.116.0.
+- The action table (now on the wiki) called `-H` *six* axes and then listed six,
+  counting the binary axis among them. It is seven; the certificates axis was missing.
+
 ## [1.0.0] — the first official release
 
 fettle keeps a Linux machine updated and clean, audits where its software came from and
