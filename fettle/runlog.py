@@ -266,11 +266,21 @@ def _run_pty(argv, path, directory, ctxlike) -> int:  # pragma: no cover - forks
 
     # the child re-runs `python -m fettle <argv>`; carry PYTHONPATH like the sudo
     # re-exec so a checkout resolves, and set the guard so the child won't re-wrap.
-    pkg_parent = str(Path(__file__).resolve().parent.parent)
-    existing = os.environ.get("PYTHONPATH")
-    os.environ["PYTHONPATH"] = pkg_parent + (os.pathsep + existing if existing else "")
+    # A compiled build has no interpreter and no `fettle` module on disk, so the child
+    # is the binary itself with the same arguments. PYTHONPATH exists only to make a
+    # checkout resolve, and __file__ inside a Nuitka build points at a scratch directory
+    # that is about to be removed — so neither is computed there. See util.frozen_binary.
+    from .util import frozen_binary
+
+    binary = frozen_binary()
+    if binary:
+        child = [binary, *argv]
+    else:
+        pkg_parent = str(Path(__file__).resolve().parent.parent)
+        existing = os.environ.get("PYTHONPATH")
+        os.environ["PYTHONPATH"] = pkg_parent + (os.pathsep + existing if existing else "")
+        child = [sys.executable, "-m", "fettle", *argv]
     os.environ[GUARD] = "1"
-    child = [sys.executable, "-m", "fettle", *argv]
     status = None
     try:
         status = pty.spawn(child, master_read)

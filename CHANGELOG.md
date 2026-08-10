@@ -14,6 +14,40 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.121.0] — fettle can be compiled, and still knows how to become root
+
+Groundwork for the prebuilt binary. `packaging/binary/build.sh` compiles fettle with
+Nuitka into a single ~12 MB x86_64 executable — but building it was the easy half.
+
+fettle **re-executes itself** twice: to elevate via `sudo`, and to relaunch under a pty
+so it can transcribe a run. Both built `[sys.executable, "-m", "fettle", …]`, which is
+meaningless in a compiled build — no interpreter to point at, no `fettle` package on
+disk. `sudo fettle -u` would have failed, and that is the single most important thing
+the tool does. Both now re-exec the binary itself with the original arguments.
+
+Three facts were measured against a real build rather than assumed, and the first would
+have shipped a bug nobody could diagnose:
+
+- **`sys.executable` is not the binary.** It is `/tmp/onefile_…/python`, a scratch
+  directory Nuitka unpacks into and deletes on exit — so re-exec'ing it works while the
+  parent lives and fails afterwards. `sys.argv[0]` is the binary, absolute even when
+  invoked by bare name from PATH.
+- **Nuitka does not set `sys.frozen`**; it adds `__compiled__` to every compiled module.
+- **`fettle/__main__.py` cannot be the entry point** — its relative import needs package
+  context, so the binary compiles and then dies at startup. The build generates a
+  two-line absolute-import entry, the same shape `remote.build_zipapp` already uses.
+
+The six hardening axes are listed explicitly for the compiler, because fettle loads them
+by computed name. If they were missing the binary would not crash — the framework
+reports each as *blind*, so a broken build would look like a cautious one.
+
+**`fettle --version` now reports the build kind** (`fettle 0.121.0 (binary)`), so a bug
+report says which artifact it came from.
+
+Verified in a container as an unprivileged user with passwordless sudo: the binary
+elevates, records run-logs (and still writes none under `--dry-run`), and all six axes
+produce real findings. The non-compiled path is byte-identical to before.
+
 ## [0.120.0] — the hardening axes reach the dashboard, and read as a table
 
 The axes shipped in 0.111.0–0.116.1 and then sat in two places that had not been

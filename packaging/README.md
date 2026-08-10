@@ -105,6 +105,48 @@ people's packages. Debian's `dist-packages` is version-independent, but two layo
 two families is worse than one that works everywhere. fettle is a CLI, not a library, so
 nothing needs to `import fettle`.
 
+## The compiled binary, and why it needed code changes
+
+`packaging/binary/build.sh` compiles fettle with **Nuitka** into a single ~12 MB
+x86_64 binary. Nuitka translates the python to C and compiles it, so the result is a
+real native executable rather than an interpreter with an archive attached.
+
+Building it is the easy half. fettle **re-executes itself** twice — to elevate via
+`sudo`, and to relaunch under a pty so it can transcribe a run — and both built
+`[sys.executable, "-m", "fettle", …]`, which is meaningless when there is no
+interpreter and no `fettle` package on disk. `sudo fettle -u`, the single most important
+thing the tool does, would have failed.
+
+Three things were measured against a real build rather than assumed, and the first would
+have produced a bug nobody could diagnose:
+
+- **`sys.executable` is not the binary.** It is `/tmp/onefile_…/python`, a scratch
+  directory Nuitka unpacks itself into and removes on exit. Re-exec'ing it works while
+  the parent process lives and fails afterwards. `sys.argv[0]` is the binary, and Nuitka
+  resolves it to an absolute path even when invoked by bare name from PATH.
+- **Nuitka does not set `sys.frozen`.** It adds `__compiled__` to every compiled module,
+  so `util.frozen_binary()` tests for both and a PyInstaller build would also work.
+- **`fettle/__main__.py` cannot be the entry point.** It does `from .cli import main`, a
+  relative import needing package context, so the binary compiles and then dies at
+  startup. The build generates a two-line absolute-import entry instead — the same thing
+  `remote.build_zipapp` already does, so the two artifacts start the same way.
+
+**The axes must be listed explicitly** (`--include-module=fettle.hardening.axes.…`).
+fettle loads them by computed name, which no compiler can see, and if they are missing
+the binary does **not** crash: the framework catches the import error and reports each
+axis as *blind*, so a broken build looks like a cautious one. The smoke test asserts the
+axes produce real results.
+
+Verified end to end in a container, as an unprivileged user with passwordless sudo:
+
+```
+binary:  sudo /usr/local/bin/fettle -V --config /home/tester/.config/fettle/config.toml
+python:  sudo env PYTHONPATH=/tmp/src /usr/sbin/python3 -m fettle -V --config …
+```
+
+Both correct for their case, the config pin preserved in both — and the python path
+byte-identical to what it always was, which is what says the change is additive.
+
 ## The python 3.11 floor, which is the fiddly part
 
 fettle needs python **3.11 or newer**, and `python3` is *not* reliably that:

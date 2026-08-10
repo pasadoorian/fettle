@@ -32,6 +32,34 @@ def invoking_user_home() -> Path:
     return Path.home()
 
 
+def frozen_binary() -> str:
+    """Absolute path of the compiled binary we are running as, or ``""`` if we are not.
+
+    fettle re-executes itself twice — to elevate via sudo, and to record a session under
+    a pty — and both build ``[sys.executable, "-m", "fettle", …]``. That is meaningless
+    in a compiled build: there is no interpreter to point at and no ``fettle`` package on
+    disk. Both call sites ask here instead, and re-exec this path with the original
+    arguments when it is non-empty.
+
+    **``sys.executable`` is the wrong answer and would fail in a way nobody could
+    diagnose.** Measured against a real Nuitka onefile build: it is
+    ``/tmp/onefile_1411836_.../python`` — a scratch directory Nuitka unpacks itself into,
+    which is removed when the process exits. Re-exec'ing it would work while the parent
+    lived and fail afterwards. ``sys.argv[0]`` is the binary, and Nuitka resolves it to an
+    absolute path even when invoked by bare name from PATH (also measured).
+
+    Nuitka does not set ``sys.frozen`` either — it adds ``__compiled__`` to *every*
+    compiled module, so testing this module's own globals is enough. ``sys.frozen`` is
+    checked as well, so a PyInstaller build would work without revisiting this.
+    """
+    import os
+    import sys
+
+    if "__compiled__" in globals() or getattr(sys, "frozen", False):
+        return os.path.realpath(sys.argv[0])
+    return ""
+
+
 def invoking_user() -> str | None:
     """The name of the user who invoked fettle, or None if not running under sudo.
 

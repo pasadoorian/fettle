@@ -20,6 +20,7 @@ from .config import DEFAULT_ACTIONS, Config
 from .config import load as load_config
 from .distro import UnknownDistro, detect
 from .output import BLIND, FAILED, Output
+from . import util
 from .util import invoking_user_home
 
 # Resolved from the INVOKING user's home, not `Path.home()`. Under sudo, HOME is
@@ -407,7 +408,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"read settings from PATH instead of {DEFAULT_CONFIG}")
     p.add_argument("--no-config", action="store_true", help="ignore the config file")
     p.add_argument("--print-config", action="store_true", help="print effective config and exit")
-    p.add_argument("--version", action="version", version=f"fettle {__version__}")
+    # The build kind rides along on --version so a bug report says which artifact it
+    # came from — the first thing worth knowing while the compiled paths are new.
+    p.add_argument("--version", action="version",
+                   version=f"fettle {__version__}"
+                           f"{' (binary)' if util.frozen_binary() else ''}")
     _reorder_help_groups(p)
     return p
 
@@ -498,6 +503,17 @@ def _reexec_argv(args: argparse.Namespace | None, pythonpath: str) -> list[str]:
     # Forward the run-log guard so the elevated child doesn't open a SECOND pty
     # (sudo's env_reset would otherwise drop it — see runlog.py).
     guard = ["FETTLE_RUNLOG=1"] if os.environ.get("FETTLE_RUNLOG") == "1" else []
+
+    # A compiled build has no interpreter to invoke and no `fettle` module on disk, so
+    # `python -m fettle` becomes two arguments it would try to parse as options. Re-exec
+    # the binary itself instead — same command, now as root, which is what the user
+    # asked for either way. PYTHONPATH is dropped because it exists only to make a
+    # checkout resolve. See util.frozen_binary for why this is NOT sys.executable.
+    binary = util.frozen_binary()
+    if binary:
+        return ["sudo", *(["env", *guard] if guard else []),
+                binary, *sys.argv[1:], *extra]
+
     return ["sudo", "env", f"PYTHONPATH={pythonpath}", *guard,
             sys.executable, "-m", "fettle", *sys.argv[1:], *extra]
 
@@ -507,9 +523,14 @@ def _reexec_with_sudo(args: argparse.Namespace | None = None) -> None:  # pragma
     # find the package when fettle runs from a checkout (via bin/fettle) rather than
     # an installed location. Carry the package's parent dir across with `env` so the
     # real package resolves — a regular package wins over any namespace-dir shadow.
-    pkg_parent = str(Path(__file__).resolve().parent.parent)
-    existing = os.environ.get("PYTHONPATH")
-    pythonpath = pkg_parent + (os.pathsep + existing if existing else "")
+    # Skipped for a compiled build: __file__ there is a path inside Nuitka's scratch
+    # directory, so this would compute a PYTHONPATH pointing at somewhere that is about
+    # to be deleted. _reexec_argv ignores it in that case anyway.
+    pythonpath = ""
+    if not util.frozen_binary():
+        pkg_parent = str(Path(__file__).resolve().parent.parent)
+        existing = os.environ.get("PYTHONPATH")
+        pythonpath = pkg_parent + (os.pathsep + existing if existing else "")
     os.execvp("sudo", _reexec_argv(args, pythonpath))
 
 
