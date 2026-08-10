@@ -199,7 +199,9 @@ Verified the guard fails with the fix reverted, rather than trusting that it wou
 
 The README gained an **Exit codes** section: a table of what `0`, `1`, `2` and `255` mean
 per invocation, and the advice that matters — *gate automation on a single action, not on
-`--everything`* — with the reasoning for why the two differ.
+`--everything`* — with the reasoning for why the two differ. *(It moved to the wiki's
+[Reference](https://github.com/pasadoorian/fettle/wiki/Reference) page at v1.0.1, when the
+README became a front page.)*
 
 **Writing it down found one more defect**, which is the argument for doing this step at
 all rather than treating it as paperwork. `aur-precheck`'s module docstring still said

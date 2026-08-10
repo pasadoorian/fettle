@@ -74,7 +74,8 @@ Or just run it from where it is.
 \`fettle.toml.example\` is a commented example. Copy it to
 \`~/.config/fettle/config.toml\` and edit; fettle runs fine without one.
 
-See README.md for what the tool actually does.
+See README.md for what the tool actually does, and
+https://github.com/pasadoorian/fettle/wiki for the full manual.
 EOF
 
 tar -czf "$outdir/fettle-$version-zipapp.tar.gz" -C "$work" "fettle-$version"

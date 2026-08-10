@@ -11,6 +11,29 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.0.2]
+
+Follow-through on 1.0.1: the manual moved to the wiki, and the things that pointed at
+the manual still pointed at the README.
+
+### Added
+
+- **`fettle -h` names the documentation.** The help was the only place a user could
+  reasonably expect to find out where the manual is, and it did not say. One line at the
+  end of the epilog.
+- **`[project.urls]` in `pyproject.toml`** — Homepage, Documentation, Changelog,
+  Releases. A package is often where someone first meets fettle, and package metadata
+  was carrying the repo URL only.
+
+### Changed
+
+- The `RUNNING.md` bundled in the zipapp and binary archives now points at the wiki as
+  well as the README. Those two archives are the artifacts for people with no package,
+  which is exactly the audience least likely to find the wiki on their own.
+- Two QA records (`docs/qa/exit-codes.md`, `docs/qa/pkg-integrity.md`) said "the README"
+  about content that is now on the wiki. The record of what was done stays as written;
+  each now names where that content went.
+
 ## [1.0.1]
 
 ### Changed

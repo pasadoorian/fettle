@@ -285,6 +285,9 @@ examples:
   fettle -U                    AI pre-upgrade safety check
   fettle -D                    installed packages with known CVEs
   fettle remote web1 -a        the default set on another host, over ssh
+
+documentation:
+  https://github.com/pasadoorian/fettle/wiki
 """
 
 

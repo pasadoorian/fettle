@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fettle"
-version = "1.0.1"
+version = "1.0.2"
 description = "Cross-distribution Linux system-maintenance and supply-chain tool"
 readme = "README.md"
 license = { text = "MIT" }
@@ -18,6 +18,14 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # The core CLI stays pure-stdlib (`dependencies = []`) so the remote zipapp keeps
 # working under any bare python3; nothing outside fettle/web/ may import nicegui.
 web = ["nicegui>=2"]
+
+[project.urls]
+# The README is the front page; the manual is the wiki. Keep both reachable from
+# package metadata, since a package is often where someone first meets fettle.
+Homepage = "https://github.com/pasadoorian/fettle"
+Documentation = "https://github.com/pasadoorian/fettle/wiki"
+Changelog = "https://github.com/pasadoorian/fettle/blob/main/CHANGELOG.md"
+Releases = "https://github.com/pasadoorian/fettle/releases"
 
 [project.scripts]
 fettle = "fettle.cli:main"

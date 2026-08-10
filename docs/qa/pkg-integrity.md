@@ -26,8 +26,10 @@ Every backend reads a manifest the package manager wrote **at install time**:
 
 **This is a tripwire, not proof of authenticity.** The manifest came from the same
 package, and root can rewrite both. It catches what does not think to cover its tracks —
-which is most intruders and every interrupted upgrade — and the README says so rather
-than implying more.
+which is most intruders and every interrupted upgrade — and the docs say so rather
+than implying more (the wiki's
+[Package supply-chain](https://github.com/pasadoorian/fettle/wiki/Package-supply-chain)
+page since v1.0.1; the README before that).
 
 ## Cases and results
 
