@@ -106,12 +106,15 @@ def test_examining_nothing_never_reads_as_clean(tmp_path, capsys):
     ctx.output.print_summary()
     text = capsys.readouterr().out
 
-    assert "nothing was examined" in text
+    assert "could not look" in text
     assert "not checked" in text
     lowered = text.lower()
-    assert "nothing to report" not in lowered
     assert "no compromise" not in lowered
     assert "clean" not in lowered
+    # A per-group "nothing to report" tally line is fine and true; what must never
+    # appear is the *summary* claiming it, since that is the line a sweep is read from.
+    summary = text.split("▸ Summary", 1)[1]
+    assert "nothing to report" not in summary.lower()
 
 
 def test_summary_line_stands_alone(tmp_path):
@@ -119,8 +122,8 @@ def test_summary_line_stands_alone(tmp_path):
     ctx = _ctx(tmp_path)
     caudit.run(_Backend(), ctx)
     warnings = ctx.output._warnings
-    assert warnings, "an examined-nothing run must warn"
-    assert any("nothing was examined" in w and "could not look" in w for w in warnings)
+    assert warnings, "a run that could not look must warn"
+    assert any("could not look" in w for w in warnings)
 
 
 def test_a_group_that_found_nothing_is_allowed_to_say_so(tmp_path, monkeypatch):

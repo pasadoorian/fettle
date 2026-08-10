@@ -11,6 +11,82 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.4.0] — kernel, loader and boot chain
+
+Phase 2 of `compromise-check`: two new groups covering the layer below userspace. Five
+checks, and **two of them exist in their present form only because the obvious
+implementation was measured and thrown away.**
+
+### Added — `kernel` group
+
+- **`/etc/ld.so.preload`** — the cheapest high-value check here. A stock Arch, Debian or
+  RHEL system does not have this file, and every LD_PRELOAD rootkit family creates it.
+  Its existence is the finding; each library it names is reported with its owning
+  package, so a legitimate `libeatmydata` is recognisable at a glance.
+- **Loaded modules and kernel taint, reconciled against each other**, because neither
+  alone says anything. The reference machine reads taint **12288** — out-of-tree and
+  unsigned — while all 155 loaded modules are signed and none reports taint of its own.
+  Taint is sticky and never names its cause, so this records that something was loaded
+  and unloaded: a DKMS rebuild nearly always, a self-removing LKM rootkit occasionally.
+  Reported at **Low**, with the ordinary explanation first and `journalctl -k` to settle
+  it. Unsigned modules are reported alongside the enforcement state, since "none loaded"
+  means nothing when `sig_enforce` is off and Secure Boot is disabled — which is the
+  reference machine's actual configuration.
+- **Hidden processes**, by comparing `/proc`'s directory listing against the PIDs the
+  **cgroup hierarchy** accounts for. Two independent kernel interfaces: `ps`, `top` and
+  `pgrep` all read `/proc`, so a `getdents64` hook — the technique the June 2026 AUR
+  wave used — blinds all of them at once, and cgroup membership is not read that way.
+- **The eBPF surface** — pinned objects in `/sys/fs/bpf`, plus loaded programs via
+  `bpftool` when present. The wave's three fixed pin names (`hidden_pids`,
+  `hidden_names`, `hidden_inodes`) are named IoCs, so "was I hit by that campaign" is a
+  string comparison rather than an inference.
+
+### Added — `boot` group
+
+- **Bootloader configuration**, for the loader actually in use — grub, systemd-boot or
+  rEFInd. chkrootkit 0.59's Bootkitty check is the right threat and one grub-only line;
+  this reads whichever loader is present and looks for injected `LD_PRELOAD`, an `init=`
+  pointing into a world-writable directory, and blacklisting of an integrity subsystem.
+- **Secure Boot state accompanies every boot result, always.** The reference machine's
+  grub configuration is clean *and* Secure Boot is disabled with the platform in setup
+  mode, so nothing verifies the bootloader, kernel or initramfs. Printing the first
+  without the second is the half-truth that makes a report feel reassuring and be
+  worthless.
+
+### Measured, then rejected
+
+- **The classic hidden-process sweep is unusable.** Walking every PID to `pid_max` and
+  stat-ing `/proc/<pid>` — what `chkproc` does — produced **6,272 false positives** on
+  the reference desktop: every non-leader *thread* answers a direct stat, while `readdir`
+  correctly lists only thread-group leaders. Filtering on `Tgid == Pid` fixes the
+  correctness and leaves the cost, **7.8 seconds** for 2.5 million stat calls. The cgroup
+  census gives the same answer — an exact 1046-against-1046 match — in **0.01 s**, needs
+  no privilege, and holds inside a PID namespace.
+- **Ownership is the wrong test for a generated boot config.** `/boot/grub/grub.cfg` is
+  written by `grub-mkconfig` and `/boot/loader/entries/*.conf` by `kernel-install`;
+  neither is package-owned on any machine. Judged on content only. `/etc/default/grub`
+  and `/etc/grub.d/*` *are* package-owned, so those keep the provenance test. This is
+  the third time the same asymmetry has come up — after user crontabs and user units —
+  and it is now stated as a rule in each module that has to make the distinction.
+
+### Fixed
+
+- **A sub-check could mark its whole group "not applicable".** `na` is a property of the
+  entire group, so the hidden-process check setting it on a host without cgroups would
+  have rendered the kernel group as one "not applicable" line — hiding an
+  `/etc/ld.so.preload` finding sitting right next to it. Sub-checks now report their own
+  blindness and `na` stays a whole-group verdict.
+- **The summary now carries coverage.** A run where most checks were blind and one
+  trivial one succeeded summarised as "nothing to report", because `actions.run` fills
+  an empty summary with exactly that. The screen said "plus N not checked"; the summary
+  did not, and the summary is the line a fifteen-action sweep is read from. It now says
+  `2 Medium, 2 Low; 3 check(s) could not look`.
+
+Verified live on two families, each check with a planted positive control: the reference
+desktop reports the taint discrepancy and nothing else new; a Debian container with a
+planted `/etc/ld.so.preload` and an injected `LD_PRELOAD` in `grub.cfg` reports both at
+High with the preservation banner.
+
 ## [1.3.1] — a permission error that only happened on other people's Pythons
 
 CI failed on 1.3.0 after a green local run, and the cause was neither the code nor the

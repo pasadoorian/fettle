@@ -48,7 +48,7 @@ from ..hardening.axes import (  # noqa: F401 — re-exported: this is the local 
 # Empty is a legitimate state and is handled explicitly by `audit.run`: listing an
 # unbuilt group here would report it as blind on every host, which is a louder lie
 # than not mentioning it — the same call the hardening axes made for the same reason.
-GROUP_NAMES: tuple[str, ...] = ("persistence",)
+GROUP_NAMES: tuple[str, ...] = ("persistence", "kernel", "boot")
 
 
 def is_directory(path) -> bool:

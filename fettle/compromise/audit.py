@@ -103,19 +103,29 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
         for sev, n in res.tally().items():
             total[sev] = total.get(sev, 0) + n
 
+    # Coverage travels with the verdict, always. `actions.run` fills an empty summary
+    # with "nothing to report", so a run where most checks were blind and one trivial
+    # one succeeded would summarise as clean — the screen says "plus N not checked" and
+    # the summary would not. The summary is what a fifteen-action sweep is read from, so
+    # it is the line that has to carry both halves.
+    blind_count = sum(len(r.blind) for r in results)
+    unable = ", ".join(r.name for r in results if not r.ran)
+    coverage = f"; {blind_count} check(s) could not look" if blind_count else ""
+
     if any(total.values()):
         named = ", ".join(r.name for r in results if r.findings)
         parts = [f"{total[s]} {s}" for s in arender.SEVERITY_ORDER if total.get(s)]
-        out.summary_warn(f"{named} — {', '.join(parts)}")
+        out.summary_warn(f"{named} — {', '.join(parts)}{coverage}")
         _preserve_banner(out, total)
     elif not any(r.ran for r in results):
-        # Every group was blind or not applicable, so nothing was examined — and
-        # `actions.run` fills an empty summary with "nothing to report", which here
-        # would be the exact lie this action exists to avoid. The screen already says
-        # "not checked"; the summary has to say it too, because the summary is what a
-        # sweep of fifteen actions is read from.
-        blind = ", ".join(r.name for r in results if not r.ran) or "every check"
-        out.summary_warn(f"nothing was examined — {blind} could not look, see above")
+        # Nothing examined at all. The strongest form of the invariant.
+        out.summary_warn(f"nothing was examined — {unable or 'every check'} could not "
+                         f"look, see above")
+    elif blind_count:
+        # Something ran and found nothing, but not everything could look. "Nothing to
+        # report" alone would claim coverage this run did not have.
+        out.summary_warn(f"nothing found, but {blind_count} check(s) could not look — "
+                         f"see above")
 
     if not ctx.dry_run:
         try:
