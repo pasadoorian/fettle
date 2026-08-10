@@ -32,6 +32,7 @@ real unit-test coverage the bash originals never had.
   - [What works where](#what-works-where)
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [From a checkout, to follow `main`](#from-a-checkout-to-follow-main)
   - [Optional: the prebuilt binary](#optional-the-prebuilt-binary)
   - [Optional: bash completion](#optional-bash-completion)
   - [Optional: yay install-time supply-chain hook (Arch/Manjaro)](#optional-yay-install-time-supply-chain-hook-archmanjaro)
@@ -254,6 +255,32 @@ Example: `git clone https://github.com/google/tpm-vuln-checker ~/tpm-vuln-checke
 puts the tool where the `tpm` check will find it.
 
 ## Installation
+
+Packages for each release are on the
+[releases page](https://github.com/pasadoorian/fettle/releases/latest). Every one is
+built and then installed and run in a clean container of its own distro before it is
+published.
+
+```sh
+sudo apt install ./fettle_*_all.deb              # Debian, Ubuntu
+sudo dnf install ./fettle-*.noarch.rpm           # RHEL, Rocky, AlmaLinux, Fedora
+sudo pacman -U fettle-*-any.pkg.tar.zst          # Arch, Manjaro
+```
+
+They depend on nothing but a python 3.11+ interpreter, and pull one in on the
+distributions whose default `python3` is older (RHEL 9, Ubuntu 22.04).
+
+Check what you downloaded against the release's `SHA256SUMS`:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+No package for your system? The **zipapp** runs anywhere there is a python 3.11+, and
+the **prebuilt binary** needs no python at all — both are on the same page, and both are
+described below.
+
+### From a checkout, to follow `main`
 
 fettle is pure standard library, so there is nothing to build or `pip install` —
 the launcher puts the repo on `PYTHONPATH` and runs `python3 -m fettle`.
