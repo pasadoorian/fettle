@@ -11,6 +11,76 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.3.0] — the rest of persistence: cron, `at`, and every user's own units
+
+Phase 1 of `compromise-check` is complete. M1.2 covered system unit files; this adds the
+four remaining places something can arrange to run — and the reason it is not simply
+"the same check pointed at more directories" is that **half of them cannot be judged the
+same way**.
+
+### The asymmetry, which is the whole design
+
+`/etc/cron.d` and the `cron.{hourly,daily,…}` directories are **package-managed**, so
+"no package owns this file" means something there. `/var/spool/cron/**` and
+`~/.config/systemd/user/` are **never** package-managed — `crontab -e` and a user's own
+config create them by definition — so the same test applied there would report every
+user crontab and every user unit on every machine as a finding. That is the
+"unnecessary homework" failure in its purest form.
+
+So user-scope persistence is **reported as review material** — here is what is
+scheduled, and for whom, in the saved report — and becomes a *finding* only when the
+command runs from somewhere a scheduled binary does not belong.
+
+### Added
+
+- **System cron**: `/etc/cron.d`, `/etc/cron.{hourly,daily,weekly,monthly}`,
+  `/etc/crontab`, `/etc/anacrontab`, judged on ownership like the system units. On the
+  reference machine this finds exactly one thing —
+  **`/etc/cron.d/timeshift-hourly`**, which timeshift writes at runtime when you enable
+  scheduled snapshots rather than shipping in its package. Root, hourly, and owned by
+  nobody.
+- **Per-user crontabs**, both spool layouts (`/var/spool/cron/<user>` on Arch and RHEL,
+  `/var/spool/cron/crontabs/<user>` on Debian and Ubuntu).
+- **Queued `at` jobs**, reported by existing rather than parsed: a one-shot job on a
+  machine that does not otherwise use `at` is worth a human look on its own.
+- **`~/.config/systemd/user/` for every real user**, not just the caller — the non-root
+  branch of the June 2026 AUR wave, which dropped its unit there when it lacked root.
+
+### Truthfulness
+
+- **An unreadable spool is blindness, not emptiness.** `/var/spool/cron` *absent* means
+  there are no user crontabs; *present and mode 0700* means there may be any number and
+  we cannot see them. Debian ships it `0730 root:crontab`, so an unprivileged run there
+  hits the second case every time — and silently reporting zero scheduled jobs on a host
+  that has them is the failure this project is named for. Same treatment for the `at`
+  spools and for home directories that cannot be opened.
+- **The blanket privilege notice is gone.** Every unprivileged run used to print
+  "user-scope persistence, at jobs and the eBPF surface need root". That was true while
+  nothing was implemented and became false the moment a real check landed — those checks
+  now run, and mostly succeed, without root. Each check names the directory *it* could
+  not open, which is more useful and cannot end up disagreeing with what the run
+  actually did.
+
+### Parsing, and where it deliberately gives up
+
+- A system crontab has a user column (`m h dom mon dow USER command`) and a user crontab
+  does not. Getting that backwards reports the *user name* as the command on one and
+  swallows the first word of the command on the other — and both still look like
+  plausible output, which is why it is a named parameter rather than a guess.
+- `argv0` steps over `sudo`/`nice`/`env` and their own options, then **stops at the first
+  real token** and returns it only if absolute. It does not keep hunting for something
+  path-shaped: `timeshift --check /tmp/report` would otherwise resolve to `/tmp/report`
+  and be reported as a job running out of `/tmp`. Missing a finding is recoverable; an
+  alarm over an argument teaches people to stop reading the alarms.
+- `run-parts` ignores files with a dot in the name, so `.pacsave`/`.dpkg-dist` leftovers
+  in the cron directories are skipped here too. They are not scheduled, so reporting
+  them as scheduled jobs would be wrong.
+
+Verified live on two families: the reference desktop reports 3 findings from 487
+subjects, all explicable; a Debian container with a planted `@reboot root
+/var/lib/x/agent` reports it as High with the preservation banner, while the root
+crontab sitting beside it is reported as review material and not flagged.
+
 ## [1.2.0] — boot persistence: what starts at boot that no package installed
 
 `compromise-check`'s first real check group, and the one that closes the gap the whole

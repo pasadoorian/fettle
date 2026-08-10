@@ -37,26 +37,24 @@ def _is_root() -> bool:
 
 
 def _scope(ctx: Context) -> None:
-    """Say what this run could and could not reach, before saying what it found.
+    """Say how many accounts are in scope, before saying what was found.
 
     Ordered first deliberately. A coverage statement that arrives after the findings
     reads as a footnote to a verdict; arriving before them it is part of the verdict.
+
+    **It no longer announces what root would add**, and that removal is the point. The
+    first version printed a blanket "user-scope persistence, at jobs and the eBPF
+    surface need root" on every unprivileged run — which was true when nothing was
+    implemented and became a lie the moment the persistence group landed, because those
+    checks now run and mostly succeed without root. Each check reports its own
+    blindness, naming the directory it could not open; a second, coarser claim
+    alongside them could only ever disagree with the first.
     """
     out = ctx.output
     scan = real_users(ctx.root, readable_only=not _is_root())
     note = scan.note()
     if note:
         out.note(note)
-
-    if _is_root():
-        return
-
-    # Not a warning: running unprivileged is a legitimate choice, and this action is
-    # useful without root. It is `not_checked` because that is the channel for "this
-    # part of the question was not asked", which is exactly what it is.
-    out.not_checked(
-        "user-scope persistence, at jobs, and the eBPF surface",
-        "these need root — re-run as `sudo fettle compromise-check` to include them")
 
 
 def run(backend: PackageBackend, ctx: Context) -> Result:

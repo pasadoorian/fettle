@@ -225,15 +225,33 @@ def test_user_scan_note_is_empty_when_nothing_was_skipped(tmp_path, monkeypatch)
     assert real_users(tmp_path).note() == ""
 
 
-def test_unprivileged_run_names_what_it_could_not_reach(tmp_path, monkeypatch, capsys):
-    """"Could not look" and "found nothing" are different sentences, always."""
+def test_blindness_is_named_by_the_check_that_hit_it(tmp_path, monkeypatch, capsys):
+    """"Could not look" and "found nothing" are different sentences, always.
+
+    The first version of this printed a blanket "user-scope persistence, at jobs and the
+    eBPF surface need root" on every unprivileged run. That was true while nothing was
+    implemented and became false the moment a real check landed — those checks run, and
+    mostly succeed, without root. Each check now names the directory *it* could not
+    open, which is both more useful and incapable of disagreeing with the run.
+    """
     monkeypatch.setattr(caudit, "_is_root", lambda: False)
-    ctx = _ctx(tmp_path)
-    caudit.run(_Backend(), ctx)
-    ctx.output.print_summary()
-    text = capsys.readouterr().out
-    assert "user-scope persistence" in text
-    assert "need root" in text
+    spool = tmp_path / "var/spool/cron"
+    spool.mkdir(parents=True)
+    (spool / "root").write_text("0 3 * * * /usr/bin/thing\n")
+    spool.chmod(0o000)
+    try:
+        ctx = _ctx(tmp_path)
+        caudit.run(_Backend(), ctx)
+        ctx.output.print_summary()
+        text = capsys.readouterr().out
+    finally:
+        spool.chmod(0o755)
+
+    assert "var/spool/cron" in text, "the specific directory is named"
+    assert "could not be read" in text
+    assert "run as root" in text
+    # And no blanket claim about things that were checked successfully.
+    assert "user-scope persistence, at jobs" not in text
 
 
 def test_root_run_does_not_claim_a_privilege_gap(tmp_path, monkeypatch, capsys):

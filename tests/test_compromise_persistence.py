@@ -232,3 +232,185 @@ def test_every_suspect_directory_actually_escalates():
         assert persistence._suspect(f"{prefix}payload") == prefix.rstrip("/")
     for ok in ("/usr/bin/x", "/opt/vendor/x", "/usr/local/bin/x", "/var/vanta/x"):
         assert persistence._suspect(ok) == "", f"{ok} is a legitimate location"
+
+
+# ------------------------------------------------------------------ scheduled jobs
+#
+# The asymmetry these tests exist to pin: `/etc/cron.d` is package-managed, so "no
+# package owns this" is a signal there; `/var/spool/cron` and `~/.config/systemd/user`
+# are not, so the same test applied to them would flag every user crontab and every user
+# unit on every machine.
+
+TIMESHIFT_CRON = """\
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=""
+
+0 * * * * root timeshift --check --scripted
+"""
+
+
+def _write(root: Path, rel: str, body: str) -> Path:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    return path
+
+
+def test_unowned_system_cron_is_a_finding(tmp_path):
+    """The real one on the reference machine: timeshift writes this at runtime."""
+    _write(tmp_path, "etc/cron.d/timeshift-hourly", TIMESHIFT_CRON)
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f.severity for f in res.findings] == [MEDIUM]
+    assert "timeshift --check --scripted" in res.findings[0].detail
+
+
+def test_owned_system_cron_is_not(tmp_path):
+    path = _write(tmp_path, "etc/cron.d/0hourly", "01 * * * * root run-parts /etc/cron.hourly\n")
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert res.findings == []
+
+
+def test_a_cron_job_running_from_a_suspect_location_is_high(tmp_path):
+    _write(tmp_path, "etc/cron.d/update", "@reboot root /var/tmp/.sysd/agent\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f.severity for f in res.findings] == [HIGH]
+    assert "/var/tmp" in res.findings[0].detail
+
+
+def test_user_crontabs_are_never_judged_on_ownership(tmp_path):
+    """Applying the ownership test here would flag every user crontab ever created."""
+    _write(tmp_path, "var/spool/cron/paulda", "0 3 * * * /usr/local/bin/backup.sh\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert res.findings == [], "a normal user crontab is not a finding"
+    assert any("per-user crontab" in n for n in res.notes), "but it IS reported"
+    assert any("backup.sh" in row for row in res.detail_rows)
+
+
+def test_a_user_crontab_running_from_tmp_is_a_finding(tmp_path):
+    _write(tmp_path, "var/spool/cron/paulda", "*/5 * * * * /dev/shm/.x/beacon\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f.severity for f in res.findings] == [HIGH]
+    assert "/dev/shm" in res.findings[0].detail
+
+
+def test_an_unreadable_spool_is_blind_not_empty(tmp_path):
+    """Debian ships /var/spool/cron 0730 root:crontab.
+
+    Reporting zero scheduled jobs on a host that has them, because the directory could
+    not be opened, is the failure this project is named for.
+    """
+    spool = tmp_path / "var/spool/cron"
+    spool.mkdir(parents=True)
+    (spool / "root").write_text("0 3 * * * /usr/bin/thing\n")
+    spool.chmod(0o000)
+    try:
+        res = persistence.run(_Backend(), _ctx(tmp_path))
+        assert res.blind, "an unreadable spool must say so"
+        assert any("could not be read" in why for _, why, _ in res.blind)
+    finally:
+        spool.chmod(0o755)
+
+
+def test_a_missing_spool_is_not_blind(tmp_path):
+    """Absent means there are none. Only present-and-unreadable is blindness."""
+    _write(tmp_path, "etc/cron.d/x", "0 * * * * root /usr/bin/thing\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert not [b for b in res.blind if "crontab" in b[0] or "at" in b[0]]
+
+
+def test_at_jobs_are_reported_by_existing(tmp_path):
+    _write(tmp_path, "var/spool/atd/a0000101b2c3d4", "#!/bin/sh\n/tmp/payload\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert any("at` job" in n for n in res.notes)
+
+
+# --------------------------------------------------------------------- user units
+
+
+USER_UNIT = """\
+[Unit]
+Description=user helper
+[Service]
+ExecStart={target}
+Restart=always
+"""
+
+
+def test_a_user_unit_is_not_a_finding_just_for_being_unowned(tmp_path, monkeypatch):
+    """No package ever owns a unit in ~/.config — judging on ownership flags them all."""
+    _fake_user(tmp_path, monkeypatch)
+    _write(tmp_path, "home/real/.config/systemd/user/sync.service",
+           USER_UNIT.format(target="/usr/local/bin/sync"))
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert res.findings == []
+    assert res.checked >= 1, "it was still examined"
+    assert any("sync.service" in row for row in res.detail_rows)
+
+
+def test_a_user_unit_running_from_a_suspect_location_is_high(tmp_path, monkeypatch):
+    """The non-root branch of the June 2026 AUR wave."""
+    _fake_user(tmp_path, monkeypatch)
+    _write(tmp_path, "home/real/.config/systemd/user/updater.service",
+           USER_UNIT.format(target="/var/lib/systemd-helper/updated"))
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f.severity for f in res.findings] == [HIGH]
+    assert res.findings[0].subject.startswith("real:")
+    assert "/var/lib" in res.findings[0].detail
+
+
+def test_an_unreadable_home_is_blind_not_clean(tmp_path, monkeypatch):
+    _fake_user(tmp_path, monkeypatch)
+    directory = tmp_path / "home/real/.config/systemd/user"
+    directory.mkdir(parents=True)
+    directory.chmod(0o000)
+    try:
+        res = persistence.run(_Backend(), _ctx(tmp_path))
+        assert any("user services" in what for what, _, _ in res.blind)
+    finally:
+        directory.chmod(0o755)
+
+
+def _fake_user(root: Path, monkeypatch) -> None:
+    """One real user with a home, plus the noise accounts a real box carries."""
+    import pwd
+
+    (root / "home/real").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(pwd, "getpwall", lambda: [
+        pwd.struct_passwd(("real", "x", 1000, 1000, "", "/home/real", "/bin/bash")),
+        pwd.struct_passwd(("nixbld1", "x", 1101, 1101, "", "/var/empty",
+                           "/usr/sbin/nologin")),
+    ])
+
+
+# ---------------------------------------------------------------- crontab parsing
+
+
+@pytest.mark.parametrize("line,has_user,expected", [
+    ("0 * * * * root timeshift --check", True, ["timeshift --check"]),
+    ("0 * * * * /usr/bin/backup", False, ["/usr/bin/backup"]),
+    ("@reboot root /var/lib/x/agent", True, ["/var/lib/x/agent"]),
+    ("@daily /usr/bin/thing", False, ["/usr/bin/thing"]),
+    ("# 0 * * * * root disabled", True, []),
+    ("SHELL=/bin/bash", True, []),
+    ('MAILTO=""', True, []),
+    ("", True, []),
+    ("0 * * *", True, []),                       # too few fields to be a schedule
+])
+def test_cron_command_parsing(line, has_user, expected):
+    from fettle.compromise import cron
+
+    assert cron.commands(line, has_user_field=has_user) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("/usr/bin/backup --daily", "/usr/bin/backup"),
+    ("timeshift --check", ""),                   # bare name: not resolved against PATH
+    ("sudo /usr/bin/thing", "/usr/bin/thing"),   # wrappers stepped over
+    ("/usr/bin/env FOO=1 /opt/x/run", "/opt/x/run"),
+    ("nice -n 19 /var/tmp/x", "/var/tmp/x"),
+])
+def test_cron_argv0(command, expected):
+    from fettle.compromise import cron
+
+    assert cron.argv0(command) == expected
