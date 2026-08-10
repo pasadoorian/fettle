@@ -51,6 +51,45 @@ from ..hardening.axes import (  # noqa: F401 — re-exported: this is the local 
 GROUP_NAMES: tuple[str, ...] = ("persistence",)
 
 
+def is_directory(path) -> bool:
+    """``Path.is_dir()`` that cannot raise — and it has to be written out.
+
+    **`Path.is_dir()` behaves differently on a permission error depending on the Python
+    version, and this action walks exactly the directories where that happens.** On
+    3.11-3.13 it calls ``self.stat()`` and re-raises anything ``_ignore_error`` does not
+    cover — which is ENOENT, ENOTDIR, EBADF and ELOOP, but **not EACCES**. On 3.14 it is
+    ``os.path.isdir()``, which swallows everything and returns False.
+
+    That difference shipped a real bug: probing `/var/spool/cron/crontabs` under a
+    `/var/spool/cron` this process cannot search raised on CI's interpreters and returned
+    False on the developer's. Debian ships that directory `0730 root:crontab`, so on a
+    Debian host running python 3.11 an unprivileged `compromise-check` would have thrown
+    out of the persistence group entirely — `run_all` would have caught it and reported
+    the whole group blind, so a user would have got **no** persistence findings rather
+    than the ones this check can see without root.
+
+    Every filesystem predicate in this package goes through here or its sibling for that
+    reason. "Cannot tell" is answered by the caller asking, explicitly, rather than by
+    whichever interpreter happens to be installed.
+    """
+    import os
+
+    try:
+        return os.path.isdir(path)
+    except OSError:                      # pragma: no cover — os.path already swallows
+        return False
+
+
+def is_regular_file(path) -> bool:
+    """``Path.is_file()`` that cannot raise. See :func:`is_directory`."""
+    import os
+
+    try:
+        return os.path.isfile(path) and not os.path.islink(path)
+    except OSError:                      # pragma: no cover
+        return False
+
+
 def disabled(cfg) -> set[str]:
     """Group names switched off via ``[compromise] disable_checks``.
 

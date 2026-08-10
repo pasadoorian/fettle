@@ -17,6 +17,7 @@ asserted rather than assumed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -225,6 +226,7 @@ def test_user_scan_note_is_empty_when_nothing_was_skipped(tmp_path, monkeypatch)
     assert real_users(tmp_path).note() == ""
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="chmod 000 does not apply to root")
 def test_blindness_is_named_by_the_check_that_hit_it(tmp_path, monkeypatch, capsys):
     """"Could not look" and "found nothing" are different sentences, always.
 

@@ -19,6 +19,8 @@ import pwd
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import is_directory
+
 # Shells that mean "this account does not log in". Matched on the basename so
 # /usr/sbin/nologin, /sbin/nologin and /usr/bin/nologin are one rule rather than three.
 _NO_LOGIN_SHELLS = frozenset({"nologin", "false", "sync", "shutdown", "halt", "true"})
@@ -93,7 +95,9 @@ def real_users(root: Path = Path("/"), *, readable_only: bool = False) -> UserSc
             skip("no home directory")
             continue
         home = root / entry.pw_dir.lstrip("/")
-        if not home.is_dir():
+        if not is_directory(home):
+            # Never raises — a home under a parent this process cannot search would
+            # otherwise abort the whole scan on python 3.11-3.13. See is_directory().
             skip("no home directory")
             continue
         if readable_only:

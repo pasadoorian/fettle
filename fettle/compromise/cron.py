@@ -29,6 +29,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import is_directory, is_regular_file
+
 # `m h dom mon dow` — or one of cron's shorthand tokens, which replace all five.
 _SHORTHAND = ("@reboot", "@yearly", "@annually", "@monthly", "@weekly", "@daily",
               "@midnight", "@hourly")
@@ -66,7 +68,7 @@ def _readable(path: Path) -> str:
 def _entries(directory: Path) -> list[Path]:
     try:
         return [p for p in sorted(directory.iterdir())
-                if p.is_file() and not p.is_symlink()
+                if is_regular_file(p)
                 and not p.name.startswith(".")
                 and not p.name.endswith(_IGNORED_SUFFIXES)]
     except OSError:
@@ -86,7 +88,13 @@ def unreadable(root: Path, dirs) -> list[str]:
     blocked: list[str] = []
     for rel in dirs:
         directory = root / rel
-        if not directory.is_dir():
+        # A directory nested inside one already reported adds nothing: on Debian both
+        # `/var/spool/cron` and `/var/spool/cron/crontabs` are in the search list, and
+        # naming the second when the first is already unreadable says the same thing
+        # twice while implying we know the second exists.
+        if any(str(directory).startswith(b + "/") for b in blocked):
+            continue
+        if not is_directory(directory):
             continue
         try:
             next(directory.iterdir(), None)
@@ -142,7 +150,7 @@ def system_jobs(root: Path) -> list[tuple[Path, list[str]]]:
             jobs.append((path, parsed))
     for rel in SYSTEM_CRON_FILES:
         path = root / rel
-        if path.is_file() and not path.is_symlink():
+        if is_regular_file(path):
             jobs.append((path, commands(_readable(path), has_user_field=True)))
     return jobs
 

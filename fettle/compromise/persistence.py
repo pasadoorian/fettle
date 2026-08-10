@@ -44,7 +44,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import HIGH, LOW, MEDIUM, CheckResult, Finding
+from . import HIGH, LOW, MEDIUM, CheckResult, Finding, is_regular_file
 from . import cron
 from .users import real_users
 
@@ -99,8 +99,9 @@ def _unit_files(root: Path) -> list[Path]:
         for path in entries:
             if path.suffix not in (".service", ".timer"):
                 continue
-            # is_file() follows symlinks, so is_symlink() has to be asked first.
-            if path.is_symlink() or not path.is_file():
+            # is_regular_file() excludes symlinks and never raises — see its
+            # docstring for why the second half matters here specifically.
+            if not is_regular_file(path):
                 continue
             found.append(path)
     return found
@@ -275,9 +276,9 @@ def _user_units(ctx, res: CheckResult) -> None:
         except OSError:
             continue                      # no user units at all — the common case
         for path in entries:
-            if path.suffix not in (".service", ".timer") or path.is_symlink():
+            if path.suffix not in (".service", ".timer"):
                 continue
-            if not path.is_file():
+            if not is_regular_file(path):
                 continue
             res.checked += 1
             body = _read(path)

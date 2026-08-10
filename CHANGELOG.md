@@ -11,6 +11,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.3.1] — a permission error that only happened on other people's Pythons
+
+CI failed on 1.3.0 after a green local run, and the cause was neither the code nor the
+test being wrong on its own terms.
+
+**`Path.is_dir()` handles a permission error differently depending on the Python
+version.** On 3.11-3.13 it calls `self.stat()` and re-raises anything
+`pathlib._ignore_error` does not cover — ENOENT, ENOTDIR, EBADF and ELOOP, but **not
+EACCES**. On 3.14 it is `os.path.isdir()`, which swallows everything and returns False.
+The development machine runs 3.14; CI runs the other three.
+
+**The user-visible bug this hid.** Probing `/var/spool/cron/crontabs` requires searching
+`/var/spool/cron`, and **Debian ships that directory `0730 root:crontab`**. So on a
+Debian host running python 3.11, an unprivileged `compromise-check` raised out of the
+persistence group entirely; `run_all` caught it and reported the whole group blind. That
+user got **no** persistence findings at all — not the unowned units, not the unowned
+cron entries — instead of the ones the check can see perfectly well without root. The
+failure was quiet, correct-looking, and exactly the shape this action exists to prevent.
+
+### Fixed
+
+- Every filesystem predicate in `fettle/compromise/` now goes through `is_directory()`
+  or `is_regular_file()`, which cannot raise. "Cannot tell" is answered by the caller
+  asking explicitly, rather than by whichever interpreter is installed.
+- Nested unreadable directories are reported once. On Debian both `/var/spool/cron` and
+  `/var/spool/cron/crontabs` are searched; naming the second when the first is already
+  unreadable says the same thing twice and implies we know the second exists.
+
+### Testing
+
+- **The CI-only failure is now reproducible on the development machine.** A test
+  simulates 3.11-3.13's `Path.is_dir()` by mirroring `_ignore_error`'s errno list
+  exactly, so the scenario is pinned on every interpreter rather than only where the
+  filesystem happens to behave that way. Reverting the fix fails it here.
+- The permission-denial tests now skip as root, where `chmod 000` denies nothing and
+  they would assert blindness on a run that could see everything. That is the same trap
+  the QA pass hit when five tests passed only on the developer's machine.
+- Verified on python 3.11 in a container both as root (5 skipped, correctly) and as an
+  ordinary user (all 68 exercised) — the combination CI actually runs.
+
 ## [1.3.0] — the rest of persistence: cron, `at`, and every user's own units
 
 Phase 1 of `compromise-check` is complete. M1.2 covered system unit files; this adds the

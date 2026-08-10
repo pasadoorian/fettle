@@ -12,6 +12,7 @@ Every threshold here exists because a simpler version of it was wrong on that ma
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,17 @@ ExecStart=/opt/rumble/bin/rumble-agent-4b7a89f3
 User=root
 Restart=always
 """
+
+
+# `chmod 000` denies nothing to uid 0, so every test below whose mechanism is an
+# unreadable directory is meaningless as root — it would assert blindness on a run that
+# could see everything. CI runs as an ordinary user and exercises them; a `sudo pytest`
+# or a root container skips them and says so, rather than failing for a reason that has
+# nothing to do with the code. This is the same trap that made five tests pass only on
+# the developer's machine during the QA pass.
+needs_unprivileged = pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="permission-denial tests are meaningless as root (chmod 000 does not apply)")
 
 
 class _Backend:
@@ -294,6 +306,7 @@ def test_a_user_crontab_running_from_tmp_is_a_finding(tmp_path):
     assert "/dev/shm" in res.findings[0].detail
 
 
+@needs_unprivileged
 def test_an_unreadable_spool_is_blind_not_empty(tmp_path):
     """Debian ships /var/spool/cron 0730 root:crontab.
 
@@ -359,6 +372,7 @@ def test_a_user_unit_running_from_a_suspect_location_is_high(tmp_path, monkeypat
     assert "/var/lib" in res.findings[0].detail
 
 
+@needs_unprivileged
 def test_an_unreadable_home_is_blind_not_clean(tmp_path, monkeypatch):
     _fake_user(tmp_path, monkeypatch)
     directory = tmp_path / "home/real/.config/systemd/user"
@@ -414,3 +428,99 @@ def test_cron_argv0(command, expected):
     from fettle.compromise import cron
 
     assert cron.argv0(command) == expected
+
+
+# ------------------------------------------------- the interpreter-difference guard
+#
+# These exist because CI failed on a commit that was green locally, and the cause was
+# neither the code nor the test being wrong on its own terms: `Path.is_dir()` raises
+# EACCES on python 3.11-3.13 and returns False on 3.14. wopr runs 3.14; CI runs the
+# other three. A test that only exercises the real filesystem is therefore a test whose
+# meaning depends on which interpreter runs it — so the strict behaviour is simulated
+# here, and the same scenario is pinned on every version.
+
+
+def _strict_isdir(monkeypatch):
+    """`os.path.isdir` that behaves like python 3.11-3.13's `Path.is_dir()`.
+
+    Those versions call `self.stat()` and swallow only what `pathlib._ignore_error`
+    covers — ENOENT, ENOTDIR, EBADF, ELOOP. EACCES is not in that list, so it
+    propagates. 3.14 replaced the whole thing with `os.path.isdir()`, which swallows
+    everything. Mirroring the ignore-list exactly matters: a simulation that also raised
+    on a missing path would fail the test for a reason CI never saw.
+    """
+    import errno
+    import os
+
+    ignored = {errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP}
+    real = os.path.isdir
+
+    def strict(path):
+        try:
+            os.stat(path)
+        except OSError as exc:
+            if exc.errno not in ignored:
+                raise
+            return False
+        return real(path)
+
+    monkeypatch.setattr(os.path, "isdir", strict)
+
+
+@needs_unprivileged
+def test_unreadable_spool_under_the_strict_isdir_of_older_pythons(tmp_path, monkeypatch):
+    """The exact scenario that failed CI and passed here.
+
+    On Debian `/var/spool/cron` is `0730 root:crontab`, so an unprivileged run probes
+    `/var/spool/cron/crontabs` through a directory it cannot search. Before the fix that
+    raised out of the whole persistence group, `run_all` caught it, and the group was
+    reported blind — meaning a Debian user got *no* persistence findings rather than the
+    ones this check can produce without root.
+    """
+    _write(tmp_path, "etc/cron.d/timeshift-hourly", TIMESHIFT_CRON)
+    spool = tmp_path / "var/spool/cron"
+    spool.mkdir(parents=True)
+    (spool / "root").write_text("0 3 * * * /usr/bin/thing\n")
+    spool.chmod(0o000)
+    _strict_isdir(monkeypatch)
+    try:
+        res = persistence.run(_Backend(), _ctx(tmp_path))
+    finally:
+        spool.chmod(0o755)
+
+    # It did not raise, it still produced the findings it could see...
+    assert [f.severity for f in res.findings] == [MEDIUM]
+    # ...and it said what it could not see.
+    assert any("could not be read" in why for _, why, _ in res.blind)
+
+
+@needs_unprivileged
+def test_nested_unreadable_directories_are_reported_once(tmp_path):
+    """Naming `/var/spool/cron/crontabs` when `/var/spool/cron` is already unreadable
+    says the same thing twice, and implies we know the nested one exists."""
+    from fettle.compromise import cron
+
+    spool = tmp_path / "var/spool/cron"
+    spool.mkdir(parents=True)
+    spool.chmod(0o000)
+    try:
+        blocked = cron.unreadable(tmp_path, cron.USER_CRON_DIRS)
+    finally:
+        spool.chmod(0o755)
+    assert len(blocked) == 1
+    assert blocked[0].endswith("var/spool/cron")
+
+
+def test_the_filesystem_predicates_never_raise(monkeypatch):
+    """The contract, asserted directly so it does not depend on the interpreter."""
+    import os
+
+    from fettle.compromise import is_directory, is_regular_file
+
+    def boom(_path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(os.path, "isdir", boom)
+    monkeypatch.setattr(os.path, "isfile", boom)
+    assert is_directory("/anything") is False
+    assert is_regular_file("/anything") is False
