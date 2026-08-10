@@ -14,6 +14,22 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [0.122.1] — the lint rules are now stated, not inherited
+
+Found by the release pipeline's first real run, which is what a dress rehearsal is for.
+
+CI installs `ruff>=0.6`, so it takes the newest — and **ruff 0.16 changed its default
+rule selection**. A tree that was clean under 0.15 produced **267 errors** under 0.16
+with no code change, and the failure landed on a tag rather than on a commit anyone
+could blame. `pyproject.toml` now names the rule set explicitly (`E4`, `E7`, `E9`, `F`
+— ruff's classic default, what this codebase was written and reviewed against), so an
+upgrade cannot silently change what is checked. Verified clean under both 0.15.20 and
+the 0.16.2 that CI installed.
+
+The newer rules — import sorting, pyupgrade, bandit, blind-except — are worth adopting
+deliberately, as their own change, with the findings read rather than bulk-fixed on the
+way out of the door.
+
 ## [0.122.0] — the binary ships, and a bug only a bare container could find
 
 `packaging/binary/archive.sh` packs the compiled binary as

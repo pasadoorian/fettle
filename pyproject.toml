@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fettle"
-version = "0.122.0"
+version = "0.122.1"
 description = "Cross-distribution Linux system-maintenance and supply-chain tool"
 readme = "README.md"
 license = { text = "MIT" }
@@ -28,6 +28,18 @@ include = ["fettle*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+# Say which rules we lint against rather than inheriting whatever the tool decided this
+# week. `dev` pins only `ruff>=0.6`, so CI installs the newest — and ruff 0.16 CHANGED
+# ITS DEFAULT SELECTION, turning a clean tree into 267 errors with no code change. That
+# broke the release pipeline's first real run, on a tag, without a commit to blame.
+#
+# This is ruff's classic default set (pycodestyle errors + pyflakes), which is what the
+# codebase was written and reviewed against. Adopting the newer rules — import sorting,
+# pyupgrade, bandit, blind-except — is worth doing deliberately, as its own change, with
+# the ~267 findings read rather than bulk-fixed on the way to a release.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
