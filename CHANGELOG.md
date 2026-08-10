@@ -11,6 +11,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.0.0] — the first official release
+
+fettle keeps a Linux machine updated and clean, audits where its software came from and
+whether it has been tampered with, and scans the firmware and boot chain — from one
+command surface, on four distro families.
+
+**Supported:** Arch and Manjaro, Debian and Ubuntu, RHEL / Rocky / AlmaLinux, and
+Fedora. Pure standard library: it needs **python 3.11 or newer** and nothing else, which
+is what lets it ship itself to a remote host as a single file and run there under
+whatever interpreter it finds.
+
+**What 1.0.0 rests on.** Every action was specified, run against seven live systems, and
+fixed where it misbehaved or explained itself badly. That pass is written down, feature
+by feature, in [`docs/qa/`](docs/qa/) — roughly ninety findings, including actions that
+reported success while doing nothing at all, a preview that deleted run history, and an
+unattended flag that would have purged a list fettle had guessed at.
+
+One rule came out of it and now governs the output everywhere: **a check that could not
+look must never render identically to a clean result.** "Not installed", "could not
+read", "does not apply" and "nothing found" are four different answers, and fettle says
+which one it means.
+
+**Installing.** Attached to this release: `.deb`, `.rpm`, `.pkg.tar.zst`, a zipapp that
+runs anywhere there is a python 3.11+, and a prebuilt x86_64 binary that needs no python
+at all. Every package is built and then *installed and run* in a clean container of its
+own distro before it is published. `SHA256SUMS` covers everything.
+
+**Still experimental:** `fettle web`, the browser UI. It is the one feature the QA pass
+did not reach — it both serves a page and runs privileged actions from a password typed
+into a browser, and it has not been swept. Localhost-only by default; keep it that way.
+`fettle report`, the static HTML dashboard, is not experimental and is included.
+
+**Known limit:** the prebuilt binary needs glibc 2.38 or newer, so it does not run on
+Ubuntu 22.04, Debian 12 or RHEL 9. Those have their own packages here, and the zipapp
+works everywhere.
+
 ## [0.122.2] — the test suite stops testing the developer's laptop
 
 Also found by the dress rehearsal, and worse than the lint problem: **CI had been failing

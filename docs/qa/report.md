@@ -6,7 +6,7 @@
 **Purpose as a user understands it:** *"show me everything fettle has found, everywhere,
 in one place."*
 
-Read-only, no sudo, marked **beta**. It is the only feature whose output is a *view* of
+Read-only, no sudo. It is the only feature whose output is a *view* of
 other features' output — so it inherits every naming decision they made, and it is where
 those decisions become visible.
 

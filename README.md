@@ -57,7 +57,7 @@ real unit-test coverage the bash originals never had.
 - [Upgrade Checker (AI) — experimental](#upgrade-checker-ai--experimental)
 - [Configuration](#configuration)
   - [Reports & run logs](#reports--run-logs)
-  - [HTML report — `fettle report` (beta)](#html-report--fettle-report-beta)
+  - [HTML report — `fettle report`](#html-report--fettle-report)
   - [Web UI — `fettle web` (experimental, optional)](#web-ui--fettle-web-experimental-optional)
 - [Security advisories / CVE tracking — `advisory-check` (opt-in)](#security-advisories--cve-tracking--advisory-check-opt-in)
 - [Previewing an upgrade](#previewing-an-upgrade)
@@ -1424,7 +1424,7 @@ fettle sys-audit --user hardware     # run as your user, no sudo
 
 Like the other checks, a local scan saves a report to
 `~/.fettle/reports/<host>/sys-audit-<ts>.{txt,json}`, so it appears in
-`fettle report` (see [HTML report](#html-report--fettle-report-beta)); a
+`fettle report` (see [HTML report](#html-report--fettle-report)); a
 `sys-audit remote <host>` scan fetches its report back to the controller. Run with
 sudo/`--all` for the fullest results — many checks only produce real output as root.
 
@@ -1724,7 +1724,7 @@ hardening packages, findings with severity, the upgrade-check result, package
 lists, log transcript). Same `0600`, rotated as a unit with the `.txt`. Turn it off
 with `json = false` under `[reports]`.
 
-### HTML report — `fettle report` *(beta)*
+### HTML report — `fettle report`
 
 **Each host card is a verdict across every audit**, not a hardening tally: the worst
 severity found in the newest report of each type, then the two or three findings that
@@ -1805,7 +1805,6 @@ fettle report --open          # …and open it in a browser
 fettle report --backfill-json # one-off: give pre-0.12 .txt reports a JSON sibling first
 ```
 
-> **This is an initial (beta) revision** — the layout and contents will evolve.
 > It reads whatever JSON is currently retained (the `keep` window), so run it after
 > your scans; for older text-only reports, run `--backfill-json` once.
 
