@@ -24,15 +24,17 @@ sh "$here/packaging/install.sh" "$work"
 mkdir -p "$work/DEBIAN"
 
 # Architecture: all — fettle is pure python, so one package serves every architecture.
-# Depends is python3 and nothing else, which is the zero-dependency property stated
-# somewhere a machine will check it.
+# Depends names an interpreter and nothing else, which is the zero-dependency property
+# stated somewhere a machine will check it. The alternatives matter: Ubuntu 22.04's
+# `python3` is 3.10, too old for fettle, but it has python3.11 in universe — so
+# `python3 (>= 3.11)` alone would refuse to install on a system that runs fettle fine.
 cat > "$work/DEBIAN/control" <<EOF
 Package: fettle
 Version: $version
 Section: admin
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.11)
+Depends: python3 (>= 3.11) | python3.11 | python3.12 | python3.13
 Maintainer: Paul Asadoorian <paul@rihackers.com>
 Homepage: https://github.com/pasadoorian/fettle
 Description: Cross-distribution Linux maintenance and supply-chain tool

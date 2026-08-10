@@ -15,8 +15,13 @@ Source0:        %{name}-%{version}.tar.gz
 
 # Pure python, no compiled anything — one package serves every architecture.
 BuildArch:      noarch
-BuildRequires:  python3 >= 3.11
-Requires:       python3 >= 3.11
+BuildRequires:  python3
+# RHEL/Rocky/Alma 9 ship python3 = 3.9 with python3.11 available in appstream, while
+# Fedora's python3 is already newer than 3.11. A plain `python3 >= 3.11` would therefore
+# refuse to install on the entire EL9 family — a platform fettle supports and has a
+# backend for. The boolean form (rpm 4.13+; EL9 has 4.16) is satisfied by whichever is
+# true, and pulls in python3.11 when neither is.
+Requires:       (python3 >= 3.11 or python3.11 or python3.12 or python3.13)
 
 %description
 One command surface keeps a machine updated and clean, audits where its software

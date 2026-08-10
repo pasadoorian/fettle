@@ -50,6 +50,41 @@ people's packages. Debian's `dist-packages` is version-independent, but two layo
 two families is worse than one that works everywhere. fettle is a CLI, not a library, so
 nothing needs to `import fettle`.
 
+## The python 3.11 floor, which is the fiddly part
+
+fettle needs python **3.11 or newer**, and `python3` is *not* reliably that:
+
+| distro | `python3` is | fettle needs |
+|---|---|---|
+| RHEL / Rocky / Alma 9 | **3.9** | `python3.11` or `python3.12` from appstream |
+| Ubuntu 22.04 | **3.10** | `python3.11` from universe |
+| Debian 12 / 13, Fedora, Arch | 3.11 – 3.14 | already fine |
+
+Two halves, and both are needed — either alone leaves a broken install:
+
+**The dependency** is expressed in each distro's dialect, so the package manager pulls a
+suitable interpreter in rather than refusing: `Depends: python3 (>= 3.11) | python3.11 |
+…` for deb, the rpm boolean `Requires: (python3 >= 3.11 or python3.11 or …)`, and plain
+`python>=3.11` on Arch. A flat `python3 >= 3.11` would refuse to install on the entire
+EL9 family and on Ubuntu 22.04 — platforms fettle supports and runs on perfectly well.
+
+**The wrapper** then has to *find* that interpreter, because `python3` still points at
+the old one. `/usr/bin/fettle` tries `python3.14 … python3.11` by name first — the name
+alone guarantees the version, so nothing has to be started to find out, which keeps the
+common path free of an extra process (bash completion runs this on every tab press).
+Only if none of those exist does it fall back to `python3` and check it properly. The
+version list is an optimisation, not the correctness: a python newer than anything named
+there is still found by the fallback.
+
+Verified on real containers, including both platforms that a naive dependency breaks:
+
+| distro | system `python3` | pulled in | wrapper execs |
+|---|---|---|---|
+| Rocky 9 | 3.9.25 | `python3.12` | `python3.12` |
+| Ubuntu 22.04 | 3.10.12 | `python3.11` | `python3.11` |
+| Debian 12 | 3.11.2 | — | `python3.11` |
+| Arch | 3.14.6 | — | `python3.14` |
+
 ## Verifying a build
 
 Building proves the metadata parses. **Installing proves the layout is right, and the

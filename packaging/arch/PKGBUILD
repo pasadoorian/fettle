@@ -14,7 +14,7 @@ pkgdesc="Cross-distribution Linux maintenance and supply-chain tool"
 arch=('any')          # pure python, no compiled anything
 url="https://github.com/pasadoorian/fettle"
 license=('MIT')
-depends=('python')    # Arch's python is 3.13; fettle needs nothing else
+depends=('python>=3.11')   # already newer on Arch; the floor is stated anyway
 optdepends=(
   'checksec: binary hardening axis of `fettle -H`'
   'pacman-contrib: paccache retention for `fettle -c`'
