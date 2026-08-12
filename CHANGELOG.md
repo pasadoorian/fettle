@@ -11,6 +11,64 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.6.0] — `compromise-check` lands: dashboard, exit status, documentation
+
+Phase 4, and the feature is finished. The detection work shipped in 1.1.0-1.5.0; this is
+everything that makes it usable by someone who did not write it.
+
+### The exit status now turns on severity
+
+`fettle -M` exits **1** on a **High or Critical** finding, or on a run that examined
+nothing at all. It exits **0** otherwise, including with Medium and Low findings
+present.
+
+That distinction is the whole design. Every real machine has findings — the reference
+desktop has four, and all four are explicable in a sentence: two vendor agent services,
+a cron entry `timeshift` writes itself, and a self-updating AppImage. Exiting non-zero on
+any of them would make `-M` red forever and teach people to ignore it, which is the trap
+`-H` deliberately avoids. High and Critical are the two bands that already print the
+preservation banner, so the status and the banner now agree about what "stop and look at
+this" means.
+
+Partial blindness — `bpftool` absent, `/sys/fs/bpf` unreadable — is reported loudly and
+does **not** set the status, matching how every other action treats a missing tool. Only
+a run that examined *nothing* fails on blindness, and it is recorded as `BLIND` rather
+than `FOUND`, so automation that needs to tell "could not read `/sys/fs/bpf`" from
+"found a rootkit" can, even though fettle's documented convention exits 1 for both.
+
+### The dashboard
+
+- `compromise-check` reports render in `fettle report`, reusing the hardening-axes
+  renderer because the payload is the same shape.
+- **A compromise finding is not capped in the host verdict.** The hardening bands are
+  capped at Medium there, because every desktop has Critical-band packages and letting
+  them drive a fleet page trains you to ignore the colour. This is the opposite kind of
+  thing: a host running something nobody installed must not sit on that page looking
+  like a host with a stale package.
+- **A blind compromise run reaches the card too.** A host whose rootkit checks could not
+  run is not a host with nothing to report, and at fleet scale that is exactly the
+  difference nobody notices.
+- The dashboard reads both `axes` and `groups` keys. `hardening-audit` writes the first
+  and `compromise-check` the second; renaming either would make reports already on disk
+  unreadable, and stored reports are forever.
+
+### Documentation
+
+- **README**: a sixth feature family, a `-M` row in the what-works-where matrix with a
+  footnote on why it is not in the default set, a quick-start line, and `bpftool` as an
+  optional tool.
+- **Wiki**: a new [Compromise indicators](https://github.com/pasadoorian/fettle/wiki/Compromise-check)
+  page — what each group checks, what needs root and what does not, the exit status, and
+  a *"if you got a finding"* section that leads with **do not clean up yet**. Plus the
+  edits that situate it: Home and the sidebar (five security audits, not four),
+  Maintenance-actions (the `-M` row and the `--everything` ordering), Reference (the exit
+  row), and two cross-links that are the point rather than decoration — `pkg-audit` tells
+  you a package you installed was in the June 2026 AUR wave, `compromise-check` tells you
+  whether the implant is still here; and `sys-audit` *judges* Secure Boot posture while
+  `compromise-check` only *states* it.
+- `fettle -h` gains `-M` in the which-check-is-which block, where it says outright that
+  it reports anomalies to investigate and never a fix.
+
 ## [1.5.0] — running-process provenance
 
 Phase 3 of `compromise-check`, and the last of its detection work. One question asked

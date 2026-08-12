@@ -51,7 +51,7 @@ This page is what fettle is, whether it runs on your machine, and how to install
 
 ## What it does
 
-fettle has five feature families.
+fettle has six feature families.
 
 1. **Maintenance** — update packages, clean caches, prune orphans, check for
    rebuilds/service-restarts, review config-file drift, report whether automatic
@@ -74,14 +74,26 @@ fettle has five feature families.
    Per-package CVEs from your distro's own tracker, including the ones you're
    vulnerable to with **no fix released yet**, plus the Python/Node/Rust packages
    your distro doesn't manage, via OSV. Exposed as `advisory-check`.
+6. **Compromise indicators** — *is something already here?* What starts at boot that
+   no package installed (units, timers, cron, `at`), the loader and kernel
+   (`/etc/ld.so.preload`, unsigned modules, kernel taint nothing explains, the eBPF
+   surface, processes hidden from `/proc`), what is running (executed from memory,
+   deleted-but-running, listening sockets nothing vouches for) and the boot chain.
+   Exposed as `compromise-check` (`-M`). **It reports anomalies to investigate and
+   never a fix** — if a finding is real, running the fix destroys the evidence.
 
-Three of those names are easy to confuse, so they are kept deliberately distinct in
+The last two are the pair most easily conflated, and they are separate actions because
+they have different answers: hardening asks whether the machine is **configured** safely,
+compromise asks whether something is **already here**. One ends in a command to run;
+the other ends in something to look at before you touch anything.
+
+Three of the names are easy to confuse, so they are kept deliberately distinct in
 code, docs, and CLI:
 "where did this software come from / is it tampered?" → **Package**
 (`pkg-audit`); "is the machine's firmware/boot sound?" → **System** (`sys-audit`);
 "is the machine configured safely?" → **Hardening** (`hardening-audit`).
 
-**All five run three ways.** Locally; over SSH against one host or a named group,
+**All six run three ways.** Locally; over SSH against one host or a named group,
 with nothing installed on the far side — fettle ships itself (`fettle remote`); and
 into a report — every run saves one under `~/.fettle/` with a JSON sibling, and
 `fettle report` builds a multi-host HTML dashboard with a per-host verdict.
@@ -125,11 +137,12 @@ the at-a-glance "will it run on my box" view.
 | Kernel management | `-k` | ● | ● | ●¹ | |
 | Supply-chain audit | `-P` | ● | ● | ● | ✔︎ |
 | Binary hardening audit | `-H` | ● | ● | ●² | |
+| Compromise indicators | `-M` | ● | ● | ● | ³ |
 | Container image updates | `-C` | ● | ● | ● | |
 | Python rebuild check | `-y` | ● | — | — | ✔︎ |
 | AUR health census | `-A` | ● | — | — | |
 | AUR compromise (IoC) scan | `-P` | ● | — | — | ✔︎ |
-| | | **15/15** | **12/15** | **12/15** | |
+| | | **16/16** | **13/16** | **13/16** | |
 
 The three gaps are the same on Debian and RHEL and are Arch-only by nature — there is no
 AUR elsewhere, and both apt and dnf handle Python interpreter transitions themselves. So
@@ -137,6 +150,9 @@ Debian and RHEL are *complete*, not partial.
 
 ¹ Reported, never removed: dnf enforces `installonly_limit` and prunes old kernels itself.
 Arch and Debian do offer removal, because pacman and apt do not.
+³ Not in the default set — it needs root, and a compromise finding is not something
+to meet in a routine maintenance run. It **is** swept by `--everything`, where it runs
+last: an update removes a vulnerable package and does not remove an implant.
 ² Needs `checksec`, which is **not packaged for RHEL 10 — EPEL included** — so in practice
 this cannot run there yet. The code and tests are in place for when it is. Both checksec
 generations are handled: 3.x (Arch) and 2.x (Fedora, Debian, Ubuntu), which share no
@@ -197,6 +213,7 @@ with a note**, so you install only what the commands you actually use need.
 | kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
 | flatpak / snap | — | `flatpak`, `snapd` |
 | hardening audit (`-H`) | `checksec` | `checksec` |
+| compromise indicators (`-M`) | `bpftool` (optional) | `bpftool` (optional) |
 
 (RHEL family: `checksec` too — `dnf install checksec`.)
 
@@ -379,6 +396,7 @@ fettle -O                  # refresh metadata + report upgradable (no upgrade; s
 fettle -A                  # AUR health audit  -> ~/.fettle/reports/
 fettle -P                  # package supply-chain audit -> ~/.fettle/reports/
 fettle -H                  # system hardening audit -> ~/.fettle/reports/
+fettle -M                  # compromise indicators: is something already here?
 fettle -S                  # full security scan (sys-audit --all; self-elevates)
 fettle -U                  # AI: is this upgrade safe? [experimental] (needs API key)
 fettle report              # multi-host HTML dashboard from the saved reports

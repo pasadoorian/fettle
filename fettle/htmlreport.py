@@ -363,12 +363,24 @@ def _axis_findings(data: dict) -> list[dict]:
     older ones have none, and both must keep rendering — stored reports are forever.
     """
     out = []
-    for axis in data.get("axes") or []:
-        if not isinstance(axis, dict):
-            continue
+    for axis in _axis_list(data):
         for f in axis.get("findings") or []:
             out.append({**f, "axis": axis.get("axis", "")})
     return out
+
+
+def _axis_list(data: dict) -> list[dict]:
+    """The axis/group entries, under whichever key wrote them.
+
+    `hardening-audit` stores them as ``axes`` and `compromise-check` as ``groups``, and
+    the payload is byte-for-byte the same shape because both are produced by
+    `hardening.axes.render.to_dict`. Reading both keys is two lines; renaming one would
+    make every report already on disk unreadable, and stored reports are forever.
+    """
+    raw = data.get("axes")
+    if raw is None:
+        raw = data.get("groups")
+    return [a for a in (raw or []) if isinstance(a, dict)]
 
 
 def _render_axes(data: dict) -> str:
@@ -380,9 +392,7 @@ def _render_axes(data: dict) -> str:
     """
     findings = _axis_findings(data)
     blind, na = [], []
-    for axis in data.get("axes") or []:
-        if not isinstance(axis, dict):
-            continue
+    for axis in _axis_list(data):
         title = str(axis.get("title") or axis.get("axis") or "")
         if axis.get("not_applicable"):
             na.append(f"{title}: {axis['not_applicable']}")
@@ -686,6 +696,9 @@ _RENDERERS = {
     "upgrade-check": _render_upgrade, "aur-audit": _render_aur_audit,
     "alien-pkgs": _render_pkglist, "obsolete-pkgs": _render_pkglist,
     "sys-audit": _render_sysaudit, "advisory-check": _render_advisories,
+    # The same renderer as the hardening axes: identical payload shape, and the entry's
+    # own `tool` field is what says which question was being asked.
+    "compromise-check": _render_axes,
     # pkg-integrity was split out of sys-audit in v0.72.0 and is built from the same
     # `Scan`, so its payload has the identical shape — but it was never registered
     # here, and five reports rendered as a raw JSON dump on the dashboard.
@@ -736,6 +749,13 @@ def _is_empty(entry: dict) -> bool:
                     or data.get("maintainer_changes"))
     if tool in ("sys-audit", "pkg-integrity"):
         return not (data.get("categories") or data.get("text"))
+    if tool == "compromise-check":
+        # A run that found nothing but could not look at half the system is NOT empty:
+        # dropping it from the dashboard would turn "I could not see" into silence,
+        # which is the same lie the action refuses to tell on the command line.
+        return not (_axis_findings(data)
+                    or any(a.get("not_checked") or a.get("not_applicable")
+                           for a in _axis_list(data)))
     if tool == "advisory-check":
         # The uncovered list is not decoration: it is the tracker saying which
         # packages it cannot see at all. A host with no tracked CVEs and 77 untracked
@@ -768,6 +788,7 @@ _SECTION_LABELS = {
     "obsolete-pkgs": "Obsolete Packages",
     "upgrade-check": "AI Upgrade Check",
     "sys-audit": "System Security Scan",
+    "compromise-check": "Compromise Indicators",
     "advisory-check": "Security Advisories",
     "run-log": "Session Transcripts",
     "group-run": "Group Orchestration",
@@ -967,6 +988,30 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
                 out.append((_SEV_RANK.get(worst, 1),
                             f"{len(axis)} system hardening "
                             f"finding{'s' if len(axis) != 1 else ''} ({worst})"))
+        elif tool == "compromise-check":
+            # **Not capped, and deliberately the loudest thing on the card.** The
+            # hardening bands above are capped at Medium because every real desktop has
+            # them; these are the opposite kind of thing. A High or Critical here means
+            # something is running that nobody installed, and a host with one must not
+            # sit on a fleet page looking like a host with a stale package.
+            #
+            # Medium and Low are NOT suppressed either, but they say what they are: the
+            # reference machine's four are two vendor agents, a cron entry timeshift
+            # wrote itself and a self-updating AppImage, and the wording has to leave
+            # room for that being the answer.
+            found = _axis_findings(data)
+            if found:
+                worst = max((_sev(f.get("severity")) for f in found),
+                            key=lambda s: _SEV_RANK.get(s, 1))
+                out.append((_SEV_RANK.get(worst, 1),
+                            f"{len(found)} compromise "
+                            f"indicator{'s' if len(found) != 1 else ''} ({worst})"))
+            # Blindness is a fleet-level fact too. A host whose rootkit checks could not
+            # run is not a host with nothing to report, and at fleet scale that is
+            # exactly the difference nobody notices.
+            unseen = sum(len(a.get("not_checked") or []) for a in _axis_list(data))
+            if unseen and not found:
+                out.append((1, f"{unseen} compromise check(s) could not look"))
         elif tool in ("sys-audit", "pkg-integrity"):
             counts = data.get("level_counts") or {}
             label = "firmware/boot" if tool == "sys-audit" else "package file integrity"

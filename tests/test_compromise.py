@@ -296,3 +296,170 @@ def test_preservation_banner_only_above_medium(severity, banner, capsys):
         # The escalation is named, not implied: someone who wants a full collection
         # before touching the box should not have to go and find the tool.
         assert "ir_triage" in printed
+
+
+# ------------------------------------------------------------ dashboard (M4.2)
+
+
+def _compromise_report(base, host, ts, groups):
+    import json
+    d = base / ".fettle/reports" / host
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"compromise-check-{ts}.json").write_text(json.dumps(
+        {"schema": "fettle.report/1", "tool": "compromise-check", "host": host,
+         "timestamp": ts, "fettle_version": "1.5.0", "data": {"groups": groups}}))
+
+
+def _group(name, findings=(), not_checked=()):
+    return {"axis": name, "title": name.capitalize(), "checked": 10,
+            "not_applicable": "", "tally": {}, "findings": list(findings),
+            "not_checked": [{"what": w, "why": "", "package": ""} for w in not_checked],
+            "notes": []}
+
+
+def _finding(severity, subject="thing", summary="something"):
+    return {"check": "x", "subject": subject, "severity": severity,
+            "summary": summary, "detail": summary, "fix": "look at it"}
+
+
+def test_the_dashboard_reads_the_groups_key(tmp_path):
+    """`hardening-audit` stores `axes` and `compromise-check` stores `groups`.
+
+    The payload is the same shape — both come from `axes.render.to_dict` — so the
+    dashboard reads either. Renaming one would make every report already on disk
+    unreadable, and stored reports are forever.
+    """
+    from fettle import htmlreport
+
+    data = {"groups": [_group("persistence", [_finding("High", "evil.service")])]}
+    assert len(htmlreport._axis_findings(data)) == 1
+    assert "evil.service" in htmlreport._render_axes(data)
+
+
+def test_a_critical_compromise_finding_dominates_the_host_verdict(tmp_path):
+    """Not capped at Medium, unlike the hardening bands.
+
+    That cap exists because every desktop has Critical-band packages. This is the
+    opposite kind of thing: a host running something nobody installed must not sit on a
+    fleet page looking like a host with a stale package.
+    """
+    from fettle import htmlreport
+
+    _compromise_report(tmp_path, "h1", "20260812-010101",
+                       [_group("kernel", [_finding("Critical", "pid 31337",
+                                                   "running from memory")])])
+    host = htmlreport.collect(tmp_path / ".fettle")["h1"]
+    problems = htmlreport._host_problems(host, stale_days=99999)
+    assert problems, "a Critical compromise finding must reach the card"
+    assert problems[0][0] == 4, "and outrank everything else on it"
+    assert "compromise indicator" in problems[0][1]
+
+
+def test_a_blind_compromise_run_is_not_silence_on_the_fleet_page(tmp_path):
+    """A host whose rootkit checks could not run is not a host with nothing to report.
+
+    At fleet scale that is exactly the difference nobody notices.
+    """
+    from fettle import htmlreport
+
+    _compromise_report(tmp_path, "h2", "20260812-010101",
+                       [_group("kernel", not_checked=["pinned eBPF objects"])])
+    host = htmlreport.collect(tmp_path / ".fettle")["h2"]
+    problems = htmlreport._host_problems(host, stale_days=99999)
+    assert any("could not look" in p for _, p in problems)
+
+
+def test_a_blind_compromise_report_is_not_dropped_as_empty(tmp_path):
+    """Dropping it would turn "I could not see" into silence — the same lie the
+    action refuses to tell on the command line."""
+    from fettle import htmlreport
+
+    entry = {"tool": "compromise-check",
+             "data": {"groups": [_group("kernel", not_checked=["/sys/fs/bpf"])]}}
+    assert not htmlreport._is_empty(entry)
+
+
+def test_a_compromise_report_with_nothing_at_all_is_empty(tmp_path):
+    from fettle import htmlreport
+
+    entry = {"tool": "compromise-check", "data": {"groups": [_group("kernel")]}}
+    assert htmlreport._is_empty(entry)
+
+
+# --------------------------------------------------------------- exit status (M4.1)
+
+
+def test_high_findings_fail_the_run_and_medium_ones_do_not(tmp_path, monkeypatch):
+    """The exit status turns on severity, not on the existence of findings.
+
+    The reference machine has four findings and none is worth failing over — exiting
+    non-zero on any of them would make `-M` red forever and teach people to ignore it,
+    which is the mistake `-H` deliberately avoids. High and Critical are the two bands
+    that also print the preservation banner, so the status and the banner agree.
+    """
+    from fettle.compromise import CheckResult, Finding
+
+    def _with(severity):
+        class _G:
+            @staticmethod
+            def run(backend, ctx):
+                res = CheckResult(name="persistence", title="P", checked=5)
+                res.findings.append(Finding(check="x", subject="s",
+                                            detail="d — why", severity=severity))
+                return res
+        monkeypatch.setattr(compromise, "_module", lambda name: _G)
+        ctx = _ctx(tmp_path)
+        caudit.run(_Backend(), ctx)
+        return ctx.output
+
+    assert not _with("Medium").had_failures, "an inventory is not a failure"
+    assert not _with("Low").had_failures
+    assert _with("High").had_failures, "High is where the banner fires, and the status"
+    assert _with("Critical").had_failures
+
+
+def test_a_wholly_blind_run_fails_as_blind_not_as_a_finding(tmp_path, monkeypatch):
+    """The three kinds of bad news stay distinguishable for automation.
+
+    A run that examined *nothing* is a failed run, and it is recorded as BLIND rather
+    than FOUND — so a script can tell "could not read /sys/fs/bpf" from "found a
+    rootkit" even though fettle's documented convention exits 1 for both.
+    """
+    from fettle.compromise import CheckResult
+    from fettle.output import BLIND, FOUND
+
+    class _Blind:
+        @staticmethod
+        def run(backend, ctx):
+            return CheckResult(name="kernel", title="K",
+                               blind=[("everything", "no privilege", "")])
+
+    monkeypatch.setattr(compromise, "_module", lambda name: _Blind)
+    ctx = _ctx(tmp_path)
+    caudit.run(_Backend(), ctx)
+    assert ctx.output.had_failures
+    assert ctx.output.failures_of(BLIND), "recorded as could-not-look"
+    assert not ctx.output.failures_of(FOUND), "and not as a finding"
+
+
+def test_partial_blindness_warns_rather_than_failing(tmp_path, monkeypatch):
+    """`bpftool` being absent is a permanent state on most machines.
+
+    Failing on it would make `-M` red forever for a reason the user may never intend to
+    change — the "red forever" trap `-H` avoids. Every other action treats `not_checked`
+    the same way: it is reported loudly and does not set the exit status. Only a run
+    that examined *nothing* fails.
+    """
+    from fettle.compromise import CheckResult
+
+    class _Partial:
+        @staticmethod
+        def run(backend, ctx):
+            return CheckResult(name="kernel", title="K", checked=40,
+                               blind=[("pinned eBPF objects", "needs root", "")])
+
+    monkeypatch.setattr(compromise, "_module", lambda name: _Partial)
+    ctx = _ctx(tmp_path)
+    caudit.run(_Backend(), ctx)
+    assert not ctx.output.had_failures
+    assert any("could not look" in w for w in ctx.output._warnings), "but it is said"

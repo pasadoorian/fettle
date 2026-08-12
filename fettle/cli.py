@@ -279,6 +279,11 @@ which package check? each answers a different question (-S scans firmware, not p
   -V  pkg-integrity WHETHER the FILES still match what the package shipped
                     (paccheck / debsums / rpm -Va). A tripwire for change after
                     install; not proof the package was authentic.
+  -M  compromise-check  is something ALREADY here? not "could this be attacked" but
+                    "did something get in" — boot persistence nothing installed,
+                    loader/kernel integrity, processes, boot chain. Reports
+                    anomalies to INVESTIGATE, never a fix: if a finding is real,
+                    the cleanup destroys the evidence.
   -A  aur-audit     AFTER installing, AUR only — the census: age, votes, maintainer,
                     and what nothing depends on any more. Only -A tells you what is
                     safe to remove.

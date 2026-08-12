@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 
 from ..backends.base import Context, PackageBackend, Result
+from ..output import BLIND, FOUND
 from .. import reports as freports
 from ..hardening.axes import render as arender
 # The package is imported as a module rather than `from . import GROUP_NAMES`, which
@@ -25,6 +26,7 @@ from ..hardening.axes import render as arender
 # a stale binding would leave this module describing a set of groups that differs from
 # the one `run_all` actually iterates — a coverage statement that disagrees with the
 # coverage, which is the one kind of bug this action cannot afford.
+from . import CRITICAL, HIGH
 from .. import compromise as _pkg
 from .users import real_users
 
@@ -115,12 +117,31 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     if any(total.values()):
         named = ", ".join(r.name for r in results if r.findings)
         parts = [f"{total[s]} {s}" for s in arender.SEVERITY_ORDER if total.get(s)]
-        out.summary_warn(f"{named} — {', '.join(parts)}{coverage}")
+        line = f"{named} — {', '.join(parts)}{coverage}"
+        # **The exit status turns on severity, not on the existence of findings.**
+        #
+        # Every real machine has some. The reference desktop has four — two unowned
+        # vendor units, an unowned cron entry timeshift wrote itself, and a self-updating
+        # AppImage — and none is worth failing a run over. Exiting non-zero on any
+        # finding would make `-M` red forever and teach people to ignore it, which is the
+        # mistake `-H` deliberately avoids for the same reason.
+        #
+        # High and Critical are different: those are the two bands that also print the
+        # preservation banner, so the exit status and the banner agree about what "stop
+        # and look at this" means. `kind=FOUND` follows `advisory-check`, which does the
+        # same for a Critical CVE with a fix available — the check worked, and the thing
+        # it found is what needs attention.
+        if total.get(CRITICAL) or total.get(HIGH):
+            out.summary_fail(line, kind=FOUND)
+        else:
+            out.summary_warn(line)
         _preserve_banner(out, total)
     elif not any(r.ran for r in results):
-        # Nothing examined at all. The strongest form of the invariant.
-        out.summary_warn(f"nothing was examined — {unable or 'every check'} could not "
-                         f"look, see above")
+        # Nothing examined at all. The strongest form of the invariant — and a genuine
+        # failure of the run rather than a finding, so it fails as BLIND: the summary
+        # must never let "could not look" pass for "looked and was happy".
+        out.summary_fail(f"nothing was examined — {unable or 'every check'} could not "
+                         f"look, see above", kind=BLIND)
     elif blind_count:
         # Something ran and found nothing, but not everything could look. "Nothing to
         # report" alone would claim coverage this run did not have.
@@ -151,8 +172,6 @@ def _preserve_banner(out, total: dict[str, int]) -> None:
     units — wopr's two runZero agent services are the working example — and a
     preservation warning over an explicable finding is how a genuine one gets ignored.
     """
-    from . import CRITICAL, HIGH
-
     if not (total.get(CRITICAL) or total.get(HIGH)):
         return
     out.warn("Before you change anything: do not reboot, do not delete the artifact, "
