@@ -254,7 +254,11 @@ def test_blindness_is_named_by_the_check_that_hit_it(tmp_path, monkeypatch, caps
 
     assert "var/spool/cron" in text, "the specific directory is named"
     assert "could not be read" in text
-    assert "run as root" in text
+    # The advice must match what fettle actually does: `-M` elevates itself, so the
+    # only way to be reading this line is a --dry-run, and telling the reader to
+    # "re-run with sudo" sends them to solve a problem they do not have.
+    assert "fettle elevates for you" in text
+    assert "sudo" not in text
     # And no blanket claim about things that were checked successfully.
     assert "user-scope persistence, at jobs" not in text
 

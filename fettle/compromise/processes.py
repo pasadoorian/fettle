@@ -260,7 +260,7 @@ def _listeners(backend, ctx, res: CheckResult) -> None:
         res.blind.append((
             f"{unresolved} of {len(sockets)} listening socket(s)",
             f"could not be traced to a process — /proc/<pid>/fd is unreadable for "
-            f"{denied} process(es) without root", ""))
+            f"{denied} process(es) without root, so run it without --dry-run and fettle elevates for you", ""))
 
 
 # --------------------------------------------------------- interfaces and /dev files

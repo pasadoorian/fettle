@@ -321,7 +321,7 @@ def _ebpf(backend, ctx, res: CheckResult) -> None:
             # `drwx-----T root:root` on the reference machine — this is the expected
             # unprivileged outcome, and it is blindness, not an empty result.
             res.blind.append(("pinned eBPF objects (/sys/fs/bpf)",
-                              "needs root to read — re-run with sudo to include it", ""))
+                              "needs root to read — run it without --dry-run and fettle elevates for you", ""))
 
     if pins is not None:
         res.checked += len(pins)
@@ -360,7 +360,7 @@ def _ebpf(backend, ctx, res: CheckResult) -> None:
     proc = command.run(["bpftool", "prog", "show"], capture=True)
     if proc.returncode != 0:
         res.blind.append(("loaded eBPF programs",
-                          "bpftool could not list them (it needs root)", ""))
+                          "bpftool could not list them — it needs root, so run it without --dry-run and fettle elevates for you", ""))
         return
     loaded = [ln for ln in (proc.stdout or "").splitlines() if ln and ln[0].isdigit()]
     res.checked += len(loaded)

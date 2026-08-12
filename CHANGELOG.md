@@ -11,6 +11,29 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.7.4] — "re-run with sudo" was advice for a problem you do not have
+
+Testing `-M` on a machine that now has `bpftool` turned up a wording bug rather than a
+code one.
+
+**`compromise-check` elevates itself.** It is classified read-only *and* needs-root, so a
+plain `fettle -M` re-execs under sudo once, up front — exactly as `sys-audit` does. The
+only invocation that stays unprivileged is `--dry-run`. Yet every blind entry ended in
+*"re-run with sudo to include it"*, which tells the reader to do something they never
+needed to do, about a line they could only be reading under `--dry-run` in the first
+place. All five now say *"run it without `--dry-run` and fettle elevates for you"*.
+
+### Requirements, rewritten
+
+- **The install commands are spelled out for all three families** rather than left to a
+  table cell, and now cover `bpftool` alongside `checksec`.
+- **`bpftool` needs root to list anything** — it exits **255** for an ordinary user with
+  the error on stderr and nothing on stdout. Installing it is therefore only half the
+  job: it helps a run that elevates, which a plain `fettle -M` does and a `--dry-run`
+  does not. That is the fact a prerequisite list is actually for, and it was missing.
+- The Arch/Manjaro package remains `bpf`; verified installed and working here
+  (`bpftool v7.8.0`, from `bpf 7.1.7-1`).
+
 ## [1.7.3] — the `bpftool` install hint named a package that does not exist on Arch
 
 `compromise-check` reports a missing `bpftool` as blindness and offers the command that

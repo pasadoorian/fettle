@@ -216,17 +216,27 @@ with a note**, so you install only what the commands you actually use need.
 | kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
 | flatpak / snap | — | `flatpak`, `snapd` |
 | hardening audit (`-H`) | `checksec` | `checksec` |
-| compromise indicators (`-M`) | `bpf` (optional — **not** `bpftool`) | `bpftool` (optional) |
+| compromise indicators (`-M`) | `bpf` — **not** `bpftool` | `bpftool` |
 
-(RHEL family: `checksec` too — `dnf install checksec`.)
+(RHEL family: `checksec` and `bpftool`, both `dnf install`.)
 
-Every tool above is optional and its check is skipped with a note when absent.
-The one you likely need to install is **`checksec`** for the hardening audit:
+Every tool above is optional and its check is skipped with a note when absent. Two are
+worth installing before you rely on the audits:
 
 ```sh
-sudo pacman -S checksec      # Arch / Manjaro
-sudo apt install checksec    # Debian / Ubuntu
+sudo pacman -S checksec bpf          # Arch / Manjaro
+sudo apt install checksec bpftool    # Debian / Ubuntu
+sudo dnf install checksec bpftool    # RHEL family (checksec needs EPEL)
 ```
+
+**On Arch and Manjaro `bpftool` ships in the `bpf` package** — there is nothing called
+`bpftool` in the repos or the AUR. Debian, Ubuntu and the RHEL family each name the
+package after the binary.
+
+**Installing it is half the job: `bpftool` also needs root to list anything.** Without
+it, `-M` examines only *pinned* BPF objects, and a program can be loaded and attached
+without ever being pinned. `fettle -M` elevates itself, so a plain run gets both — it is
+only `fettle -M --dry-run` that stays unprivileged and reports the gap.
 
 ### `pkg-audit` (package supply-chain)
 

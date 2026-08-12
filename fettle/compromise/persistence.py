@@ -299,7 +299,7 @@ def _user_units(ctx, res: CheckResult) -> None:
     if unreadable:
         res.blind.append((
             f"user services for {unreadable} account(s)",
-            "their home directories are not readable — run as root to include them", ""))
+            "their home directories are not readable — run it without --dry-run and fettle elevates for you", ""))
 
 
 def _system_cron(backend, ctx, res: CheckResult) -> None:
@@ -362,7 +362,7 @@ def _user_cron(ctx, res: CheckResult) -> None:
     if blocked:
         res.blind.append(("per-user crontabs",
                           f"{', '.join(blocked)} exists but could not be read — "
-                          "run as root to include it", ""))
+                          "run it without --dry-run and fettle elevates for you", ""))
 
 
 def _at_jobs(ctx, res: CheckResult) -> None:
@@ -371,7 +371,7 @@ def _at_jobs(ctx, res: CheckResult) -> None:
     if blocked:
         res.blind.append(("queued `at` jobs",
                           f"{', '.join(blocked)} exists but could not be read — "
-                          "run as root to include it", ""))
+                          "run it without --dry-run and fettle elevates for you", ""))
     jobs = cron.at_jobs(ctx.root)
     res.checked += len(jobs)
     if not jobs:
