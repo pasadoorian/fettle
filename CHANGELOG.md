@@ -11,6 +11,75 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.5.0] — running-process provenance
+
+Phase 3 of `compromise-check`, and the last of its detection work. One question asked
+five ways: **is anything executing that the package manager never put here?**
+
+### Added — `processes` group
+
+- **Executed from memory.** A process whose binary came from `memfd_create` was never a
+  file: nothing to hash, no package that could own it, nothing for `pkg-integrity` to
+  verify. It is the technique modern Linux malware converged on precisely because it
+  defeats every check that starts by looking at a file. Reported **Critical**, with the
+  command line and the two commands that capture it before it exits.
+- **Deleted but running**, graded by provenance rather than by the deletion. A binary
+  that ran from `/tmp` and then unlinked itself is **High**; an unowned one in an
+  ordinary location is **Low**; a package-owned one is not a finding at all — it is an
+  upgrade that replaced a running process, and the useful advice is "restart it to pick
+  up the fix".
+- **Listening sockets with no package behind them.** The modern replacement for
+  rkhunter's `backdoorports.dat`: a port number means nothing — 4444 is as legitimate as
+  443 if something you installed is behind it — while a listener nobody can account for
+  means something whatever port it is on. Parsed from `/proc/net/*` and mapped to
+  processes through `/proc/<pid>/fd`, no external tools.
+- **Promiscuous interfaces**, and **regular files under `/dev`** — two ideas taken from
+  rkhunter and chkrootkit that are still true and still cheap.
+
+### chkrootkit's best idea, implemented so that it can fire
+
+Version 0.59 added a "process executed from memory" test, and it **cannot match**:
+
+```sh
+ls -alR /proc/*/exe | grep "^\/memfd:.*?\(deleted\)"
+```
+
+`^` anchors to a line that begins `lrwxrwxrwx 1 root root 0 …`, not `/memfd:`, and
+`.*?` is a PCRE lazy quantifier that `grep` without `-P` reads as `.*` followed by a
+literal `?`. Verified against a synthetic line of exactly the right shape: it matches
+neither the original pattern nor the anchor-stripped one. The threat is the right one
+to pick, so it is implemented here properly — and verified against a **real** fileless
+process (a memfd holding an interpreter, `execve`'d), not a mock.
+
+### Two calibrations that came from being wrong first
+
+- **Bridge ports are excluded from the promiscuous check.** The first run reported two
+  findings on the reference machine — the physical NIC and a docker `veth`. Both are
+  bridge ports, and a bridge member *has* to accept frames not addressed to it; that is
+  what bridging is. Without the exclusion this fires on every VM host and every
+  container host in existence. `/sys/class/net/<if>/brport` exists for exactly the
+  bridge ports, so it is a clean discriminator, and the excluded ones are still counted
+  in a note — silent filtering is indistinguishable from having found nothing.
+- **`ip link` and sysfs disagree about promiscuity, and the fix line says so.** On the
+  reference machine `ip link` prints `<BROADCAST,MULTICAST,UP,LOWER_UP>` with no
+  `PROMISC` while `/sys/class/net/<if>/flags` has the bit set; `ip -d` reports the truth
+  as a separate `promiscuity` counter. Anyone cross-checking a finding with `ip link`
+  and seeing no PROMISC would reasonably conclude fettle was wrong.
+
+### Coverage
+
+**Unprivileged, 9 of 26 listening sockets resolved** on the reference machine: mapping a
+socket to its process means reading `/proc/<pid>/fd`, which an ordinary user cannot do
+for anyone else's processes — 760 were denied. Reporting "no unowned listeners" from a
+third of the data would be a clean result over an unasked question, so the unresolved
+count is reported as blindness. As root the same run resolves everything.
+
+### Fixed
+
+- A pre-existing test time-bomb, in its own commit: a dashboard fixture pinned to a
+  wall-clock date asserted a host card reads OK, and the staleness threshold is 7 days,
+  so it passed for exactly a week and then failed forever.
+
 ## [1.4.0] — kernel, loader and boot chain
 
 Phase 2 of `compromise-check`: two new groups covering the layer below userspace. Five

@@ -60,7 +60,7 @@
 # ignored -- believing a check is off when it is running, and believing it is on when
 # it is not, are equally bad and equally silent.
 #[compromise]
-#disable_checks = ["persistence"]   # groups: persistence, kernel, boot
+#disable_checks = ["persistence"]   # groups: persistence, kernel, processes, boot
 
 
 # Reports & run logs. Reports go to ~/.fettle/reports/<host>/, per-run transcripts
