@@ -11,6 +11,50 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.7.0] — the QA sweep for `compromise-check`, and one table instead of four
+
+The sweep every other feature had. Five defects, all fixed; the write-up is in
+`docs/qa/compromise-check.md`.
+
+### Clear — the output
+
+**One table across every check group, ranked worst first**, replacing four separate
+tables with four repeated `SEVERITY / SUBJECT / FINDING` headers. The worst thing on the
+machine was previously somewhere in the middle. The per-group coverage lines stay above
+it — they carry the `(487 checked)` number, which a findings table cannot — and the GROUP
+column drops itself when every finding came from one group.
+
+**The table broke on the subjects it actually has.** A 56-character unit name against a
+30-character column took a row of its own and left the finding indented into the middle
+of the screen with nothing to its left; two of four findings on the reference machine
+looked like that. Now:
+
+- **Width follows the terminal**, capped at 120, and fixed at 80 when output is not a TTY
+  so a run-log does not change shape with the window that produced it.
+- **Middle-truncation keeping both ends.** Head-truncation renders
+  `rumble-agent-4b7a89f3-…` and `rumble-agent-e87f42e9-…` identically, turning two
+  findings into one indistinguishable pair.
+- **Column widths from the data**, never narrower than the header — with subjects like
+  `/tmp` and `/var` the computed width was 6 and the header read `SUBJECTFINDING`.
+
+`hardening-audit` shares the renderer and gets all of it.
+
+### Fixed — truthfulness
+
+- **`--only <non-default action>` blamed the backend and exited 0.**
+  `fettle -a --only compromise-check` said *"none of the default actions are implemented
+  by the arch backend"*, which is false twice over: the backend implements it, and the
+  real cause is that `--only` narrows the default set and this action is not in it. **Not
+  specific to this action** — `--only hardening-audit`, `--only kernel` and
+  `--only only-update` produced the same false sentence. Now says what was asked for,
+  that `--only` narrows rather than adds, the command that does work, and exits 1.
+- **`--quiet` was inverted.** `-M -q` suppressed the headers and the summary and printed
+  the entire findings table, because the body went through a bare `print()` that never
+  consulted `Output`. Fixed with a new `Output.detail()` channel, and applied to the
+  binary axis too so both halves of `-H` obey the flag rather than one of them. This is
+  one instance of the repo-wide `--quiet` defect on the outstanding list; the other call
+  sites are untouched.
+
 ## [1.6.1] — the README banner stops going stale
 
 It read **"This is 1.0.0 — the first official and tested release of fettle"** for six

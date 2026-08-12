@@ -244,7 +244,11 @@ def test_an_axis_that_passed_still_prints(tmp_path):
     ran — which is the invariant, applied to the rendering layer."""
     res = AxisResult(name="filesystem", title="Filesystem hygiene", checked=7)
     line = arender.screen([res])[0]
-    assert "Filesystem hygiene" in line
+    # The coverage lines are keyed by the SHORT axis name, which is also what the
+    # table's GROUP column carries — so a row can be traced back to its tally without
+    # the reader holding a title-to-name mapping in their head. The long title is in
+    # the saved report, where the space is free.
+    assert "filesystem" in line
     assert "nothing to report" in line
     assert "7 checked" in line
 
@@ -271,7 +275,10 @@ def test_findings_render_worst_first():
         Finding(check="c", subject="/high", detail="d", severity=HIGH),
         Finding(check="c", subject="/med", detail="d", severity=MEDIUM),
     ])
-    # [0] is the axis tally line, [1] the table header; the rows follow.
+    # Coverage lines, a blank, then the one table. Located by content rather than by
+    # index: the exact line numbers are layout, and layout is allowed to change.
     lines = arender.screen([res])
-    assert lines[1].split() == ["SEVERITY", "SUBJECT", "FINDING"]
-    assert [ln.split()[1] for ln in lines[2:]] == ["/high", "/med", "/low"]
+    header = next(i for i, ln in enumerate(lines) if ln.startswith("SEVERITY"))
+    assert lines[header].split() == ["SEVERITY", "SUBJECT", "FINDING"]
+    rows = lines[header + 1:]
+    assert [ln.split()[1] for ln in rows] == ["/high", "/med", "/low"]

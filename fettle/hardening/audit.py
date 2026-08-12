@@ -95,9 +95,12 @@ def _binary_axis(backend: PackageBackend, ctx: Context) -> _Binary:
         out.ok(f"no hardening deviations from the distro baseline "
                f"({scan_stats['analyzed']} binaries analysed).")
     else:
-        print(f"  Binary hardening: {report.band_summary(reports)}")
+        # Through `out.detail`, not `print`: the axes table below already honours
+        # `--quiet`, and one half of an action's output obeying the flag while the
+        # other ignores it is worse than neither doing so.
+        out.detail(f"Binary hardening: {report.band_summary(reports)}")
         for line in report.render_screen(reports):
-            print(f"    {line}")
+            out.detail(f"  {line}")
         # Deviations are open items, not an accomplishment. A green tick over
         # "1 Critical, 7 High, …" reads as a pass at a glance.
         #
@@ -134,7 +137,7 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
     excl = report.exclusions(ctx.config)
     hidden = axes.apply_excludes(results, excl.checks, excl.paths)
     for line in arender.screen(results):
-        print(f"  {line}")
+        out.detail(line)
     for res in results:
         for what, why, package in res.blind:
             out.not_checked(what, why, package)

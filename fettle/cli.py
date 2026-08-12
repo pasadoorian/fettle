@@ -1432,6 +1432,25 @@ def _main(argv: list[str]) -> int:
         # "whatever applies here" and the honest answer was "nothing does". Unusual, but
         # not a failure of the run, and failing would make a bare `fettle` red on a
         # minimal backend forever.
+        if args.only and not skipped:
+            # `--only` filters the set being run, and the set being run is the DEFAULT
+            # one unless you named something. So `fettle -a --only compromise-check`
+            # intersects "the defaults" with "compromise-check" and gets nothing —
+            # correct behaviour, reported with a message that blamed the backend for it.
+            #
+            # Found by the compromise-check QA sweep and NOT specific to it: `--only`
+            # with `hardening-audit`, `kernel` or `only-update` produced the same false
+            # sentence, and each of those is implemented by the arch backend perfectly
+            # well. A message that names the wrong cause sends the reader to check the
+            # wrong thing.
+            named = ", ".join(sorted(args.only))
+            out.err(f"nothing to do — --only {named}, but none of those are in the "
+                    f"action set being run. --only narrows a set; it does not add to "
+                    f"one. Run them directly instead: fettle {' '.join(sorted(args.only))}")
+            out.summary_fail(f"no action ran — --only {named} matched nothing in the "
+                             f"selected set", kind=BLIND)
+            out.print_summary()
+            return 1
         if from_default:
             out.warn("nothing to do — none of the default actions are implemented by "
                      f"the {backend.name} backend.")

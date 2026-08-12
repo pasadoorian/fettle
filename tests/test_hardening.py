@@ -484,7 +484,9 @@ def test_a_dead_binary_axis_does_not_take_the_other_axes_down(tmp_path, capsys):
     axes that need no external tool. One missing tool must cost one axis.
     """
     _run_audit(tmp_path, **{"fettle.command.which": {"return_value": None}})
-    assert "Filesystem hygiene" in capsys.readouterr().out
+    # Keyed by the short axis name since v1.7.0 — the same token the table's GROUP
+    # column uses, so a row traces back to its coverage line.
+    assert "filesystem:" in capsys.readouterr().out
 
 
 def test_deviations_are_not_reported_with_a_green_tick(tmp_path, capsys):

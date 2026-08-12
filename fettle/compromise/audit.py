@@ -95,7 +95,7 @@ def run(backend: PackageBackend, ctx: Context) -> Result:
         return Result()
 
     for line in arender.screen(results):
-        print(f"  {line}")
+        out.detail(line)
     for res in results:
         for what, why, package in res.blind:
             out.not_checked(what, why, package)

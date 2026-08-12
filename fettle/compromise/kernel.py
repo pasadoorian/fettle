@@ -192,7 +192,7 @@ def _taint(root: Path, flagged: dict[str, str], enforce: str, res: CheckResult) 
                 f"or vendor module built and swapped during an update; it is also what "
                 f"a kernel-module rootkit that removed itself would leave behind. "
                 f"Module signature enforcement is {enforce}"),
-        summary="kernel taint no loaded module explains",
+        summary="no loaded module explains it",
         fix="find out what set it: journalctl -k | grep -i -E 'taint|module verification'"))
 
 

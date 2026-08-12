@@ -77,7 +77,7 @@ def test_the_table_has_a_header_and_one_row_per_finding():
         Finding(check="a", subject="/tmp", detail="world-writable — anything", severity=HIGH),
         Finding(check="b", subject="/var", detail="mounted without nodev — meh", severity=LOW)))
 
-    assert rows[0].split() == ["SEVERITY", "SUBJECT", "FINDING"]
+    assert rows[0].split() == ["SEVERITY", "SUBJECT", "FINDING"]   # no GROUP: one axis
     assert rows[1].startswith("High")
     assert "/tmp" in rows[1] and "world-writable" in rows[1]
     assert "anything" not in rows[1]           # the why stays out of the table
@@ -92,17 +92,43 @@ def test_rows_are_ordered_worst_first():
     assert [r.split()[0] for r in rows[1:]] == ["Critical", "High", "Medium", "Low"]
 
 
-def test_a_long_subject_takes_its_own_row_rather_than_being_truncated():
-    """A systemd unit name cut mid-hash is not one you can look up, and overflowing it
-    in place pushes the finding off the right margin and ruins the alignment."""
-    unit = "rumble-agent-4b7a89f3-5659-48e1-bfb9-e9787dae3cf6.service"
-    rows = render.table(_res(Finding(check="x", subject=unit,
-                                     detail="exposure 9.6 UNSAFE — something",
-                                     severity=MEDIUM)))
+def test_a_long_subject_is_truncated_in_the_middle_keeping_both_ends():
+    """One scannable row beats a complete name on a row of its own.
 
-    assert rows[1] == f"{'Medium':<10}{unit}"          # whole name, its own row
-    assert "exposure 9.6 UNSAFE" in rows[2]            # finding starts on the next
-    assert rows[2].startswith(" " * 40)                # ...in the FINDING column
+    The previous behaviour gave an over-long subject its own row and put the finding on
+    the next one, which left the finding text floating mid-screen with nothing to its
+    left. Middle-truncation keeps the row intact — and keeps **both ends**, which is
+    what makes the two runZero units below distinguishable: they differ only in the
+    UUID, so head-truncation would render them identically. The untruncated name is in
+    the saved report.
+    """
+    a = "rumble-agent-4b7a89f3-5659-48e1-bfb9-e9787dae3cf6.service"
+    b = "rumble-agent-e87f42e9-2542-4615-891b-9848a53c857d.service"
+    rows = render.table(_res(
+        Finding(check="x", subject=a, detail="exposure 9.6 UNSAFE — something",
+                severity=MEDIUM),
+        Finding(check="x", subject=b, detail="dead unit — its binary is gone",
+                severity=MEDIUM)), width=100)
+
+    assert len(rows) == 3, "one header, one row each — nothing spilled onto a second"
+    assert "…" in rows[1] and "…" in rows[2]
+    assert rows[1] != rows[2], "the two units must not collapse into the same string"
+    assert rows[1].startswith("Medium    rumble-agent-")      # head kept
+    assert ".service" in rows[1]                              # tail kept too
+    assert "exposure 9.6 UNSAFE" in rows[1]                   # on the SAME row
+
+
+def test_truncation_keeps_both_ends():
+    assert render.truncate_middle("abcdefghij", 20) == "abcdefghij"   # fits, untouched
+    out = render.truncate_middle("abcdefghijklmnop", 9)
+    assert out == "abcd…mnop"                       # 4 + ellipsis + 4 = 9
+    assert render.truncate_middle("abcdef", 1) == "a"   # degenerate, still bounded
+
+
+def test_width_is_stable_when_output_is_not_a_terminal():
+    """A run-log whose column widths depend on the window that produced it is a log you
+    cannot diff against yesterday's."""
+    assert render.screen_width() == 80        # pytest captures stdout: not a TTY
 
 
 def test_a_short_subject_stays_on_one_row():
@@ -172,3 +198,16 @@ def test_kernel_labels_are_short_too():
     root = Path("/nonexistent")
     for f in kernel.redirect_findings(root):
         assert len(f.short()) <= _MAX_LABEL
+
+
+def test_short_subjects_do_not_collapse_the_header():
+    """`SUBJECT` is seven characters, and the column width comes from the data.
+
+    With subjects like `/tmp` and `/var` the computed width was 6, so the header
+    rendered as `SUBJECTFINDING` with nothing between them.
+    """
+    rows = render.table(_res(
+        Finding(check="a", subject="/tmp", detail="world-writable — why", severity=HIGH),
+        Finding(check="b", subject="/var", detail="no nodev — why", severity=LOW)))
+    assert rows[0].split() == ["SEVERITY", "SUBJECT", "FINDING"]
+    assert "SUBJECT " in rows[0]

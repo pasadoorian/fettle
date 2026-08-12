@@ -98,6 +98,18 @@ class Output:
         if not self.quiet:
             print(f"  {self.DIM}{msg}{self.NC}")
 
+    def detail(self, line: str) -> None:
+        """A line of an action's body output — a table row, a rendered result.
+
+        Exists because `--quiet` was inverted for the two audits that print a table:
+        they used a bare `print()`, so `-q` suppressed their headers and their summary
+        and left the entire table on screen. Blank lines pass through unindented so a
+        renderer can separate its own sections without emitting trailing whitespace.
+        """
+        if self.quiet:
+            return
+        print(f"  {line}" if line else "")
+
     def _to_stderr(self, line: str) -> None:
         """Write a diagnostic, keeping it in step with the surrounding output.
 
