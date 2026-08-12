@@ -25,7 +25,7 @@ but explains itself badly is still a **FAIL**, recorded as such.
 
 ## Where the pass finished (2026-08-06)
 
-**23 of 24 features swept**, `web` on hold by decision and marked experimental. **All ten
+**24 of 25 features swept**, `web` on hold by decision and marked experimental. (`compromise-check` arrived after this pass and was swept on its own at v1.6.1.) **All ten
 cross-cutting rows swept.** Roughly 90 findings fixed across the pass, at v0.110.0 with
 1172 unit tests.
 
@@ -137,6 +137,7 @@ Status of each feature's QA pass. `—` = not started.
 | advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight); pre-update gate redesigned** |
 | advisory-update | — | [advisory-update.md](advisory-update.md) | **swept — 3 fixed; a failing timer looked healthy** |
 | report | — | [report.md](report.md) | **swept — 4 fixed, then a UX pass: card verdict, delta, severity filter, links** |
+| compromise-check | `-M` | [compromise-check.md](compromise-check.md) | **swept at v1.6.1 — 5 findings, all fixed; 2 of them not specific to it** |
 | web | — | — | **ON HOLD — marked experimental (v0.87.0); the one feature not swept** |
 | remote | — | [remote.md](remote.md) | **swept — 4 fixed, on top of 3 found while sweeping other features** |
 

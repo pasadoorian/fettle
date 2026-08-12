@@ -11,6 +11,21 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.7.2] — docs catch up with the layout, and the QA matrix gains a row
+
+Documentation only.
+
+- **`docs/qa/README.md`** lists `compromise-check` in the coverage matrix (swept at
+  v1.6.1, five findings, all fixed) and the headline count moves to **24 of 25 features
+  swept** — `web` remains the one on hold.
+- **The wiki's hardening page** still described the table-per-axis layout that v1.7.0
+  replaced. It now describes one ranked table with a GROUP column, and records the two
+  behaviours a reader is most likely to be surprised by: subjects truncate in the
+  **middle** rather than at the end, and width follows the terminal to a cap of 120 but
+  is fixed at 80 when piped.
+- **The wiki's compromise page** gains a *How to read the output* section with a worked
+  example, which it had been missing entirely.
+
 ## [1.7.1] — the smoke tests were asserting on a label that moved
 
 v1.7.0 keyed the audit's coverage lines by the short axis **name** (`filesystem:`)
