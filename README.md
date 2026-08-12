@@ -216,7 +216,7 @@ with a note**, so you install only what the commands you actually use need.
 | kernels | `mhwd-kernel` (Manjaro) | (built-in `dpkg`) |
 | flatpak / snap | — | `flatpak`, `snapd` |
 | hardening audit (`-H`) | `checksec` | `checksec` |
-| compromise indicators (`-M`) | `bpftool` (optional) | `bpftool` (optional) |
+| compromise indicators (`-M`) | `bpf` (optional — **not** `bpftool`) | `bpftool` (optional) |
 
 (RHEL family: `checksec` too — `dnf install checksec`.)
 

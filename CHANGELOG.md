@@ -11,6 +11,25 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.7.3] — the `bpftool` install hint named a package that does not exist on Arch
+
+`compromise-check` reports a missing `bpftool` as blindness and offers the command that
+would fix it. On Arch and Manjaro that command was **`sudo pacman -S bpftool`**, and
+there is no such package — not in the repos, not in the AUR. Reported by Paul, on the
+machine the feature was developed on.
+
+Measured rather than guessed this time: `pacman -Fx 'bin/bpftool$'` gives **`extra/bpf`**
+(part of the `linux-tools` group), while Debian 13 and Rocky 9 each carry a `bpftool`
+package of their own. The hint is now per-backend, the same way the `checksec` hint
+already was — and for the same stated reason, which this change is the counter-example
+to: *a confidently wrong install command is worse than none, because it sends someone to
+a shell prompt to be told the tool does not exist, and they conclude fettle is broken
+rather than that the hint was.*
+
+The README's Requirements table said `bpftool` in the Arch column too; both it and the
+wiki now name `bpf` and say outright that the package is not named after the binary
+everywhere. A parametrised test pins all three distro names.
+
 ## [1.7.2] — docs catch up with the layout, and the QA matrix gains a row
 
 Documentation only.

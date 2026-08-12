@@ -352,3 +352,33 @@ def test_secure_boot_disabled_says_what_that_costs(tmp_path):
     (efivars / "SecureBoot-8be4df61").write_bytes(b"\x06\x00\x00\x00\x00")
     res = boot.run(_Backend(), _ctx(tmp_path))
     assert any("Nothing cryptographically verifies" in n for n in res.notes)
+
+
+# ------------------------------------------------------------------- install hints
+
+
+@pytest.mark.parametrize("distro,package", [
+    ("arch", "bpf"),          # `bpftool` does NOT exist on Arch or in the AUR
+    ("debian", "bpftool"),
+    ("rhel", "bpftool"),
+])
+def test_the_bpftool_hint_names_the_package_that_exists(tmp_path, monkeypatch,
+                                                        distro, package):
+    """A confidently wrong install command is worse than none.
+
+    It sends the reader to a shell prompt to be told the package does not exist, after
+    which they conclude fettle is broken rather than that the hint was. The first
+    version of this said `pacman -S bpftool` — which installs nothing on Arch or
+    Manjaro, the machine it was written on. Measured: `pacman -Fx bin/bpftool$` gives
+    `extra/bpf` (part of the `linux-tools` group), while Debian 13 and Rocky 9 each
+    have a `bpftool` package of their own.
+    """
+    monkeypatch.setattr(kernel.command, "which", lambda name: None)
+    backend = _Backend()
+    backend.name = distro
+    _sysroot(tmp_path)
+    (tmp_path / "sys/fs/bpf").mkdir(parents=True)
+
+    res = kernel.run(backend, _ctx(tmp_path))
+    hints = [pkg for what, _why, pkg in res.blind if "eBPF programs" in what]
+    assert hints == [package]

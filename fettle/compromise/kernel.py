@@ -43,7 +43,7 @@ def run(backend, ctx) -> CheckResult:
     _ld_preload(backend, ctx, res)
     _modules(ctx, res)
     _hidden_processes(ctx, res)
-    _ebpf(ctx, res)
+    _ebpf(backend, ctx, res)
     return res
 
 
@@ -292,7 +292,7 @@ def _hidden_processes(ctx, res: CheckResult) -> None:
 # ---------------------------------------------------------------------- eBPF surface
 
 
-def _ebpf(ctx, res: CheckResult) -> None:
+def _ebpf(backend, ctx, res: CheckResult) -> None:
     """Pinned BPF objects and loaded programs.
 
     **A clean result here is weaker evidence than a clean result anywhere else in this
@@ -343,10 +343,18 @@ def _ebpf(ctx, res: CheckResult) -> None:
                 f"legitimately, so these are listed rather than judged.")
 
     if not command.which("bpftool"):
+        # **The package is not called the same thing everywhere, and guessing sends the
+        # reader to a shell prompt to be told it does not exist — after which they
+        # conclude fettle is broken rather than that the hint was.** Measured: Arch and
+        # Manjaro ship it in `bpf` (part of the `linux-tools` group; `pacman -Fx
+        # bin/bpftool$` confirms), while Debian 13 and Rocky 9 both have a `bpftool`
+        # package of its own. The first version of this hint said `pacman -S bpftool`,
+        # which installs nothing on the machine it was written on.
+        package = {"arch": "bpf"}.get(backend.name, "bpftool")
         res.blind.append((
             "loaded eBPF programs", "bpftool is not installed, so only pinned objects "
             "were examined — a program can be loaded and attached without being pinned",
-            "bpftool"))
+            package))
         return
 
     proc = command.run(["bpftool", "prog", "show"], capture=True)
