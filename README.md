@@ -2,9 +2,12 @@
   <img src="assets/fettle-logo-800w.png" alt="fettle" width="440">
 </p>
 
-> # **This is 1.0.0 — the first official and tested release of fettle.**
+> # **fettle is stable and released.**
 >
-> The web interface (`fettle web`) is still experimental.
+> 1.0.0 was the first official, tested release; see
+> [Releases](https://github.com/pasadoorian/fettle/releases) for the current version and
+> [CHANGELOG.md](CHANGELOG.md) for what changed. The web interface (`fettle web`) is
+> still experimental.
 
 > *in fine fettle* — in good working order.
 
@@ -446,7 +449,7 @@ curated command set.
 | Auto-update posture report (is the system set to auto-update itself?) | ❌ (runs upgrades; doesn't report update config) | ✅ `auto-updates` (`-x`) |
 | End-of-run summary | ✅ | ✅ (+ next steps) |
 | Runtime | single Rust binary | pure Python standard library (any `python3`; no `pip`) |
-| Maturity / ecosystem | established, widely packaged, large community | 1.0.0, three distro families (Arch, Debian, RHEL) |
+| Maturity / ecosystem | established, widely packaged, large community | released and stable, three distro families (Arch, Debian, RHEL) |
 | **Package provenance / tamper audit** (AUR/APT/Flatpak/Snap) | ❌ | ✅ `pkg-audit` |
 | **System hardening audit** (build flags, filesystem, services, kernel, sshd, firewall, TLS certs) | ❌ | ✅ `hardening-audit` (`-H`) |
 | **Firmware / boot security scan** (Secure Boot, TPM, microcode, chipsec…) | ❌ | ✅ `sys-audit` |

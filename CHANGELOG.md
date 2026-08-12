@@ -11,6 +11,17 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.6.1] — the README banner stops going stale
+
+It read **"This is 1.0.0 — the first official and tested release of fettle"** for six
+releases, so anyone landing on the front page was told the current version was 1.0.0
+while the repo was at 1.6.0. Point-in-time wording in a place nobody re-reads.
+
+It now says fettle is stable and released, and points at the Releases page and the
+changelog for the current number — true at every version, and nothing to remember to
+edit. The topgrade comparison's maturity row loses its pinned version for the same
+reason.
+
 ## [1.6.0] — `compromise-check` lands: dashboard, exit status, documentation
 
 Phase 4, and the feature is finished. The detection work shipped in 1.1.0-1.5.0; this is
