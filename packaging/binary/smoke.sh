@@ -48,8 +48,13 @@ audit=$("$bin" -H --dry-run 2>&1) || fail "hardening-audit did not run"
 
 # Ask fettle itself which axes should be there rather than listing them here — the same
 # reason the build derives its --include-module flags.
+# Matched on the short axis NAMES, which is what the screen keys its coverage lines by
+# — and which are also the `[hardening] disable_axes` keys and the JSON keys, so they
+# are the most stable token fettle has. The prose titles were used here until v1.7.0,
+# when the renderer switched to names and every one of these greps silently stopped
+# matching. The failure was invisible to the unit suite because it lives here.
 axes=$(printf '%s' "$audit" | grep -cE \
-    "Filesystem hygiene|Service exposure|Kernel runtime posture|SSH server|Host firewall|TLS certificates") \
+    "^ *(filesystem|services|kernel|ssh|firewall|certs):") \
     || axes=0
 [ "$axes" -ge 6 ] || fail "only $axes of 6 axes reported — they were not compiled in"
 ok "all 6 axes reported"
@@ -91,7 +96,7 @@ case "$bare" in
     *UnicodeEncodeError*) fail "UnicodeEncodeError with no locale set — the entry point
          is not forcing UTF-8 on the output streams" ;;
 esac
-printf '%s' "$bare" | grep -q "Filesystem hygiene" \
+printf '%s' "$bare" | grep -q "^ *filesystem:" \
     || fail "no axis output with an empty environment"
 ok "runs with no locale set"
 

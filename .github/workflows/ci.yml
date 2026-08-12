@@ -39,7 +39,7 @@ jobs:
             apt-get -qq update >/dev/null && apt-get -qq install -y python3 >/dev/null
             dpkg -i /d/fettle_*.deb
             fettle --version
-            fettle -H --dry-run | grep -q "Filesystem hygiene"'
+            fettle -H --dry-run | grep -q "^ *filesystem:"'
 
       - name: rpm — build, install on Rocky 9, run
         run: |
@@ -51,7 +51,7 @@ jobs:
           docker run --rm -v "$PWD/dist":/d:ro rockylinux/rockylinux:9 sh -c '
             dnf -q -y install /d/fettle-*.rpm >/dev/null
             fettle --version
-            fettle -H --dry-run | grep -q "Filesystem hygiene"'
+            fettle -H --dry-run | grep -q "^ *filesystem:"'
 
       - name: arch — build, install on Arch, run
         run: |
@@ -69,4 +69,4 @@ jobs:
             pacman -Sy --noconfirm >/dev/null
             pacman -U --noconfirm /d/fettle-*.pkg.tar.zst >/dev/null
             fettle --version
-            fettle -H --dry-run | grep -q "Filesystem hygiene"'
+            fettle -H --dry-run | grep -q "^ *filesystem:"'

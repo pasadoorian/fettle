@@ -11,6 +11,24 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.7.1] — the smoke tests were asserting on a label that moved
+
+v1.7.0 keyed the audit's coverage lines by the short axis **name** (`filesystem:`)
+instead of the prose title (`Filesystem hygiene`). **Nine packaging smoke assertions
+were grepping for the title** — three in `ci.yml`, five in `release.yml` and two in
+`packaging/binary/smoke.sh` — and every one of them silently stopped matching.
+
+CI caught it on the `packages` job; the unit suite could not, because the assertions live
+in the workflows rather than in pytest. The one in `smoke.sh` mattered most: it is the
+guard that proves the axes were **compiled into the binary**, whose whole design point is
+that a build missing them looks cautious rather than broken. It would have failed the
+next release tag.
+
+All nine now match on the axis **names**, which are also the `[hardening] disable_axes`
+keys, the JSON keys and the table's GROUP column — the most stable token fettle has for
+this. Verified by building the `.deb` and running the exact CI command against it in a
+Debian 12 container locally, rather than by pushing and watching.
+
 ## [1.7.0] — the QA sweep for `compromise-check`, and one table instead of four
 
 The sweep every other feature had. Five defects, all fixed; the write-up is in

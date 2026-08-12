@@ -133,7 +133,7 @@ jobs:
                 apt-get -qq update >/dev/null
                 apt-get -qq install -y /d/fettle_*.deb >/dev/null
                 fettle --version
-                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+                fettle -H --dry-run | grep -q "^ *filesystem:"'
               ;;
             rpm)
               # Rocky 9's python3 is 3.9, so this also proves the boolean Requires pulls
@@ -141,14 +141,14 @@ jobs:
               docker run --rm -v "$PWD/dist":/d:ro rockylinux/rockylinux:9 sh -c '
                 dnf -q -y install /d/fettle-*.rpm >/dev/null
                 fettle --version
-                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+                fettle -H --dry-run | grep -q "^ *filesystem:"'
               ;;
             arch)
               docker run --rm -v "$PWD/dist":/d:ro archlinux:latest sh -c '
                 pacman -Sy --noconfirm >/dev/null
                 pacman -U --noconfirm /d/fettle-*.pkg.tar.zst >/dev/null
                 fettle --version
-                fettle -H --dry-run | grep -q "Filesystem hygiene"'
+                fettle -H --dry-run | grep -q "^ *filesystem:"'
               ;;
             zipapp)
               # Rocky 9 on purpose: its python3 is 3.9, so this proves the launcher
@@ -158,7 +158,7 @@ jobs:
                 dnf -q -y install python3.11 tar gzip >/dev/null
                 cd /tmp && tar -xzf /d/fettle-*-zipapp.tar.gz && cd fettle-*/
                 ./fettle --version
-                ./fettle -H --dry-run | grep -q "Filesystem hygiene"'
+                ./fettle -H --dry-run | grep -q "^ *filesystem:"'
               ;;
             binary)
               # debian:13 with NOTHING installed — no python, no locale. It is where the
@@ -167,7 +167,7 @@ jobs:
               docker run --rm -v "$PWD/dist":/d:ro debian:13 sh -c '
                 cd /tmp && tar -xzf /d/fettle-*-linux-x86_64.tar.gz && cd fettle-*/
                 ./fettle --version | grep -q "(binary)"
-                ./fettle -H --dry-run | grep -q "Filesystem hygiene"'
+                ./fettle -H --dry-run | grep -q "^ *filesystem:"'
               ;;
           esac
 
