@@ -22,6 +22,24 @@ def _write_report_json(base, host, tool, ts, data):
          "timestamp": ts, "fettle_version": "0.12.0", "data": data}))
 
 
+def _recent(hours_ago: int = 1) -> str:
+    """A report timestamp relative to now, in fettle's `YYYYMMDD-HHMMSS` form.
+
+    Any test that means "this host reported **recently**" has to generate its fixture
+    rather than hardcode one, because the dashboard's staleness rule compares against
+    the wall clock: `[reports] stale_days` defaults to 7, so a hardcoded date passes
+    for exactly a week after whoever wrote it, then fails forever. That is not
+    hypothetical — `test_a_clean_host_says_OK` pinned 2026-08-05 and started failing on
+    2026-08-12, seven days later, with no code change to blame.
+
+    The other fixtures in this file hardcode deliberately old dates and are fine: they
+    either assert the staleness warning itself or do not touch it.
+    """
+    from datetime import datetime, timedelta
+
+    return (datetime.now() - timedelta(hours=hours_ago)).strftime("%Y%m%d-%H%M%S")
+
+
 # -- name parsing ------------------------------------------------------------
 def test_parse_name_splits_tool_and_timestamp():
     assert htmlreport._parse_name("hardening-audit-20260721-152641") == \
@@ -435,7 +453,7 @@ def test_card_flags_a_host_that_stopped_reporting(tmp_path):
 
 
 def test_a_clean_host_says_OK(tmp_path):
-    _write_report_json(tmp_path, "h1", "sys-audit", "20260805-010101",
+    _write_report_json(tmp_path, "h1", "sys-audit", _recent(),
                        {"categories": ["Secure Boot"], "level_counts": {"ok": 4},
                         "text": "[ok] Secure Boot: Enabled"})
     body = _card(tmp_path)
