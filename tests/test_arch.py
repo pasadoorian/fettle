@@ -10,6 +10,12 @@ from fettle.output import Output
 
 
 def _ctx(cfg=None, **kw):
+    # `root` defaults to a path that cannot exist so no test in this file silently
+    # depends on the developer's own machine. That is not hypothetical: once
+    # `clean_caches` started reading /var/lib/pacman/db.lck, every clean test would
+    # have passed or failed according to whether a pacman transaction happened to be
+    # running when pytest was invoked.
+    kw.setdefault("root", Path("/nonexistent-fettle-test-root"))
     return Context(output=Output(color=False), config=cfg or Config(),
                    sudo_user="paul", user_home=Path("/home/paul"), **kw)
 
@@ -875,3 +881,106 @@ def test_a_real_run_writes_the_review_report_instead(capsys, tmp_path):
     text = "".join(capsys.readouterr())
     assert "would be saved" not in text
     assert "saved to" in text
+
+
+# ---------------------------------------------------------- the pacman database lock
+#
+# libalpm's /var/lib/pacman/db.lck exists to stop two package transactions running at
+# once. `clean_caches` used to open with an unconditional `rm -f` on it, described as
+# "removed stale pacman db lock" — but nothing established that it was stale. Deleting
+# a lock that pacman, pamac or an AUR helper is holding lets a second transaction start
+# against the same database, which is how a package database gets corrupted.
+
+
+def _lock(root: Path, *, held_by: tuple[int, str] | None = None) -> Path:
+    """A pacman lock under `root`, optionally with a fake /proc entry holding it."""
+    lock = root / "var/lib/pacman/db.lck"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("")
+    if held_by:
+        pid, comm = held_by
+        fd_dir = root / f"proc/{pid}/fd"
+        fd_dir.mkdir(parents=True, exist_ok=True)
+        # os.stat() follows this symlink, so the fd reports the lock's real inode —
+        # which is how the check identifies a holder without shelling out to lsof.
+        (fd_dir / "3").symlink_to(lock)
+        (root / f"proc/{pid}/comm").write_text(comm + "\n")
+    return lock
+
+
+def test_the_pacman_lock_is_never_deleted(tmp_path):
+    """The regression guard. No code path may remove this file."""
+    _lock(tmp_path)
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        ArchBackend().clean_caches(_ctx(root=tmp_path))
+    removals = [c for c, _ in calls
+                if c[:2] == ["rm", "-f"] and "db.lck" in " ".join(c)]
+    assert removals == [], f"fettle tried to delete the lock: {removals}"
+
+
+def test_a_held_lock_stops_the_clean_and_names_the_holder(tmp_path, capsys):
+    """A live transaction is worth more than a cleaned cache."""
+    _lock(tmp_path, held_by=(4242, "pacman"))
+    calls, fake = _recorder()
+    ctx = _ctx(root=tmp_path)
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        result = ArchBackend().clean_caches(ctx)
+
+    assert result.ok is False, "a refused clean must not report success"
+    assert calls == [], "nothing may run while a transaction holds the lock"
+    # One readouterr() call — a second returns empty, which is how a test can assert
+    # on output it never actually looked at.
+    captured = capsys.readouterr()
+    seen = captured.out + captured.err
+    assert "4242" in seen and "pacman" in seen, "name the holder, not just the fact"
+    assert "db.lck" in seen
+    assert "4242" in result.summary, "and carry it into the summary line"
+
+
+def test_an_unheld_lock_is_reported_and_the_clean_proceeds(tmp_path, capsys):
+    """A genuinely stale lock is rare, and removing it for you is still not fettle's
+    call — name it, give the command, and get on with the cache."""
+    _lock(tmp_path)
+    root = tmp_path / "proc"
+    root.mkdir(exist_ok=True)
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        result = ArchBackend().clean_caches(_ctx(root=tmp_path))
+
+    assert result.ok is True
+    assert any(c[:1] == ["paccache"] for c, _ in calls), "the clean still happened"
+    out = capsys.readouterr().out
+    assert "db.lck" in out, "the lock is named"
+    assert "rm -f" in out or "remove" in out.lower(), "and so is the way to clear it"
+
+
+def test_no_lock_is_silent(tmp_path):
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        result = ArchBackend().clean_caches(_ctx(root=tmp_path))
+    assert result.ok is True
+    assert any(c[:1] == ["paccache"] for c, _ in calls)
+
+
+def test_when_the_holder_cannot_be_determined_the_clean_stops(tmp_path, capsys):
+    """"I could not tell" is not "it is safe" — the invariant, applied to a
+    destructive action rather than to a report."""
+    _lock(tmp_path)
+    proc = tmp_path / "proc/999"
+    (proc / "fd").mkdir(parents=True)
+    (proc / "fd").chmod(0o000)
+    try:
+        calls, fake = _recorder()
+        with patch("fettle.command.run", side_effect=fake), \
+             patch("fettle.command.which", return_value=True):
+            result = ArchBackend().clean_caches(_ctx(root=tmp_path))
+        assert result.ok is False
+        assert calls == []
+        assert "could not" in capsys.readouterr().err.lower()
+    finally:
+        (proc / "fd").chmod(0o755)

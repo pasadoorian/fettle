@@ -58,9 +58,17 @@ def _clean(backend: "PackageBackend", ctx: "Context") -> None:
     paths = backend.cache_paths(ctx)
     before = sum(dir_bytes(p) for p in paths)
     failed_before = len(ctx.failed_commands)
-    backend.clean_caches(ctx)
+    result = backend.clean_caches(ctx)
     freed = max(0, before - sum(dir_bytes(p) for p in paths))
     failed = ctx.failed_commands[failed_before:]
+
+    # A backend may decline rather than fail — the Arch clean refuses while a package
+    # transaction holds pacman's lock. Nothing ran and nothing was freed, so without
+    # this the branches below would reach "caches already clean — nothing to reclaim",
+    # which describes a clean that did not happen.
+    if result is not None and result.ok is False:
+        ctx.output.summary_fail(result.summary or "clean did NOT run", kind=FAILED)
+        return
 
     if ctx.dry_run:
         ctx.output.summary_add("would clean caches")

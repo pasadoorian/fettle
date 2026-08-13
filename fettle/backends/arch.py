@@ -18,6 +18,64 @@ from .base import (Context, PackageBackend, Result, Transaction, TxItem,
                    is_regenerated, sample_lines)
 
 _PACMAN_CACHE = Path("/var/cache/pacman/pkg")
+
+# libalpm takes this while a transaction is in flight. It is the only thing standing
+# between two package managers writing the same database at once.
+_PACMAN_LOCK = "var/lib/pacman/db.lck"
+
+
+def _comm(proc: Path, pid: str) -> str:
+    try:
+        return (proc / pid / "comm").read_text().strip() or "?"
+    except OSError:
+        return "?"
+
+
+def _lock_holders(root: Path, lock: Path) -> tuple[list[str], bool]:
+    """``(descriptions of processes holding `lock`, was the scan complete)``.
+
+    Matched on **inode**, not on the symlink's text: a path comparison would miss a
+    lock that was deleted and recreated under the same name, which is exactly the
+    window this check exists to notice.
+
+    Read from `/proc` directly rather than shelling out to `fuser` or `lsof` — neither
+    is installed on a minimal Arch system, and a missing tool would silently downgrade
+    a safety check into "no holders found".
+
+    The second element is the honest half. An unreadable `/proc/<pid>/fd` means the
+    answer is *unknown*, and the caller must not read that as *unheld*.
+    """
+    try:
+        want = lock.stat()
+    except OSError:
+        return [], True
+
+    proc = root / "proc"
+    try:
+        pids = sorted((p for p in os.listdir(proc) if p.isdigit()), key=int)
+    except OSError:
+        return [], False                       # no /proc at all: we cannot tell
+
+    holders, complete = [], True
+    for pid in pids:
+        fd_dir = proc / pid / "fd"
+        try:
+            fds = os.listdir(fd_dir)
+        except PermissionError:
+            complete = False                   # someone else's process, and not root
+            continue
+        except OSError:
+            continue                           # exited between listdir and here
+        for fd in fds:
+            try:
+                st = os.stat(fd_dir / fd)      # follows the symlink to the real file
+            except OSError:
+                continue
+            if st.st_ino == want.st_ino and st.st_dev == want.st_dev:
+                holders.append(f"pid {pid} ({_comm(proc, pid)})")
+                break
+    return holders, complete
+
 # Versions of each *installed* package kept in the cache by `clean`. Two means one
 # working rollback target plus a spare; 0 keeps none. Overridable via [clean].
 _DEFAULT_KEEP_VERSIONS = 2
@@ -323,9 +381,54 @@ class ArchBackend(PackageBackend):
             dirs.append(Path(f"/var/tmp/pamac-build-{ctx.sudo_user}"))
         return dirs
 
+    def _pacman_lock(self, ctx: Context) -> Result | None:
+        """Report on pacman's database lock. A Result means: do not clean.
+
+        **Never removes it.** The previous behaviour was an unconditional
+        ``rm -f /var/lib/pacman/db.lck`` announced as *"removed stale pacman db lock"* —
+        but nothing had established that it was stale. If pacman, pamac or an AUR helper
+        was mid-transaction, deleting its lock let a second transaction start against the
+        same database. A cleaned cache is not worth that trade, and a genuinely stale
+        lock is rare enough that naming it and handing over the command is better than
+        guessing on the user's behalf.
+
+        Refusing is also right for the clean itself, not only for the database: a live
+        transaction is reading the very cache files `paccache` would delete.
+        """
+        out = ctx.output
+        lock = ctx.root / _PACMAN_LOCK
+        if not lock.exists():
+            return None
+
+        holders, complete = _lock_holders(ctx.root, lock)
+        if holders:
+            who = ", ".join(holders)
+            out.warn(f"a package transaction is in progress — {who} holds {lock}. "
+                     f"Not cleaning: paccache would delete cache files that "
+                     f"transaction is reading.")
+            out.next_step("wait for it to finish, then re-run `fettle -c`")
+            return Result(ok=False,
+                          summary=f"clean REFUSED — a transaction is running ({who})")
+
+        if not complete:
+            # "I could not tell" is not "it is safe". Same rule the audits follow,
+            # applied to a destructive action.
+            out.warn(f"{lock} exists and fettle could not determine whether a process "
+                     f"holds it — parts of /proc were unreadable. Not cleaning.")
+            out.next_step("check for a running package manager, then re-run `fettle -c`")
+            return Result(ok=False,
+                          summary="clean REFUSED — could not tell if a transaction "
+                                  "is running")
+
+        out.note(f"{lock} exists but no process holds it — a leftover from an "
+                 f"interrupted transaction. fettle does not remove it for you; "
+                 f"if nothing is running: sudo rm -f {lock}")
+        return None
+
     def clean_caches(self, ctx: Context) -> Result:
-        ctx.execute(["rm", "-f", "/var/lib/pacman/db.lck"],
-                    quiet=True, msg="removed stale pacman db lock")
+        refusal = self._pacman_lock(ctx)
+        if refusal is not None:
+            return refusal
         self._clean_pacman_cache(ctx)
         if ctx.sudo_user and command.which("pamac"):
             ctx.execute(["pamac", "clean", "--no-confirm"], as_user=ctx.sudo_user,

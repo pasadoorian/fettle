@@ -23,7 +23,7 @@ finding.
 
 | Step | arch / manjaro | debian / ubuntu | rocky9 / alma9 / fedora |
 |---|---|---|---|
-| 1 | `rm -f /var/lib/pacman/db.lck` | — | — |
+| 1 | *check* `/var/lib/pacman/db.lck` and refuse if a process holds it — **never removed** (v1.8.0) | — | — |
 | 2 | `paccache -r -u -k0` — drop packages no longer installed | `apt-get clean` | `dnf clean packages` |
 | 3 | `paccache -r -k<n>` — keep `n` versions of installed ones (`[clean] keep_versions`, default 2) | — | — |
 | 3b | *fallback with no `pacman-contrib`:* `pacman -Sc --noconfirm` | — | — |
@@ -99,7 +99,7 @@ target, not 26.
 
 | ID | Run | Test | Expected | Verified by | Applies |
 |---|---|---|---|---|---|
-| QA-CLEAN-15 | R7 | Stale `db.lck` present, no pacman running | Lock removed, action proceeds | file absent after | A |
+| QA-CLEAN-15 | R7 | Stale `db.lck` present, no pacman running | Lock is **named with the removal command** and the clean proceeds; the lock is still there afterwards. Removing it is the user's call, not fettle's. | file still present after; message names it | A |
 | QA-CLEAN-16 | R7 | **`db.lck` held by a genuinely running pacman** | Lock is **not** removed; user is told why. Deleting a live lock invites two concurrent pacman processes and a corrupted database. | hold the lock with a sleeping pacman, observe | A |
 | QA-CLEAN-17 | R2 | AUR helper caches after a clean run under sudo | `~/.cache/{yay,paru,pamac}` removed for the **invoking user**, not root's home | path check as the user | A, M(dry-run only) |
 | QA-CLEAN-18 | R2 | Offline rollback after a clean | Either the currently-installed versions survive in the cache, **or** the user is warned before losing them | attempt an offline `pacman -U` of a cached package after cleaning | A |
@@ -156,8 +156,8 @@ config gating and the failure path — were added.
 | QA-CLEAN-12 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
 | QA-CLEAN-13 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
 | QA-CLEAN-14 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
-| QA-CLEAN-15 | PASS | n/a | n/a (no pacman) | n/a | n/a | n/a | n/a |
-| QA-CLEAN-16 | **DEFERRED** (F-05) | n/a | n/a | n/a | n/a | n/a | n/a |
+| QA-CLEAN-15 | PASS (re-run v1.8.0) | n/a | n/a (no pacman) | n/a | n/a | n/a | n/a |
+| QA-CLEAN-16 | **PASS** (v1.8.0, container) | n/a | n/a | n/a | n/a | n/a | n/a |
 | QA-CLEAN-17 | PASS | not run | n/a | n/a | n/a | n/a | n/a |
 | QA-CLEAN-18 | PASS (on purpose now) | n/a | n/a | n/a | n/a | n/a | n/a |
 | QA-CLEAN-19 | PASS | n/a | PASS | PASS | PASS | PASS | PASS |
@@ -365,10 +365,23 @@ machine fettle never touched. Should be non-zero; see **QA-CLEAN-28**.
 - **F-04 (QA-CLEAN-13): CONFIRMED on all 7, FIXED v0.51.0.** A second consecutive `-c --yes` against an
   already-empty cache produces byte-identical output to the run that emptied it. There is no
   way to tell "freed 41 MB" from "there was nothing to free".
-- **F-05 (QA-CLEAN-16): UNTESTED.** `rm -f /var/lib/pacman/db.lck` is unconditional and the
-  message calls the lock "stale" without establishing that it is. QA-CLEAN-15 passed (a
-  genuinely stale lock is removed), but the case that matters — a lock held by a *running*
-  pacman — was not exercised. Needs a follow-up run holding the lock.
+- **F-05 (QA-CLEAN-16): CONFIRMED and FIXED v1.8.0.** `rm -f /var/lib/pacman/db.lck` was
+  unconditional and the message called the lock "stale" without establishing that it was.
+  The case that mattered was never exercised — this sweep ran QA-CLEAN-15 (stale lock)
+  and stopped there.
+
+  Re-raised by the 2026-08-12 code review as H-02 and closed the same way the case
+  described: fettle now **never removes the lock**. It identifies a holder by **inode**
+  through `/proc/*/fd` — not by path, which would miss a lock deleted and recreated under
+  the same name, and not via `fuser`/`lsof`, which are absent on a minimal Arch system and
+  would have downgraded the check into "no holders found". A held lock refuses the clean
+  and names the holder; an unheld one is reported with the command; an unreadable `/proc`
+  refuses too, because "could not tell" is not "safe".
+
+  Verified live in an `archlinux:latest` container against a process genuinely holding the
+  lock open: `pid 43 (python3) holds /var/lib/pacman/db.lck`, nothing ran, exit 1, lock
+  intact. Refusing is right for the *clean* as well as the database — a live transaction is
+  reading the very cache files `paccache` would delete.
 - **F-06 (QA-CLEAN-18): FIXED v0.50.0, together with F-07 as required.**
   QA-CLEAN-18 "passed" on Arch only because the clean removes nothing. `pacman -Scc` removes
   cached copies of currently-installed packages — the standard offline rollback path on Arch

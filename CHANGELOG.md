@@ -11,6 +11,55 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.8.0] — fettle no longer deletes pacman's database lock
+
+First fix from the 2026-08-12 code review (H-02), and it closes a finding the `clean` QA
+sweep had already raised and left open as **F-05 / QA-CLEAN-16 — UNTESTED**.
+
+`clean_caches()` opened with an unconditional `rm -f /var/lib/pacman/db.lck`, announced
+as *"removed stale pacman db lock"* — while nothing had established that it was stale.
+libalpm takes that lock to stop two package transactions running at once, so deleting one
+that pacman, pamac or an AUR helper is holding lets a second transaction start against the
+same database.
+
+### What it does now
+
+**It never removes the lock.** Three outcomes:
+
+- **Held by a live process** — refuses the clean and names the holder (`pid 4242
+  (pacman)`), exit **1**. Refusing is right for the cache as well as the database: a live
+  transaction is reading the very files `paccache` would delete.
+- **Present, unheld** — names the file, gives the removal command, and gets on with the
+  clean. A genuinely stale lock is rare and removing it is the user's call.
+- **Present, but `/proc` was unreadable** — refuses, and says it could not tell. "I could
+  not determine it" is not "it is safe", which is the invariant this project already
+  applies to reports, applied here to a destructive action.
+
+### Two implementation choices worth keeping
+
+**Holders are matched by inode, not by path.** A path comparison would miss a lock deleted
+and recreated under the same name — precisely the window this check exists to notice.
+
+**`/proc` is read directly rather than shelling out to `fuser` or `lsof`.** Neither is
+installed on a minimal Arch system, and a missing tool would have silently downgraded a
+safety check into "no holders found".
+
+`actions._clean` now respects a backend that *declines* rather than fails. Without that,
+a refused clean fell through to *"caches already clean — nothing to reclaim"* — a
+description of a clean that did not happen.
+
+### Verified
+
+Four new tests, each proved to fail against the previous code, and each covering a
+distinct behaviour (restoring the old `rm` fails all four; making "cannot tell" mean
+"unheld" fails exactly one). Live in an `archlinux:latest` container against a process
+genuinely holding the lock open: holder identified, nothing ran, exit 1, lock intact.
+
+The Arch test harness now defaults `ctx.root` to a path that cannot exist. Without it,
+every clean test would have passed or failed according to whether a pacman transaction
+happened to be running when `pytest` was invoked — the "tests that assert on the host"
+trap this suite has hit before.
+
 ## [1.7.4] — "re-run with sudo" was advice for a problem you do not have
 
 Testing `-M` on a machine that now has `bpftool` turned up a wording bug rather than a
