@@ -479,6 +479,47 @@ def test_a_declined_upgrade_also_stops_before_extras(capsys):
     assert ctx.output.had_failures is False, "a decline is still not a failure"
 
 
+class _RefusingSpy(_ExtrasSpy):
+    """A backend that stops *before* upgrading and says why — the shape
+    `debian.update_system` takes when the package lists could not be refreshed."""
+
+    REASON = "upgrade SKIPPED — the package lists could not be refreshed"
+
+    def update_system(self, ctx):
+        from fettle.backends.base import Result
+        ctx.execute(["pkgtool", "update"], quiet=True, msg="lists refreshed")
+        return Result(ok=False, summary=self.REASON)
+
+
+def test_a_refusal_is_reported_in_the_backends_own_words(capsys):
+    """The generic text promises a partial upgrade and tells the user to re-run. Both
+    are wrong when the backend never got as far as upgrading."""
+    spy = _RefusingSpy()
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=lambda *a, **k: Proc(100, "", "")):
+        actions.run(["update"], spy, ctx)
+
+    out = capsys.readouterr().out
+    assert _RefusingSpy.REASON in out
+    assert "may be upgraded and others not" not in out
+    assert "re-run to finish" not in out
+    assert spy.extras_ran is False
+
+
+def test_a_refusal_is_a_failure_even_without_yes(capsys):
+    """Without `--yes` a non-zero exit *might* be a declined prompt, so it only warns.
+    An explicit refusal is not a decline — the backend is reporting its own decision,
+    not relaying somebody else's exit code."""
+    spy = _RefusingSpy()
+    ctx = Context(output=Output(color=False), config=Config())  # no assume_yes
+    with patch("fettle.command.run", side_effect=lambda *a, **k: Proc(100, "", "")):
+        actions.run(["update"], spy, ctx)
+
+    out = capsys.readouterr().out
+    assert _RefusingSpy.REASON in out
+    assert "If you declined its prompt" not in out
+
+
 def test_extras_still_run_after_a_successful_upgrade(capsys):
     """The guard must not cost the ordinary path."""
     spy = _ExtrasSpy()

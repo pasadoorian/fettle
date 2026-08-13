@@ -142,14 +142,25 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
     if ctx.dry_run:
         out.summary_add("would update packages" + (f" ({what})" if what else ""))
         return
-    if failed:
+    # A backend that stopped *before* upgrading knows something this layer cannot see,
+    # and its own words are the accurate ones: "some packages may be upgraded and others
+    # not; re-run to finish" is exactly wrong when nothing was attempted and re-running
+    # will not help. An explicit `Result(ok=False, summary=…)` is also never a declined
+    # prompt — the backend is reporting, not relaying somebody else's exit code — so it
+    # is a failure with or without `--yes`.
+    refusal = system.summary if (system is not None and system.ok is False
+                                 and isinstance(getattr(system, "summary", None), str)
+                                 and system.summary) else ""
+    if failed or refusal:
         # Upgrades end early for two very different reasons, and the package managers
         # do not distinguish them: pacman, apt and dnf all exit non-zero both when the
         # user answers "no" at their prompt and when they genuinely fail. `--yes` is
         # the one reliable discriminator — with it there was no prompt to decline, so
         # a non-zero exit is a real failure.
         tools = ", ".join(failed)
-        if ctx.assume_yes:
+        if refusal:
+            out.summary_fail(refusal, kind=FAILED)
+        elif ctx.assume_yes:
             out.summary_fail(f"update did NOT complete — {tools} failed. Some packages "
                              "may be upgraded and others not; re-run to finish, and "
                              "see the errors above.", kind=FAILED)

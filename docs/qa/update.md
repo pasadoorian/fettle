@@ -21,7 +21,7 @@ Status: **swept and fixed.** One sweep across all seven targets at v0.54.1; six 
 |---|---|---|---|
 | gate | advisory `security_gate` — warns; confirms only if `warn_gate` **and** unpatched Critical | same | same, plus the `gpgcheck=0` signature gate |
 | mirrors | `pacman-mirrors -f[ N]` *(Manjaro; `[updaters.arch] refresh_mirrors`)* | — | — |
-| repos | `pacman -Syuu` (`--noconfirm` under `--yes`) | `apt-get update` then `full-upgrade` | `dnf upgrade --refresh` (`-y` under `--yes`) |
+| repos | `pacman -Syuu` (`--noconfirm` under `--yes`) | `apt-get update --error-on=any` **then, only if it succeeded,** `full-upgrade` | `dnf upgrade --refresh` (`-y` under `--yes`) |
 | extras | `yay -Sua --devel --cleanafter` behind the AUR IoC pre-check gate | flatpak, then snap | flatpak, then snap |
 
 Note `-Syuu`, not `-Syu`: the second `u` permits **downgrades**, which Manjaro needs when a
@@ -81,6 +81,8 @@ repo rolls a package back.
 | QA-UP-12 | Same run | **Exit non-zero** | `echo $?` | A, D, E |
 | QA-UP-13 | `aur_updater = yay` with yay absent | Reported as a failure, not a note; exit non-zero | transcript + exit | A |
 | QA-UP-14 | `-u --dry-run` preview vs what a real `-u` then installs | The preview named the same packages | diff preview against the real transaction | all but M |
+| QA-UP-27 | Every repository unreachable | Upgrade **refused**; summary says the lists could not be refreshed; exit non-zero | transcript + exit | D, U |
+| QA-UP-28 | Same run | The refusal is the backend's own wording, not the generic "some packages may be upgraded" | summary text | D, U |
 | QA-UP-15 | Partial success: repos upgrade, extras fail | Summary distinguishes "repos updated, AUR failed" from full success | transcript | A |
 
 ### Security posture
@@ -154,6 +156,8 @@ installed across the fleet.**
 | QA-UP-24 | not run | needs a kernel upgrade followed by a reboot check |
 | QA-UP-25 | not run | belongs to the `rebuild-check` sweep |
 | QA-UP-26 | **DEFERRED** | run-log permissions — see B4, deferred by decision |
+| QA-UP-27 | **FAIL → fixed** | U-07: bare `apt-get update` exits 0 with every repo unreachable, so `-u --yes` reported `✓ packages updated (apt, flatpak)` and exit 0 (v1.10.0, container) |
+| QA-UP-28 | PASS (v1.10.0, container) | `✗ upgrade SKIPPED — the package lists could not be refreshed…`; the generic partial-upgrade text is suppressed |
 
 **Not measured, and worth stating plainly:** the in-sweep failure injection (step S5) was
 partly void. By the time it ran, each guest had already been fully upgraded, so a broken
@@ -162,6 +166,35 @@ freshly-reverted Arch and Rocky guests with updates still pending — those resu
 trustworthy ones, and the S5 numbers are not.
 
 ## Findings
+
+### U-07 — an unreachable repository upgraded to success. FIXED v1.10.0
+
+Found during the live check for a *different* fix (H-06, v1.9.0): the obvious way to make
+an upgrade fail is to point every repository at nothing, and doing that produced
+
+```
+✓ update: packages updated (apt, flatpak)
+```
+
+with **exit 0**. `update_system` ran a bare `[tool, "update"]`, discarded the result and
+went straight to `full-upgrade` — which had nothing to install, so it exited 0 too.
+
+`refresh_metadata` in the same file already used `--error-on=any` and carried the comment
+explaining why. The knowledge was in the file; the upgrade path did not apply it.
+
+Measured on Debian 12 with every repository pointed at an unreachable host:
+
+| Command | Exit |
+|---|---|
+| `apt-get update` | **0** |
+| `apt-get update --error-on=any` | 100 |
+| `nala update` | 1 (unaided — nala needs no flag) |
+
+The refresh is now checked, and a failure stops the run before `full-upgrade` with a
+summary naming which half failed. **Note the scope:** `--error-on=any` fires on *any*
+unreachable repository, so a single dead third-party repo refuses the whole upgrade. That
+is deliberate — the lists are incomplete and fettle cannot know what the dead repo was
+holding — but it is a behaviour change on hosts carrying a stale PPA.
 
 ### U-01 — the summary claimed success unconditionally. FIXED v0.55.0
 `update_extras` ended with `summary_add("packages updated (…)")` outside any check. Three

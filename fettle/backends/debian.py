@@ -412,7 +412,23 @@ class DebianBackend(PackageBackend):
             return Result()
         tool = "nala" if system == "nala" and command.which("nala") else "apt-get"
         out.note(f"updating package lists ({tool})...")
-        ctx.execute([tool, "update"])
+        refresh = [tool, "update"]
+        if tool == "apt-get" and self._apt_has_error_on():
+            # Same reason as `refresh_metadata`: `apt-get update` exits 0 even when it
+            # could not reach a single repository, so without this the upgrade below
+            # runs against whatever is already on disk and reports success. Measured on
+            # Debian 12 with every repo unreachable: bare exits 0, this exits 100.
+            # `nala update` exits 1 unaided (measured, nala 0.12.2) and needs no flag.
+            refresh.append("--error-on=any")
+        if ctx.execute(refresh).returncode != 0:
+            # Upgrading from lists that could not be refreshed is how a machine ends up
+            # believing it is current: apt has nothing newer to install, so it exits 0
+            # with "0 upgraded" and the run signs off green. Stop instead, and say which
+            # half failed — the package lists, not the packages.
+            return Result(ok=False, summary=(
+                f"upgrade SKIPPED — the package lists could not be refreshed, and "
+                f"upgrading from stale lists would report success while installing "
+                f"nothing (run `sudo {tool} update` to see which repository failed)"))
         out.note("applying upgrades...")
         if ctx.assume_yes:
             # Unattended: auto-confirm, keep old conffiles (no dpkg prompt; the kept

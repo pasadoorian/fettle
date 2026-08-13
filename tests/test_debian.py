@@ -169,6 +169,75 @@ def test_pending_transaction_no_apt_is_not_ok():
     assert tx.ok is False and tx.items == []
 
 
+# A refresh that did not complete must not be upgraded from. Measured on Debian 12 with
+# every repository pointed at an unreachable host: `apt-get update` exits **0**,
+# `apt-get update --error-on=any` exits 100, and `nala update` exits 1 unaided. So apt
+# needs the flag to tell the truth and nala does not, but both are checked the same way.
+_APT_NEW = "apt 2.6.1 (amd64)"   # >= 2.1, understands --error-on
+_APT_OLD = "apt 2.0.6 (amd64)"   # < 2.1, would reject it with exit 100
+
+
+def _fake_failing(responses, calls, *, fails=()):
+    """`_fake`, except any command whose argv contains a word in `fails` exits 100."""
+    def run(cmd, *, as_user=None, capture=False):
+        argv = list(cmd)
+        calls.append((argv, as_user))
+        for key, val in responses.items():
+            if argv[: len(key)] == list(key):
+                return command.Proc(0, val, "")
+        if any(word in argv for word in fails):
+            return command.Proc(100, "", "E: Failed to fetch ... Could not resolve host")
+        return command.Proc(0, "", "")
+    return run
+
+
+def test_a_failed_refresh_stops_the_upgrade():
+    calls = []
+    with patch("fettle.command.run", side_effect=_fake_failing(
+                   {("apt-get", "--version"): _APT_NEW}, calls, fails=("update",))), \
+         patch("fettle.command.which", return_value=True):
+        result = DebianBackend().update_system(_ctx(assume_yes=True))
+    assert not any("full-upgrade" in c for c, _ in calls), \
+        "upgraded from package lists that could not be refreshed"
+    assert result.ok is False
+    assert "refresh" in (result.summary or "")
+
+
+def test_a_failed_nala_refresh_also_stops_the_upgrade():
+    calls = []
+    cfg = Config(updaters={"debian": {"system_updater": "nala"}})
+    with patch("fettle.command.run", side_effect=_fake_failing({}, calls, fails=("update",))), \
+         patch("fettle.command.which", return_value=True):
+        result = DebianBackend().update_system(_ctx(cfg, assume_yes=True))
+    assert ["nala", "update"] in [c for c, _ in calls]
+    assert not any(c[-2:] == ["nala", "upgrade"] for c, _ in calls)
+    assert result.ok is False
+
+
+def test_the_refresh_asks_apt_to_report_unreachable_repositories():
+    calls = []
+    with patch("fettle.command.run",
+               side_effect=_fake({("apt-get", "--version"): _APT_NEW}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().update_system(_ctx(assume_yes=True))
+    refresh = next(c for c, _ in calls if c[:2] == ["apt-get", "update"])
+    assert "--error-on=any" in refresh
+
+
+def test_an_old_apt_is_not_handed_an_option_it_would_reject():
+    # Without the version gate this degrades to today's behaviour rather than making
+    # every refresh fail — an old apt exits 100 on an unknown option, which is exactly
+    # the code the flag exists to detect.
+    calls = []
+    with patch("fettle.command.run",
+               side_effect=_fake({("apt-get", "--version"): _APT_OLD}, calls)), \
+         patch("fettle.command.which", return_value=True):
+        DebianBackend().update_system(_ctx(assume_yes=True))
+    refresh = next(c for c, _ in calls if c[:2] == ["apt-get", "update"])
+    assert "--error-on=any" not in refresh
+    assert any("full-upgrade" in c for c, _ in calls)   # and the upgrade still runs
+
+
 def test_update_yes_is_noninteractive():
     calls = []
     with patch("fettle.command.run", side_effect=_fake({}, calls)), \

@@ -11,6 +11,56 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.10.0] — a Debian upgrade no longer runs from lists it could not refresh
+
+Third fix from the 2026-08-12 code review (H-05), and the one the previous release's live
+check stumbled into by accident.
+
+`update_system` ran a bare `[tool, "update"]`, discarded the result and went straight to
+`full-upgrade`. `refresh_metadata`, in the same file, already used `--error-on=any` and
+carried the comment explaining why. The knowledge was in the file; the upgrade path did
+not apply it.
+
+Measured on Debian 12 with every repository pointed at an unreachable host:
+
+| Command | Exit |
+|---|---|
+| `apt-get update` | **0** |
+| `apt-get update --error-on=any` | 100 |
+| `nala update` | 1 (unaided — nala needs no flag) |
+
+So the failure was invisible from both ends: the refresh exited 0, `full-upgrade` then had
+nothing to install and exited 0 too, and `fettle -u --yes` printed `✓ packages updated
+(apt, flatpak)`. A host cut off from its repositories for months reported a clean upgrade
+every night.
+
+The refresh now carries `--error-on=any` (behind the existing apt 2.1+ capability probe,
+because an older apt rejects the option with exit 100 — indistinguishable from the failure
+it detects), and its exit code is checked. A failed refresh stops the run before
+`full-upgrade`.
+
+**One unreachable repository is enough.** That is deliberate — the lists are incomplete and
+fettle cannot know what the unreachable repository was holding — but it is a behaviour
+change on hosts carrying a long-dead third-party repository, which will now refuse to
+upgrade until it is fixed or removed. The message names the command that identifies it.
+
+### The action layer now defers to a backend that refused
+
+A backend that stops *before* upgrading knows something `actions._update` cannot see, and
+the generic failure text was wrong in both of its claims:
+
+> update did NOT complete — apt-get failed. Some packages may be upgraded and others not;
+> re-run to finish
+
+Nothing was upgraded, and re-running will not help until the repository is reachable. When
+a backend returns `Result(ok=False, summary=…)` its own words are used instead. An explicit
+refusal is also never a declined prompt — the backend is reporting its own decision rather
+than relaying somebody else's exit code — so it fails with or without `--yes`.
+
+Verified live in Debian 12 containers: every repository unreachable → upgrade skipped,
+reason stated, flatpak never invoked, exit 1; healthy repositories → upgrade proceeds and
+exits 0; one dead repository among working ones → refused, as designed.
+
 ## [1.9.0] — extras no longer run on top of a failed system upgrade
 
 Second fix from the 2026-08-12 code review (H-06).
