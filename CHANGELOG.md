@@ -11,6 +11,46 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.9.0] — extras no longer run on top of a failed system upgrade
+
+Second fix from the 2026-08-12 code review (H-06).
+
+`actions._update` evaluated both halves of the upgrade in one list literal:
+
+```python
+results = [backend.update_system(ctx), backend.update_extras(ctx)]
+```
+
+so `update_extras` ran before anything had looked at whether `update_system` worked. A
+failed pacman transaction was followed straight away by `yay -Sua`, rebuilding AUR
+packages against a half-upgraded system; Debian and RHEL went on to flatpak and snap the
+same way. Extras are the step most likely to compile against whatever the system upgrade
+just left behind, which makes them the worst thing to run next.
+
+The two calls are now sequenced, and extras run only if the system upgrade recorded no
+failed command **and** the backend did not report failure. When they are skipped the run
+says so rather than going quiet.
+
+**A declined upgrade stops it too.** Without `--yes` a non-zero exit means the user
+answered "no" at the package manager's prompt — and someone who declined the system
+upgrade did not ask for their flatpaks to be updated regardless. That path stays a
+warning, not a failure, as before.
+
+Verified live in a Debian container with a package manager rigged to fail and a fake
+`flatpak` on `PATH` that logs every invocation: the log stayed empty, the skip was
+reported, exit 1.
+
+### The live check found something else first
+
+The obvious way to make an upgrade fail is to point the repositories at nothing. Doing
+that produced **`✓ packages updated (apt, flatpak)` and exit 0** — because `apt-get
+update` exits 0 with every repository unreachable and `full-upgrade` then has nothing to
+do. The guard was right and simply never fired, because apt never admitted to failing.
+
+That is **H-05**, the next fix in this series, now demonstrated end to end rather than
+inferred: on a host that cannot reach a single repository, `fettle -u --yes` currently
+reports a successful update.
+
 ## [1.8.0] — fettle no longer deletes pacman's database lock
 
 First fix from the 2026-08-12 code review (H-02), and it closes a finding the `clean` QA

@@ -112,7 +112,27 @@ def _update(backend: "PackageBackend", ctx: "Context") -> None:
         security_note(ctx)
 
     failed_before = len(ctx.failed_commands)
-    results = [backend.update_system(ctx), backend.update_extras(ctx)]
+    # **Sequenced deliberately, not evaluated as one list.** These used to be
+    # `[backend.update_system(ctx), backend.update_extras(ctx)]`, so both ran before
+    # anything looked at whether the first had worked: a failed pacman transaction was
+    # followed straight away by `yay -Sua`, rebuilding AUR packages against a
+    # half-upgraded system, and Debian and RHEL went on to flatpak and snap the same
+    # way. Extras are the step most likely to compile against whatever the system
+    # upgrade just left behind, which makes them the worst thing to run next.
+    #
+    # A decline stops it too. Without `--yes` a non-zero exit means the user answered
+    # "no" — and someone who declined the system upgrade did not ask for their flatpaks
+    # to be updated regardless.
+    system = backend.update_system(ctx)
+    results = [system]
+    system_failed = bool(ctx.failed_commands[failed_before:]) or (
+        system is not None and system.ok is False)
+    if system_failed:
+        out.summary_warn("extras (AUR/flatpak/snap) were NOT updated — the system "
+                         "upgrade did not complete, and rebuilding on top of a "
+                         "half-upgraded system is how a bad upgrade gets worse")
+    else:
+        results.append(backend.update_extras(ctx))
     failed = sorted(set(ctx.failed_commands[failed_before:]))
     # Tolerant of a backend that returns None or a stub: the summary is a nicety,
     # and it must not be able to break an upgrade that already happened.

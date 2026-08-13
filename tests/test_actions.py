@@ -413,3 +413,78 @@ def test_successful_update_names_what_was_updated(capsys):
     out = capsys.readouterr().out
     assert "packages updated (repos: pkgtool, AUR: yay)" in out
     assert ctx.output.had_failures is False
+
+
+# -- extras must not run on top of a failed system upgrade ---------------------
+#
+# `results = [backend.update_system(ctx), backend.update_extras(ctx)]` evaluated both
+# before any failure was inspected. A pacman transaction that failed was followed
+# immediately by `yay -Sua`, so AUR packages rebuilt against a half-upgraded system;
+# Debian and RHEL likewise went on to flatpak and snap. Review finding H-06.
+
+
+class _ExtrasSpy(_UpdateSpy):
+    """Records whether the extras step was reached."""
+
+    def __init__(self, fail=False, system_ok=True):
+        super().__init__(fail=fail)
+        self.system_ok = system_ok
+        self.extras_ran = False
+
+    def update_system(self, ctx):
+        from fettle.backends.base import Result
+        ctx.execute(["pkgtool", "upgrade"], quiet=True, msg="upgraded")
+        return Result(ok=self.system_ok, summary="repos: pkgtool")
+
+    def update_extras(self, ctx):
+        from fettle.backends.base import Result
+        self.extras_ran = True
+        return Result(summary="AUR: yay")
+
+
+def test_extras_do_not_run_after_the_system_upgrade_failed(capsys):
+    """An AUR helper rebuilding against a half-upgraded system is how a bad upgrade
+    becomes an unbootable one."""
+    spy = _ExtrasSpy()
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["update"], spy, ctx)
+
+    assert spy.extras_ran is False, "yay/flatpak/snap must not follow a failed upgrade"
+    out = capsys.readouterr().out
+    assert "did NOT complete" in out
+    assert "extras" in out.lower(), "and the run must say the extras were skipped"
+
+
+def test_extras_do_not_run_when_the_backend_reports_failure(capsys):
+    """The other failure channel: commands all exited 0 but the backend said no."""
+    spy = _ExtrasSpy(system_ok=False)
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=lambda *a, **k: Proc(0, "", "")):
+        actions.run(["update"], spy, ctx)
+
+    assert spy.extras_ran is False
+    assert "extras" in capsys.readouterr().out.lower()
+
+
+def test_a_declined_upgrade_also_stops_before_extras(capsys):
+    """Interactive, no --yes: the user answered "no" to the system upgrade. Updating
+    their flatpaks anyway is not what they asked for."""
+    spy = _ExtrasSpy()
+    ctx = Context(output=Output(color=False), config=Config())      # interactive
+    with patch("fettle.command.run", side_effect=_fail_proc):
+        actions.run(["update"], spy, ctx)
+
+    assert spy.extras_ran is False
+    assert ctx.output.had_failures is False, "a decline is still not a failure"
+
+
+def test_extras_still_run_after_a_successful_upgrade(capsys):
+    """The guard must not cost the ordinary path."""
+    spy = _ExtrasSpy()
+    ctx = Context(output=Output(color=False), config=Config(), assume_yes=True)
+    with patch("fettle.command.run", side_effect=lambda *a, **k: Proc(0, "", "")):
+        actions.run(["update"], spy, ctx)
+
+    assert spy.extras_ran is True
+    assert "packages updated (repos: pkgtool, AUR: yay)" in capsys.readouterr().out
