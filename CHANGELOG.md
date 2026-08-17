@@ -11,7 +11,67 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [1.12.0] — a finding you fixed now clears from the dashboard
+## [1.12.0] — first release since 1.0.0: a sixth feature family, and five false-assurance bugs closed
+
+**This is the first tagged release since 1.0.0** (2026-08-10) and carries twelve versions of
+work. Two things happened in it.
+
+### `compromise-check` (`-M`) — the sixth feature family
+
+A read-only host triage pass that asks *"is something running here that nobody
+installed?"* — four groups, and it **never emits a fix**, only what to investigate:
+
+- **persistence** — systemd units, timers, cron and `at` jobs (every user's, not just
+  root's) that no package owns
+- **boot** — bootloader config, initramfs and ESP tampering
+- **kernel** — `/etc/ld.so.preload`, the eBPF surface, loaded modules reconciled against
+  the taint flags
+- **processes** — running executables with no package behind them, and hidden PIDs
+
+It is opt-in, needs root, self-elevates, and runs last under `--everything`. Every
+threshold in it was calibrated by measuring the false-positive floor on real machines
+first: six rules that sounded right were rejected because they were not (one of them worth
+6,272 hits on a healthy box). It renders as one ranked table, it reports what it *could not
+look at* as loudly as what it found, and it is on the HTML dashboard and in the exit
+status. Versions 1.1.0 → 1.7.4.
+
+### Five bugs from an external code review — all of them false assurance
+
+A code review on 2026-08-12 reopened four features that the QA pass had already swept, and
+found the same defect class in each: **reading a tool's silence, or its exit status, as good
+news.** Individually:
+
+| version | what it stopped doing |
+|---|---|
+| 1.8.0 | deleting `/var/lib/pacman/db.lck` on every `clean` — including while a transaction held it, which is the documented way to corrupt a package database |
+| 1.9.0 | running `yay -Sua`, flatpak and snap **after** the system upgrade had already failed |
+| 1.10.0 | upgrading Debian from package lists it could not refresh, and reporting success |
+| 1.11.0 | reporting `installed files match their packages` when the verifier had died, and inventing findings out of its error messages |
+| 1.12.0 | keeping a finding you had already fixed on the dashboard, and giving a green `OK` to hosts where no audit had ever run |
+
+The measurements behind them are worth stating, because none of these tools reports failure
+the way you would expect: **`apt-get update` exits 0** with every repository unreachable,
+**`dpkg --verify` and `rpm -Va` exit 0 printing nothing** when they cannot read their
+database, and **`paccheck` returns 1** for "found a mismatch" and "cannot open the database"
+alike. Each fix is now driven by a measured exit code or a probe, never an assumption.
+
+Every one was reproduced before it was fixed and re-verified in a container afterwards; the
+dashboard fix was verified by rebuilding the author's real 17-host dashboard and diffing it
+card by card. Full detail per version below.
+
+### The rest
+
+`--quiet` reaches the table-rendering audits (1.7.0), the `compromise-check` QA sweep and
+its shared table renderer (1.7.0), a Python 3.11–3.13 permission bug that never appeared on
+the author's 3.14 box (1.3.1), and documentation split between the README and the wiki
+(1.0.1–1.0.2, 1.7.2).
+
+**Upgrading from 1.0.0 is a drop-in replacement** — no configuration changes, no report
+format changes. `compromise-check` is opt-in, so nothing new runs unless you ask for it.
+
+---
+
+### The dashboard fix in detail (H-12)
 
 Fifth fix from the 2026-08-12 code review (H-12). Two bugs in `_host_problems()`, both of
 which let the fleet page describe a machine as something it no longer was.
