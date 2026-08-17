@@ -449,7 +449,46 @@ def test_card_flags_a_host_that_stopped_reporting(tmp_path):
                        {"findings": [{"severity": "Low", "package": "p",
                                       "source": "aur", "question": "q",
                                       "detail": "d"}]})
-    assert "has not reported in" in _card(tmp_path)
+    assert "no audit in" in _card(tmp_path)
+
+
+def test_a_fixed_finding_clears_from_the_card(tmp_path):
+    """Clean reports were dropped *before* the newest-per-tool selection, so the newest
+    surviving report was the old one with the finding — and a High you fixed on the 12th
+    still sat on the fleet page forever."""
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260810-010101",
+                       {"findings": [{"severity": "High", "package": "evil",
+                                      "source": "aur", "question": "KNOWN_BAD",
+                                      "detail": "d"}]})
+    _write_report_json(tmp_path, "h1", "pkg-audit", _recent(), {"findings": []})
+    body = _card(tmp_path)
+    assert "supply-chain finding" not in body, "a fixed finding never clears"
+    assert "High" not in body
+
+
+def test_a_newer_finding_still_shows_over_an_older_clean_run(tmp_path):
+    """The guard on the fix: order matters, not merely emptiness."""
+    _write_report_json(tmp_path, "h1", "pkg-audit", "20260810-010101", {"findings": []})
+    _write_report_json(tmp_path, "h1", "pkg-audit", _recent(),
+                       {"findings": [{"severity": "High", "package": "evil",
+                                      "source": "aur", "question": "KNOWN_BAD",
+                                      "detail": "d"}]})
+    assert "1 supply-chain finding (1 High)" in _card(tmp_path)
+
+
+def test_a_host_with_only_run_logs_is_not_OK(tmp_path):
+    """Audit freshness counted run-logs, so a host that only ever ran `fettle -u` — which
+    writes a transcript and no audit report — had a fresh timestamp, no findings, and
+    therefore an `OK` *security* verdict on a machine nothing had ever checked."""
+    d = tmp_path / ".fettle/logs/h1"
+    d.mkdir(parents=True)
+    (d / f"run-{_recent()}.json").write_text(json.dumps(
+        {"schema": "fettle.log/1", "tool": "run", "host": "h1",
+         "timestamp": _recent(), "argv": ["-u"], "exit_code": 0,
+         "transcript": "packages updated"}))
+    body = _card(tmp_path)
+    assert "no audit has run" in body
+    assert "OK" not in body
 
 
 def test_a_clean_host_says_OK(tmp_path):

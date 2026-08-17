@@ -11,6 +11,62 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.12.0] — a finding you fixed now clears from the dashboard
+
+Fifth fix from the 2026-08-12 code review (H-12). Two bugs in `_host_problems()`, both of
+which let the fleet page describe a machine as something it no longer was.
+
+### A resolved finding stayed on the card forever
+
+The card shows the newest report per tool — but clean reports were filtered out **before**
+that choice was made:
+
+```python
+for e in host["reports"]:
+    if _is_empty(e):
+        continue                  # clean reports discarded here
+    if e.get("timestamp", "") >= newest.get(t, {}).get("timestamp", ""):
+        newest[t] = e             # newest chosen from what survived
+```
+
+So "newest" meant the newest report that *found something*. Fix a finding, run the audit
+again, and the clean result was thrown away in favour of the old complaint.
+
+**Measured on the real corpus rather than a fixture.** `ec1` was showing `47 packages with
+a known CVE (17 High)`. Its advisory-check history: 47 findings on 24 July, then **0 on 30
+July and 0 on 6 August**. The CVEs had been cleared for thirteen days and the dashboard was
+still reporting them as current.
+
+Selection now happens first and emptiness is interpreted afterwards.
+
+### Run logs alone earned an `OK` security verdict
+
+Host freshness was computed from `reports + logs`. A run-log is what `fettle -u` writes,
+and `-u` audits nothing — so a host that only ever updated had a fresh timestamp, no
+findings, and a green `OK` on a *security* dashboard for a machine where no check had ever
+run. The fixture said it in one line: `OK · no reports · latest: <today>`.
+
+Audit freshness now comes from reports alone, and a host with none says
+**"no audit has run on this host — only run logs, which check nothing"**. Empty reports
+still count as coverage, because a clean audit is an audit.
+
+The staleness chip is reworded from "has not reported in N days" to **"no audit in N
+days"** — the card's `latest:` line still counts run-log activity, and the two must not
+appear to contradict each other. On the real corpus this made four hosts' ages larger and
+more honest: `fettle-fedora` and `fettle-ubuntu` went from 11 days to 16, because a fresh
+run-log had been masking a stale audit.
+
+### Verification
+
+Four tests, three proved to fail against the old code; the fourth is the guard that a
+*newer* finding still wins over an older clean run, since order is what matters here, not
+emptiness.
+
+Then the whole real dashboard was rebuilt before and after and diffed chip by chip across
+17 hosts. **Exactly two cards changed** — `ec1` lost the resolved CVE chip, `bifrost-lab`
+gained the no-audit line. Nothing else moved, which is the result that mattered: a fix that
+silently dropped a *current* finding would be worse than the bug it replaced.
+
 ## [1.11.0] — a package verifier that failed no longer reports a clean system
 
 Fourth fix from the 2026-08-12 code review (H-08). Two bugs, both of which made

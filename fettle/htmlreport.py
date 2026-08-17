@@ -944,14 +944,20 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
     out: list[tuple[int, str]] = []
     # Newest report per type only. Five retained advisory-check reports otherwise put
     # the same 770 CVEs on the card five times, which is noise pretending to be scale.
+    #
+    # **Selection first, interpretation second.** The emptiness test used to sit inside
+    # this loop, which discarded clean reports *before* the newest was chosen — so the
+    # newest report that survived was the last one that found something, and a finding
+    # you fixed stayed on the card forever. Reproduced: a High on the 10th and a clean
+    # run on the 12th still showed the High.
     newest: dict[str, dict] = {}
     for e in host["reports"]:
-        if _is_empty(e):
-            continue
         t = e.get("tool", "")
         if e.get("timestamp", "") >= newest.get(t, {}).get("timestamp", ""):
             newest[t] = e
     for e in newest.values():
+        if _is_empty(e):
+            continue        # the newest run of this tool found nothing: clean, not old
         tool = e.get("tool", "")
         data = e.get("data") or {}
         if tool in ("pkg-audit", "advisory-check"):
@@ -1032,9 +1038,18 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
             if pkgs:
                 out.append((1, f"{len(pkgs)} {tool.replace('-', ' ')}"))
 
-    latest = max((e.get("timestamp", "") for e in host["reports"] + host["logs"]),
-                 default="")
-    if latest:
+    # **Audit freshness comes from reports only.** It used to be `reports + logs`, and a
+    # run-log is written by `fettle -u` — an action that audits nothing. So a host that
+    # only ever updated had a fresh timestamp, no findings, and therefore a green `OK`
+    # on a *security* dashboard for a machine where no check had ever run. Measured on
+    # the fixture: `OK · no reports · latest: <today>`.
+    #
+    # Empty reports deliberately still count as coverage here: a clean audit is an audit.
+    latest = max((e.get("timestamp", "") for e in host["reports"]), default="")
+    if not latest:
+        out.append((2, "no audit has run on this host — only run logs, which check "
+                       "nothing"))
+    else:
         try:
             age = ((now or _dt.datetime.now())
                    - _dt.datetime.strptime(latest[:8], "%Y%m%d")).days
@@ -1043,8 +1058,10 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
         if age >= stale_days:
             # No data is not good news — the fleet-level form of the invariant this
             # whole QA pass is about. A host that stopped reporting looked exactly
-            # like one that reported clean this morning.
-            out.append((2, f"has not reported in {age} days"))
+            # like one that reported clean this morning. Worded as *audit* age, because
+            # the card's "latest:" line counts run-logs and the two must not appear to
+            # contradict each other.
+            out.append((2, f"no audit in {age} days"))
     return sorted(out, reverse=True)
 
 

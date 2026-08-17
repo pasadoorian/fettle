@@ -32,6 +32,16 @@ directories, 9 report types, 2.7 MB of HTML.
 | QA-RP-08 | Everything is escaped; only http(s) hrefs | PASS *(prior work — `_safe_url` blocks `javascript:`)* |
 | QA-RP-09 | Advisory environments show their real paths | PASS — inherited free from v0.74.0 |
 
+**Sweep 2 — v1.12.0, 2026-08-17**, from the 2026-08-12 code review (H-12), against the
+same real corpus (17 host cards).
+
+| ID | Test | Verdict |
+|---|---|---|
+| QA-RP-10 | **A finding you fixed clears from the card** | **FAIL → fixed** (RP-05) |
+| QA-RP-11 | A newer finding still shows over an older clean run | PASS — guard on the fix |
+| QA-RP-12 | **A host with only run logs is not `OK`** | **FAIL → fixed** (RP-06) |
+| QA-RP-13 | A clean audit still counts as coverage | PASS — guard on the fix |
+
 ## Findings
 
 ### RP-01 — a new feature rendered as a raw JSON dump. FIXED v0.79.0
@@ -86,6 +96,56 @@ second name. Deriving nothing from argv cannot go wrong.
 `render()`'s per-host loop assigned `groups = []`, shadowing its own `groups` parameter.
 Harmless today because both lists are computed before the loop — and exactly the kind of
 thing that is not harmless the next time someone edits below it.
+
+### RP-05 — a fixed finding never cleared. FIXED v1.12.0
+
+`_host_problems()` chose the newest report per tool, but filtered clean reports out
+**before** the choice:
+
+```python
+for e in host["reports"]:
+    if _is_empty(e):
+        continue                  # <-- clean reports discarded here
+    if e.get("timestamp", "") >= newest.get(t, {}).get("timestamp", ""):
+        newest[t] = e             # <-- newest chosen from what survived
+```
+
+So the "newest" report was the newest one that *found something*, and a resolved finding
+stayed on the fleet page forever.
+
+**Measured on the real corpus, not a fixture.** `ec1` was showing
+`47 packages with a known CVE (17 High)`. Its advisory-check history:
+
+| report | findings |
+|---|---|
+| 2026-07-24 (×4) | 47, 47, 61, 47 |
+| **2026-07-30** | **0** |
+| **2026-08-06** | **0** |
+
+The CVEs were cleared on 30 July and the dashboard had been reporting them as current for
+the thirteen days since. Selection now happens first and emptiness is interpreted after,
+so a newest-and-empty report means what it says: clean.
+
+### RP-06 — run logs alone earned an `OK` security verdict. FIXED v1.12.0
+
+Host freshness was computed from `reports + logs`. A run-log is what `fettle -u` writes,
+and `-u` audits nothing — so a host that only ever updated had a fresh timestamp, no
+findings, and a green `OK` on a security dashboard for a machine where no check had ever
+run. The fixture said it plainly: `OK · no reports · latest: <today>`.
+
+Audit freshness now comes from reports alone, and a host with none says so. Empty reports
+still count as coverage, because a clean audit is an audit.
+
+The staleness chip was reworded from "has not reported in N days" to **"no audit in N
+days"**, since the card's `latest:` line still counts run-log activity and the two must not
+appear to contradict each other. On the real corpus this made four hosts' ages *larger*
+and more honest — `fettle-fedora` and `fettle-ubuntu` went from 11 days to 16 — because a
+fresh run-log had been masking a stale audit.
+
+**Whole-corpus diff, 17 hosts, before vs after:** exactly two cards changed — `ec1` lost
+the resolved CVE chip and `bifrost-lab` gained "no audit has run on this host". Nothing
+else moved, which is the result that mattered: a fix that silently dropped a *current*
+finding would be worse than the bug it replaced.
 
 ## Deferred by decision
 
