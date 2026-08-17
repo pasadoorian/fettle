@@ -32,6 +32,18 @@ _SNAP_UPDATERS = {"snap", "none"}
 #   Inst name (newver origin [arch])            -> new dependency (no [old])
 #   Remv name [ver] ...                         -> removal
 # (Conf lines are the post-install configure phase — ignored.)
+# The shapes `dpkg --verify` emits, measured on Debian 12 / dpkg 1.21.23 — an rpm-style
+# attribute mask or the literal word `missing`, then an **optional** one-letter file-type
+# marker, then an absolute path:
+#     ??5??????   /usr/bin/hostid
+#     missing     /usr/bin/nproc
+#     ??5?????? c /etc/default/useradd      <- `c` for conffile; easy to forget, and it
+#                                              is the commonest row on a real machine
+# Anchored deliberately: `dpkg --verify` cannot report failure through its exit status
+# (see `verify_integrity`), so this pattern is the only thing standing between a
+# diagnostic line and a fabricated integrity finding.
+_DPKG_VERIFY_RE = re.compile(r"^(?:[?.\w]{9}|missing)\s+(?:([cdglr])\s+)?(/.+)$")
+
 _APT_INST_RE = re.compile(r"^Inst\s+(\S+)\s+(?:\[([^\]]+)\]\s+)?\((\S+)")
 _APT_REMV_RE = re.compile(r"^Remv\s+(\S+)\s+\[([^\]]+)\]")
 
@@ -170,12 +182,41 @@ class DebianBackend(PackageBackend):
         Filtering on "does not end in OK" therefore counted every package that ships
         no checksums — a normal and common thing — as an integrity issue. Those are a
         gap in coverage, not a finding, and the two are now reported separately.
+
+        **Neither tool's exit status means what you would guess.** Measured on Debian 12:
+
+        =====================  =====  =====================  ==========================
+        command                clean  found a discrepancy    could not run
+        =====================  =====  =====================  ==========================
+        ``debsums``            0      **2**                  255
+        ``dpkg --verify``      0      **0**                  **0, with no output**
+        =====================  =====  =====================  ==========================
+
+        ``debsums`` is therefore usable: anything outside ``{0, 2}`` is the tool
+        failing, and its stderr — which ``run_text`` merges in — would otherwise be
+        parsed as a list of altered files. ``debsums`` also exits **0** when a package
+        ships no md5sums, which is right: that is coverage, not a finding.
+
+        ``dpkg --verify`` is not usable at all. It exits 0 while printing
+        discrepancies, and exits 0 printing nothing when pointed at a database it
+        cannot read — byte-identical to a clean system, the same trap ``rpm -Va`` sets.
+        Silence there has to be *earned*, so the dpkg database is proven to list
+        packages first. (``dpkg-query`` cannot be probed by status either — measured,
+        ``--admindir=/nonexistent`` also exits 0 — so it is the output that is checked.)
         """
         scan.sub("Dpkg Package Verification")
         if scan.which("debsums"):
             scan.dim("Running debsums (this may take a while)...")
+            out, rc = scan.run_text_rc(["debsums"])
+            if rc not in (0, 2):
+                scan.status("Package Integrity",
+                            f"UNKNOWN — debsums failed (exit {rc}); packages were NOT "
+                            "verified", "error", blind=True)
+                if out:
+                    scan.result(sample_lines(out.splitlines()))
+                return
             altered, unverifiable, expected = [], [], []
-            for line in scan.run_text(["debsums"]).splitlines():
+            for line in out.splitlines():
                 line = line.rstrip()
                 if not line.strip() or line.endswith("OK"):
                     continue
@@ -206,14 +247,33 @@ class DebianBackend(PackageBackend):
                     scan.result(sample_lines(unverifiable))
         else:
             scan.status("debsums", "Not installed (apt install debsums)", "warn")
+            probe, _ = scan.run_text_rc(["dpkg-query", "-W", "-f", "${Package}\\n"])
+            if not probe.strip():
+                scan.status("Package Integrity",
+                            "UNKNOWN — the dpkg database listed no packages, so an "
+                            "empty verify result proves nothing; files were NOT "
+                            "verified", "error", blind=True)
+                return
             scan.dim("Running dpkg --verify...")
-            out = [ln for ln in scan.run_text(["dpkg", "--verify"]).splitlines()
-                   if ln.strip()]
-            if not out:
+            out, _ = scan.run_text_rc(["dpkg", "--verify"])
+            rows, noise = [], []
+            for ln in out.splitlines():
+                ln = ln.rstrip()
+                if not ln.strip():
+                    continue
+                (rows if _DPKG_VERIFY_RE.match(ln) else noise).append(ln)
+            if not rows and not noise:
                 scan.status("Package Files", "No issues detected", "ok")
-            else:
-                scan.status("Package Files", f"{len(out)} discrepancy line(s)", "warn")
-                scan.result(sample_lines(out))
+            elif rows:
+                scan.status("Package Files", f"{len(rows)} discrepancy line(s)", "warn")
+                scan.result(sample_lines(rows))
+            if noise:
+                # Not a verdict line, and the status cannot tell us whether the run
+                # finished — so what was not reported is unknown, not clean.
+                scan.status("Not verified",
+                            f"dpkg --verify emitted {len(noise)} line(s) that are not "
+                            "file verdicts; coverage is unproven", "error", blind=True)
+                scan.result(sample_lines(noise))
 
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str, str]:

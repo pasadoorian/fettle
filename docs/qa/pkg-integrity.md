@@ -115,6 +115,7 @@ hash" described the intent and not the code; it does now.
   not a prepared collision.
 - **No user-extensible expected list.** Decided against for now — a config knob to
   silence integrity findings is a knob that gets used to silence real ones.
+- **A verifier's exit status was never read.** Closed in v1.11.0 — see Sweep 3.
 
 ---
 
@@ -159,3 +160,65 @@ While verifying, I ran `-V` against the Fedora guest without `--distro rhel` and
 not a claimed distro (its advisories are Bodhi `FEDORA-*`, not RHSA), the lab names the
 backend explicitly, and fettle's refusal listed every distro it knows and how to override.
 Correct behaviour, clearly explained — the mistake was in my command.
+
+---
+
+## Sweep 3 — v1.11.0, 2026-08-17, from the 2026-08-12 code review (H-08)
+
+The two previous sweeps asked whether the *findings* were trustworthy. This one asks the
+prior question: **was the verifier running at all?** The answer, on every backend, was
+that fettle could not tell — and defaulted to reassurance.
+
+### The exit codes, measured
+
+None of them mean what you would guess, so every one was measured in a container rather
+than read off a man page:
+
+| command | clean | found a discrepancy | could not run |
+|---|---|---|---|
+| `paccheck` | 0 | **1** | **1** (`error: failed to initialize alpm.`) |
+| `pacman -Qkk` | 0 | 1 (`warning:` rows) | 1 (`error:` rows) |
+| `debsums` | 0 *(also when a package ships no md5sums)* | **2** | 255 |
+| `dpkg --verify` | 0 | **0** | **0, with no output at all** |
+
+Three consequences:
+
+- **`paccheck` cannot be classified by status** — 1 means both "found" and "failed". What
+  separates them is that a per-file verdict quotes its path and a diagnostic does not.
+- **`debsums` can** — anything outside `{0, 2}` is the tool failing.
+- **`dpkg --verify` cannot be classified at all.** It is the `rpm -Va` trap again: silence
+  has to be earned, so the dpkg database is now proven to list packages first. `dpkg-query`
+  cannot be probed by status either — `--admindir=/nonexistent` also exits 0 — so its
+  *output* is what gets checked.
+
+### Cases
+
+| ID | Test | Expected | Applies |
+|---|---|---|---|
+| QA-PI-15 | Verifier exits non-zero having printed **nothing** | Reported as blindness; never "no unexplained differences" | A, D |
+| QA-PI-16 | Verifier fails with a diagnostic on stderr | Blindness — **not** counted as an altered file | A, D |
+| QA-PI-17 | Verifier exits non-zero **with real findings** | Still findings; the status must not erase them | A, D |
+| QA-PI-18 | `dpkg --verify` with an empty package database | Blindness, not "No issues detected" | D |
+| QA-PI-19 | `dpkg --verify` conffile rows (`??5?????? c /etc/…`) | Counted; the file-type marker is optional | D |
+| QA-PI-20 | A run where **nothing** could be verified | One answer, not two — no "installed files match their packages" | all |
+| QA-PI-21 | `pacman` absent | Blindness, not a finding | A |
+
+### Verdicts — all live in containers, before and after
+
+| ID | Verdict | Before the fix |
+|---|---|---|
+| QA-PI-15 | **FAIL → fixed** | Arch, paccheck exit 1 with no output: `✓ Package Integrity: no unexplained differences` + `✓ installed files match their packages`, **exit 0** |
+| QA-PI-16 | **FAIL → fixed** | Arch: `✗ 1 file(s) differ from their package` — the finding was `error: failed to initialize alpm.` Debian: the same, from `Unknown option`, at **exit 0** |
+| QA-PI-17 | PASS | guard on the fix — proved to pass before and after |
+| QA-PI-18 | **FAIL → fixed** | Debian, `/var/lib/dpkg/status` emptied: `✓ Package Files: No issues detected`, **exit 0** |
+| QA-PI-19 | PASS | guard on the fix — the marker is real, measured on dpkg 1.21.23 |
+| QA-PI-20 | **FAIL → fixed** | AlmaLinux, `rpm` removed: `✓ installed files match their packages` printed **directly above** `✗ did NOT verify: rpm: Not installed` |
+| QA-PI-21 | **FAIL → fixed** | recorded as an `error` with no `blind` flag, so it read as a finding |
+
+### Still open after this sweep
+
+- **The `dpkg --verify` fallback does not separate expected drift.** RHEL treats a
+  `c`-marked row as an edited config file rather than a tripwire hit; the Debian fallback
+  still counts every row as a discrepancy line. Out of scope for H-08, which was about
+  false cleans, and the fallback only runs when `debsums` is absent — but it means an
+  edited `/etc` file inflates that count.

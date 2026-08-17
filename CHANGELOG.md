@@ -11,6 +11,84 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.11.0] — a package verifier that failed no longer reports a clean system
+
+Fourth fix from the 2026-08-12 code review (H-08). Two bugs, both of which made
+`pkg-integrity` (`-V`) reassuring at exactly the moment it should have been alarming.
+
+### The exit codes, measured
+
+Every one was measured in a container, because none of them mean what you would guess:
+
+| command | clean | found a discrepancy | could not run |
+|---|---|---|---|
+| `paccheck` | 0 | **1** | **1** (`error: failed to initialize alpm.`) |
+| `pacman -Qkk` | 0 | 1 (`warning:` rows) | 1 (`error:` rows) |
+| `debsums` | 0 *(also when a package ships no md5sums)* | **2** | 255 |
+| `dpkg --verify` | 0 | **0** | **0, with no output at all** |
+
+`paccheck` uses one status for both outcomes, and `dpkg --verify` cannot report either.
+All four call sites used `run_text()`, which discards the status entirely.
+
+### Bug A — silence, and error messages, both read as clean
+
+Because `run_text` merges stderr into stdout, a failing verifier produced one of two
+wrong answers depending on whether it said anything on the way down. Measured live,
+before the fix:
+
+| condition | what fettle reported | exit |
+|---|---|---|
+| Arch, `paccheck` exits 1 silently | `✓ no unexplained differences` · `✓ installed files match their packages` | **0** |
+| Arch, `paccheck` exits 1 with `error: failed to initialize alpm.` | `✗ 1 file(s) differ from their package` — the "file" was the error message | 1 |
+| Debian, `debsums` exits 255 with `Unknown option` | `✗ 1 file(s) differ from their package` | **0** |
+| Debian, `/var/lib/dpkg/status` emptied | `✓ Package Files: No issues detected` | **0** |
+
+The governing invariant broken in both directions at once: a check that could not look
+rendering as clean, and a check that failed rendering as a finding.
+
+Now `debsums` is judged by its status (anything outside `{0, 2}` is failure), `paccheck`
+and `pacman -Qkk` by whether a line names a file at all — a verdict quotes its path, a
+diagnostic does not — and `dpkg --verify` is not trusted to be silent until `dpkg-query`
+has proven the database lists packages. (`dpkg-query` cannot be probed by status either:
+measured, `--admindir=/nonexistent` also exits 0, so its output is what gets checked.)
+`pacman` missing is now recorded as blindness rather than as an error, which is what it
+always was.
+
+`dpkg --verify`'s file-type marker is optional and `c` — an edited conffile — is the
+commonest row on a real machine, so the row pattern accepts it. A pattern that missed it
+would have turned every edited `/etc` file into unparseable noise.
+
+### Bug B — one run, two contradictory answers
+
+```python
+if not errors and not warns:
+    out.summary_add("installed files match their packages")
+```
+
+`unreadable` was missing from that condition, so a run where **nothing** could be verified
+had no errors and no warnings and therefore printed both lines. On AlmaLinux with `rpm`
+removed:
+
+```
+✗ rpm: Not installed
+✓ pkg-integrity: installed files match their packages
+✗ pkg-integrity: did NOT verify: rpm: Not installed
+```
+
+The reassuring sentence sat directly above the one contradicting it. The comment
+immediately above that condition already explained why blindness was split from findings;
+the clean gate was simply never updated to match.
+
+### Verification
+
+Eleven tests, seven proved to fail against the old code. The other four are guards on the
+fix — `paccheck` exit 1 *with* findings is still findings, `debsums` exit 2 is still
+findings, conffile rows are still counted — and were proved to pass both before and after,
+because a fix that turns real findings into blindness would be worse than the bug.
+
+Live in containers on all three families, before and after: healthy hosts still report
+clean at exit 0; every failure mode above now reports `UNKNOWN — … NOT verified` at exit 1.
+
 ## [1.10.0] — a Debian upgrade no longer runs from lists it could not refresh
 
 Third fix from the 2026-08-12 code review (H-05), and the one the previous release's live

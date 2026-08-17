@@ -71,7 +71,12 @@ def run(backend: "PackageBackend", ctx: "Context") -> None:
     if warns:
         out.summary_warn("" + "; ".join(
             f"{r['label']}: {r['value']}" for r in warns))
-    if not errors and not warns:
+    if not errors and not warns and not unreadable:
+        # `unreadable` belongs in this condition for exactly the reason the comment
+        # above gives, and was missing from it: a run where *nothing* could be verified
+        # has no errors and no warnings, so it printed "did NOT verify: …" and
+        # "installed files match their packages" in the same summary — the second
+        # sentence contradicting the first, and the one a reader takes away.
         out.summary_add("installed files match their packages")
 
     _write_report(scan, ctx)

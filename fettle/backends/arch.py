@@ -186,22 +186,43 @@ class ArchBackend(PackageBackend):
         **A cap that says nothing is a lie about coverage.** The output was sliced to
         the first 50 lines with no indication that anything followed. The count now
         comes from the whole output and the sample is explicitly a sample.
+
+        **A verifier that failed is not a verifier that found nothing.** Measured in an
+        Arch container: ``paccheck`` exits **1 both when it finds a mismatch and when it
+        cannot open the database**, so the status alone cannot classify the run. What
+        does separate them is the shape of the output — every per-file verdict names its
+        file in single quotes (``bash: '/usr/bin/bashbug' sha256sum mismatch``) and a
+        failure does not (``error: failed to initialize alpm.``). So a line counts as a
+        verdict only when it names a file, and a non-zero exit that produced no verdict
+        at all is reported as blindness. Before this, ``run_text`` discarded the status
+        and that ``error:`` line was filed as an altered file — a failure rendered as a
+        finding, which is the governing invariant inverted.
         """
         scan.sub("Pacman Package Verification")
         if scan.which("paccheck"):
             scan.dim("Running paccheck --sha256sum (this may take a while)...")
-            out = scan.run_text(["paccheck", "--sha256sum", "--quiet"])
-            altered, unreadable, expected = [], [], []
+            out, rc = scan.run_text_rc(["paccheck", "--sha256sum", "--quiet"])
+            altered, unreadable, expected, noise = [], [], [], []
             for line in out.splitlines():
                 if not line.strip():
                     continue
                 line = line.rstrip()
-                if "read error" in line:
+                path = _paccheck_path(line)
+                if not path:
+                    noise.append(line)          # no quoted file: not a verdict
+                elif "read error" in line:
                     unreadable.append(line)
-                elif is_regenerated(_paccheck_path(line)):
+                elif is_regenerated(path):
                     expected.append(line)
                 else:
                     altered.append(line)
+            if rc != 0 and not (altered or unreadable or expected):
+                scan.status("Package Integrity",
+                            f"UNKNOWN — paccheck failed (exit {rc}); packages were NOT "
+                            "verified", "error", blind=True)
+                if noise:
+                    scan.result(sample_lines(noise))
+                return
             if altered:
                 scan.status("Package Integrity",
                             f"{len(altered)} file(s) differ from their package",
@@ -221,18 +242,42 @@ class ArchBackend(PackageBackend):
                             "re-run as root (`sudo fettle -V`) to verify them", "warn")
                 if scan.verbose:
                     scan.result(sample_lines(unreadable))
+            if rc != 0 and noise:
+                # It verified something, but it also said something that is not a
+                # verdict — so its coverage is not proven, whatever the findings say.
+                scan.status("Not verified",
+                            f"paccheck exited {rc} and emitted {len(noise)} line(s) "
+                            "that are not file verdicts; coverage is unproven",
+                            "error", blind=True)
+                scan.result(sample_lines(noise))
         elif scan.which("pacman"):
             scan.dim("Running pacman -Qkk (checking file presence)...")
-            altered = [ln for ln in scan.run_text(["pacman", "-Qkk"]).splitlines()
-                       if ln.strip() and "0 altered files" not in ln]
-            if not altered:
+            out, rc = scan.run_text_rc(["pacman", "-Qkk"])
+            # Measured: `-Qkk` exits 1 for *findings* as much as for failure, and a
+            # stock container legitimately exits 1 because the image build strips
+            # files. So the status cannot be the verdict either: `error:` lines are the
+            # failures, everything else that is not a zero "altered files" total is a
+            # finding.
+            altered, noise = [], []
+            for ln in out.splitlines():
+                ln = ln.rstrip()
+                if not ln.strip() or "0 altered files" in ln:
+                    continue
+                (noise if ln.startswith("error:") else altered).append(ln)
+            if rc != 0 and not altered:
+                scan.status("Package Files",
+                            f"UNKNOWN — pacman -Qkk failed (exit {rc}); files were NOT "
+                            "verified", "error", blind=True)
+                if noise:
+                    scan.result(sample_lines(noise))
+            elif not altered:
                 scan.status("Package Files", "No alterations detected", "ok")
             else:
                 scan.status("Package Files",
                             f"{len(altered)} package(s) with modified files", "warn")
                 scan.result(sample_lines(altered))
         else:
-            scan.status("pacman", "Not found", "error")
+            scan.status("pacman", "Not found", "error", blind=True)
 
     # -- helpers -------------------------------------------------------------
     def _updaters(self, ctx: Context) -> tuple[str, str]:
