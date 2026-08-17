@@ -29,6 +29,15 @@ but explains itself badly is still a **FAIL**, recorded as such.
 cross-cutting rows swept.** Roughly 90 findings fixed across the pass, at v0.110.0 with
 1172 unit tests.
 
+**A sixth family and a code review came after.** `compromise-check` (`-M`) was built and
+swept at v1.6.1. Then an external code review on 2026-08-12 reopened four already-swept
+features — `clean`, `update`, `pkg-integrity` and `report` — and found a false-assurance
+bug in each that the sweeps had missed, plus one destructive bug. All five are fixed
+(v1.8.0-1.12.0) and recorded as extra sweeps in the files above. **Worth drawing the
+lesson:** every one was a case of *reading a tool's silence or its exit status as good
+news*, which is the same defect class the whole pass was organised around — so a feature
+being "swept" is not proof it is clean, only that it was looked at once.
+
 **This pass is what 1.0.0 rests on.** The release that followed it has a plan, packaging
 for four distro families, and GitHub Actions building and verifying every artifact — see
 `packaging/README.md`. Two known items were deliberately left: the `web` sweep, and the
@@ -115,9 +124,9 @@ Status of each feature's QA pass. `—` = not started.
 
 | Feature | Flag | QA file | Status |
 |---|---|---|---|
-| clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 8 findings fixed, 3 deferred by decision** |
+| clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 9 findings fixed, 2 deferred by decision** *(F-05 closed v1.8.0: it deleted pacman's db lock)* |
 | orphans | `-o` | [orphans.md](orphans.md) | **swept — 3 findings fixed, 1 open** |
-| update | `-u` | [update.md](update.md) | **swept — 6 findings, all fixed** |
+| update | `-u` | [update.md](update.md) | **swept — 8 findings, all fixed** *(sweep 3, v1.9.0-1.10.0: extras ran after a failed upgrade; an unreachable repo upgraded to success)* |
 | only-update | `-O` | [only-update.md](only-update.md) | **swept — 4 findings fixed, 2 open for decision** |
 | rebuild-check | `-r` | [rebuild-check.md](rebuild-check.md) | **swept — 4 fixed, 1 withdrawn, 1 open (R-06)** |
 | python-rebuild-check | `-y` | [python-rebuild-check.md](python-rebuild-check.md) | **swept — 4 findings, all fixed** |
@@ -130,13 +139,13 @@ Status of each feature's QA pass. `—` = not started.
 | pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 1 fixed, 1 open** |
 | hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** |
 | container-update | `-C` | [container-update.md](container-update.md) | **swept — 5 fixed, 2 of them in the audit half too** |
-| pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **new in v0.72.0 — split out of sys-audit, swept on 4 targets** |
+| pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **3 sweeps — split out of sys-audit v0.72.0; sweep 3 (v1.11.0) found a failed verifier reporting a clean system on every backend** |
 | sys-audit | `-S` | [sys-audit.md](sys-audit.md) | **swept — 7 fixed, incl. one affecting every `fettle remote` run; + chipsec config v0.84.x** |
 | upgrade-check | `-U` | [upgrade-check.md](upgrade-check.md) | **reviewed (no live run, by decision) — 2 fixed, 1 recorded** |
 | aur-precheck | `-p` | [aur-precheck.md](aur-precheck.md) | **swept — 4 fixed, incl. the malware gate passing on blind feeds** |
 | advisory-check | — | [advisory-check.md](advisory-check.md) | **swept — 5 fixed (2 raised by Paul on sight); pre-update gate redesigned** |
 | advisory-update | — | [advisory-update.md](advisory-update.md) | **swept — 3 fixed; a failing timer looked healthy** |
-| report | — | [report.md](report.md) | **swept — 4 fixed, then a UX pass: card verdict, delta, severity filter, links** |
+| report | — | [report.md](report.md) | **2 sweeps — 4 fixed + a UX pass; sweep 2 (v1.12.0): a fixed finding never cleared, and run logs alone earned `OK`** |
 | compromise-check | `-M` | [compromise-check.md](compromise-check.md) | **swept at v1.6.1 — 5 findings, all fixed; 2 of them not specific to it** |
 | web | — | — | **ON HOLD — marked experimental (v0.87.0); the one feature not swept** |
 | remote | — | [remote.md](remote.md) | **swept — 4 fixed, on top of 3 found while sweeping other features** |
