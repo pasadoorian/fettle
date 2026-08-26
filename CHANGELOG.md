@@ -35,6 +35,18 @@ Confirmed directly under a real `sudo` after the fix landed: `sudo podman images
 **0** images, `sudo -u paulda podman images` lists **11** — the store the audit had been
 reading, and the store it should have been reading.
 
+**Verified end to end**, `sudo fettle -P` on the reporting host:
+
+```
+[container] 22 container images examined — across docker, podman, podman(paulda)
+! [container] podman(paulda):docker.io/library/alpine:latest: ':latest' is a mutable tag …
+```
+
+Five podman findings in an elevated run, where every previous report had none. The
+elevated audit now returns **exactly** what the unprivileged one does — 51 findings either
+way — which is the real test: whether fettle audits the same machine regardless of how it
+was invoked. Docker's 16 are unchanged, so nothing was traded away for it.
+
 **Worse than the GNOME bug in one specific way:** GNOME *failed*, loudly, and said
 "extensions were NOT audited" every day for a week. podman *succeeds* and hands back an
 empty list. There was no error to notice.

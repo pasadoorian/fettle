@@ -110,7 +110,11 @@ way:** GNOME *failed* and said so daily for a week; podman *succeeds* and return
 list, so there was no error to notice at all.
 
 Confirmed under a real `sudo` once the fix had landed: `sudo podman images` → **0**,
-`sudo -u paulda podman images` → **11**. The second proves the mechanism works under
+`sudo -u paulda podman images` → **11**, and then the whole action: `sudo fettle -P`
+reported *22 container images examined — across docker, podman, podman(paulda)* with five
+`podman(paulda):` findings, where every previous elevated report had none. **The elevated
+run and the unprivileged run now return the same 51 findings** — the audit describes the
+machine, not the way it was launched. The second proves the mechanism works under
 genuine elevation rather than only under the development proxy; the first proves root's
 store is empty *here*, which is why the double-ask below earns its keep somewhere else
 rather than on this machine.
