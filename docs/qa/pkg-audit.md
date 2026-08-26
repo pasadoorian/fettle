@@ -43,7 +43,30 @@ guests.
 | QA-PA-09 | **A resolved finding is distinguishable from one never checked** | **open** (P-02) |
 | QA-PA-10 | Unreadable extension index is not reported as clean | PASS *(by construction)* |
 | QA-PA-11 | Report written 0600 | PASS |
-| QA-PA-12 | Runs unprivileged | PASS — already in the read-only set |
+| QA-PA-12 | Runs unprivileged | PASS *alone* — but see P-03: inside `-a` the process is already root |
+| QA-PA-13 *(new)* | **A per-user source is queried as that user, not as root** | **FAIL → fixed for GNOME** (P-03); podman still open |
+
+## Open
+
+- **The podman half of the container source is dark under a root run — silently.** Same
+  root cause as P-03 (per-user state queried as root), worse failure mode: rootless
+  podman's store is `~/.local/share/containers/storage`, so as root it reads root's
+  store, finds nothing, and reports **no findings at all** rather than `UNVERIFIABLE`.
+  Measured on the QA workstation: unprivileged the provider yields **docker 16 + podman
+  5**; every stored root-run report has **docker 16 + podman 0**, and no report has ever
+  mentioned podman.
+
+  **Not fixed with the same one-liner, deliberately.** `docker` and `podman` need
+  opposite treatment: podman's store follows the *user*, while docker is a system daemon
+  reached through a `root:docker` socket — so dropping privileges for docker would make
+  *it* dark on any host where the invoking user is not in the `docker` group. The fix has
+  to be per-runtime, and it wants verifying under real elevation.
+
+- **`flatpak list` is unscoped, and is the same shape.** `flatpak_source` passes no
+  `as_user` and no scope flag, so under a root run it sees system installs plus *root's*
+  per-user ones — the invoking user's `~/.local/share/flatpak` apps are invisible.
+  **Unverified end to end:** the QA workstation has zero flatpaks installed (user and
+  system both), so there is nothing here to observe the discrepancy against.
 
 ## Findings
 
@@ -60,6 +83,47 @@ the point. It now uses the three-state vocabulary:
 
 The CRIT case now fails the run. This is the one read-only audit where that is right: a
 package on a known-malicious list is not a to-do item, and a scripted run should stop.
+
+### P-03 — the GNOME channel was dark for a week. FIXED v1.13.0
+
+Raised by Paul from his own run logs: the same line in the 21, 24, 25 and 26 August runs —
+
+```
+! [gnome] gnome-extensions: could not list extensions (exit 2) — extensions were NOT audited
+```
+
+— on a workstation with 24 extensions installed and working.
+
+**Why it was root's fault.** `pkg-audit` is in the no-root set and QA-PA-12 passes when it
+runs *alone*. But `-a` / `--everything` re-execs the whole process under `sudo` for the
+mutating actions, and after that every action in the run is root, including the ones that
+never asked to be. **An action being in the no-root set does not mean it executes
+unprivileged — only that it does not elevate on its own.**
+
+GNOME extensions belong to a *login session*, not to the machine: `gnome-extensions` asks
+the session bus, and sudo's `env_reset` had already discarded `DBUS_SESSION_BUS_ADDRESS`
+and `XDG_RUNTIME_DIR` from the run. Measured:
+
+| invocation | exit |
+|---|---|
+| `gnome-extensions list` | 0 (24 extensions) |
+| `env -u DBUS_SESSION_BUS_ADDRESS -u XDG_RUNTIME_DIR ... list` | **2** |
+| `env -u DBUS_SESSION_BUS_ADDRESS ... list` | 0 |
+| `env -u XDG_RUNTIME_DIR ... list` | 0 |
+
+**The fix has a trap, and `as_user` alone does not clear it.** `sudo -u` resets the
+environment a *second* time, so dropping privileges still hands the child no bus address.
+`command.run` gained `session=True`, which re-supplies `XDG_RUNTIME_DIR=/run/user/<uid>`
+across the drop — either variable is enough, and that is the one reconstructable from the
+uid alone.
+
+**A second way the same channel went dark, found while verifying the first:** unprivileged
+but with no session in fettle's *own* environment — a plain crontab entry sets no
+`XDG_RUNTIME_DIR` — failed identically. Same symptom, different branch; both closed.
+
+Credit where due: fettle reported this honestly as `UNVERIFIABLE` rather than as a clean
+result the whole time, which is the governing invariant working. The invariant is what
+made a week-long outage *visible* instead of silent — but visible is not fixed.
 
 ### P-02 — you can only tell you fixed something by noticing an absence. OPEN
 Raised from real use: two VSCodium extensions were flagged as sideloaded `.vsix`,

@@ -50,14 +50,18 @@ _UUIDS = ("appindicatorsupport@rgcjonas.gmail.com\n"
 
 
 def _ctx():
+    # `sudo_user` is what the extension listing drops back to: the audits self-elevate,
+    # and the extension list lives in that user's session, not root's.
     return Context(output=Output(color=False), config=Config(),
-                   user_home=Path(_HOME))
+                   sudo_user="paul", user_home=Path(_HOME))
 
 
 def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman",
-         upstream=True):
-    def fake_run(cmd, *, as_user=None, capture=False):
+         upstream=True, calls=None):
+    def fake_run(cmd, *, as_user=None, capture=False, session=False):
         c = list(cmd)
+        if calls is not None:
+            calls.append({"argv": c, "as_user": as_user, "session": session})
         if c[:2] == ["gnome-extensions", "list"]:
             if "--details" in c:
                 return command.Proc(0, details, "")
@@ -129,6 +133,51 @@ def test_no_package_manager_means_no_claim_about_system_paths():
 def test_listing_failure_reports_instead_of_returning_clean():
     f = _run(list_rc=1)
     assert len(f) == 1 and f[0].question == UNVERIFIABLE
+    assert "NOT audited" in f[0].detail
+
+
+# -- the extension list belongs to a session, not to the machine --------------
+def test_the_listing_drops_back_to_the_user_and_restores_their_session():
+    """The bug this guards, live for a week across four runs: `-P` self-elevates, so
+    `gnome-extensions` ran as root against no session bus and exited 2 — every run
+    reporting `extensions were NOT audited` on a desktop with 24 of them working.
+
+    Both halves are required. `as_user` alone is not enough: `sudo -u` resets the
+    environment too, so the child still has no bus address."""
+    calls = []
+    _run(calls=calls)
+    listings = [c for c in calls if c["argv"][:2] == ["gnome-extensions", "list"]]
+    assert listings, "the extension list was never requested"
+    for c in listings:
+        assert c["as_user"] == "paul", f"ran as root: {c['argv']}"
+        assert c["session"] is True, f"no session bus restored: {c['argv']}"
+
+
+def test_the_package_manager_query_stays_as_root():
+    """`pacman -Qo` reads a root-owned database and wants no session — dropping
+    privileges for it would be pointless work, and the guard against a fix applied
+    with too broad a brush."""
+    calls = []
+    _run(calls=calls)
+    for c in [c for c in calls if c["argv"][0] in ("pacman", "dpkg")]:
+        assert c["as_user"] is None and c["session"] is False
+
+
+def test_a_failed_listing_says_when_the_reason_is_a_missing_session():
+    import fettle.supplychain.gnome_source as gs
+    with patch("os.geteuid", return_value=0), \
+         patch("fettle.command.session_available", return_value=False):
+        f = _run(list_rc=2)
+    assert "no active login session" in f[0].detail
+    assert gs  # module referenced so the patch target is unambiguous
+
+
+def test_a_failed_listing_with_a_live_session_does_not_blame_the_session():
+    """It would be worse to explain a real failure with a wrong cause."""
+    with patch("os.geteuid", return_value=0), \
+         patch("fettle.command.session_available", return_value=True):
+        f = _run(list_rc=2)
+    assert "no active login session" not in f[0].detail
     assert "NOT audited" in f[0].detail
 
 

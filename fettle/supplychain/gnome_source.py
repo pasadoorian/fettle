@@ -23,7 +23,7 @@ from pathlib import Path
 
 from urllib.parse import quote
 
-from .. import command
+from .. import command, util
 from .base import (
     UNOFFICIAL_SOURCE,
     UNVERIFIABLE,
@@ -40,6 +40,27 @@ from .base import (
 _EGO_INFO = "https://extensions.gnome.org/extension-info/?uuid={uuid}"
 
 _TOOL = "gnome-extensions"
+
+
+def _no_session_hint(user: str | None) -> str:
+    """Why the listing failed, when the reason is "there was no session to ask".
+
+    Without this the message is true but unhelpful — `exit 2` on a workstation where
+    the extensions are plainly there and working reads as a fettle defect. It is the
+    same shape either way (extensions were NOT audited), so this only ever adds the
+    *cause*, never changes the verdict.
+    """
+    import os
+
+    if os.geteuid() != 0:
+        return ""                       # unprivileged: the ambient session is whatever it is
+    if not user:
+        return (" — fettle is running as root with no invoking user to drop back to, "
+                "so there is no desktop session to query; run it as your own user")
+    if not command.session_available(user):
+        return (f" — {user} has no active login session (no /run/user/<uid>), so there "
+                "is no GNOME session to list extensions from")
+    return ""
 
 
 def _uuids(stdout: str) -> list[str]:
@@ -101,20 +122,29 @@ class GnomeSource(SourceProvider):
     def findings(self, ctx) -> list[Finding]:
         if not command.which(_TOOL):
             return []
-        listing = command.run([_TOOL, "list"], capture=True)
+        # **Extensions belong to a login session, not to the machine.** Nearly every
+        # fettle run that reaches here is root — the audits self-elevate — and
+        # `gnome-extensions` asks the *session bus* for its answer, so as root it exits
+        # 2 having listed nothing. Drop back to the invoking user AND restore their
+        # runtime dir: `sudo -u` resets the environment a second time, so dropping
+        # privileges alone still leaves the child with no bus to talk to.
+        user = getattr(ctx, "sudo_user", None) or util.invoking_user()
+        listing = command.run([_TOOL, "list"], capture=True, as_user=user, session=True)
         if listing.returncode != 0:
             why = (listing.stderr or listing.stdout).strip().splitlines()
             return [Finding(
                 Severity.MEDIUM, self.source, _TOOL, UNVERIFIABLE,
                 f"could not list extensions (exit {listing.returncode}"
                 + (f": {why[0][:120]}" if why else "")
-                + ") — extensions were NOT audited")]
+                + ") — extensions were NOT audited"
+                + _no_session_hint(user))]
 
         uuids = _uuids(listing.stdout)
         if not uuids:
             return []
         details = parse_details(
-            command.run([_TOOL, "list", "--details"], capture=True).stdout, uuids)
+            command.run([_TOOL, "list", "--details"], capture=True,
+                        as_user=user, session=True).stdout, uuids)
 
         home = str(Path(getattr(ctx, "user_home", None) or Path.home()))
         out: list[Finding] = []

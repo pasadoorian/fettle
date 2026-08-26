@@ -11,6 +11,63 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.13.0] — the GNOME extension audit had been dark for a week
+
+Reported by a user from his own run logs: the same line in four consecutive runs
+(21, 24, 25 and 26 August), on a workstation with 24 extensions installed and working.
+
+```
+! [gnome] gnome-extensions: could not list extensions (exit 2) — extensions were NOT audited
+```
+
+### Root, without a session
+
+`pkg-audit` is in fettle's no-root set, and running it alone is unprivileged. But `-a` /
+`--everything` re-execs the whole process under `sudo` for the mutating actions — and
+after that **every** action in the run is root, including the ones that never asked to be.
+Being in the no-root set means an action does not *elevate on its own*, not that it
+executes unprivileged.
+
+GNOME extensions belong to a *login session*, not to the machine: `gnome-extensions` asks
+the session bus, and sudo's `env_reset` had already discarded `DBUS_SESSION_BUS_ADDRESS`
+and `XDG_RUNTIME_DIR` from the run. Measured on the reporting host:
+
+| invocation | exit |
+|---|---|
+| `gnome-extensions list` | 0 (24 extensions) |
+| `env -u DBUS_SESSION_BUS_ADDRESS -u XDG_RUNTIME_DIR … list` | **2** |
+| `env -u DBUS_SESSION_BUS_ADDRESS … list` | 0 |
+| `env -u XDG_RUNTIME_DIR … list` | 0 |
+
+**Dropping privileges alone does not fix it** — `sudo -u` resets the environment a second
+time, so the child still has no bus to talk to. `command.run` gained an opt-in
+`session=True` that re-supplies `XDG_RUNTIME_DIR=/run/user/<uid>` across the drop. Either
+variable is sufficient (libdbus derives `unix:path=$XDG_RUNTIME_DIR/bus` when the address
+is unset) and that is the one rebuildable from the uid alone, without having captured
+anything before the re-exec.
+
+It is opt-in because the usual reason to pass `as_user` is the user's *identity* — an AUR
+build, pamac's per-user database — not their session, and those callers keep the clean
+environment they have always had.
+
+### A second way the same channel went dark
+
+Found while verifying the first: unprivileged, but with no session in fettle's *own*
+environment — a plain crontab entry sets no `XDG_RUNTIME_DIR` — failed identically. Same
+symptom, different branch. The runtime directory is still there and still ours, so it is
+now derived rather than reported as unreadable.
+
+### When there is genuinely no session
+
+A headless host, a service account, nobody logged in: the answer is still "extensions were
+NOT audited", but it now says **why** — `no active login session (no /run/user/<uid>)`. A
+fabricated path would not conjure a session, so none is invented; the verdict never
+changes, only the explanation.
+
+**Worth stating plainly:** fettle reported this honestly as `UNVERIFIABLE` for the whole
+week rather than as a clean result. That is the governing invariant working — it is what
+made a week-long outage visible instead of silent. Visible is not fixed.
+
 ## [1.12.0] — first release since 1.0.0: a sixth feature family, and five false-assurance bugs closed
 
 **This is the first tagged release since 1.0.0** (2026-08-10) and carries twelve versions of
