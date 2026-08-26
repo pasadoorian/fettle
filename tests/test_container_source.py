@@ -1,7 +1,7 @@
 """Container image supply-chain provider — docker/podman inventory."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fettle import command
 from fettle.backends.base import Context
@@ -219,3 +219,97 @@ def test_podman_output_produces_real_findings_end_to_end():
     assert "docker.io/library/alpine:latest" in pkgs
     assert any(x.question == MUTABLE_REFERENCE for x in f)     # :latest
     assert any(x.question == STALE_OR_ABANDONED for x in f)    # age parsed from ISO
+
+
+# -- podman keeps one image store per identity -------------------------------
+# Measured on the QA host: as the invoking user, 11 images under
+# ~/.local/share/containers/storage; as root, none of them, because root reads
+# /var/lib/containers/storage instead. Every stored report had docker findings and
+# **zero** podman ones, silently — an empty list, not an error.
+def _stores(tools=("docker", "podman"), *, euid=0, sudo_user="paul"):
+    """The (runtime, as_user) pairs the provider decides to query."""
+    cfg = Config()
+    cfg.containers = {}
+    ctx = Context(output=Output(color=False), config=cfg, sudo_user=sudo_user)
+    with patch("fettle.command.which", side_effect=lambda n: n in tools), \
+         patch("os.geteuid", return_value=euid):
+        return ContainerSource._stores(ctx)
+
+
+def test_podman_is_asked_as_the_user_as_well_as_root():
+    assert _stores() == [("docker", None), ("podman", None), ("podman", "paul")]
+
+
+def test_docker_is_never_asked_as_the_user():
+    """docker is one system daemon behind a group-owned socket: root can always reach
+    it and an ordinary user often cannot, so dropping privileges could turn a working
+    docker audit into a failing one."""
+    assert ("docker", "paul") not in _stores()
+
+
+def test_no_second_podman_store_when_already_unprivileged():
+    """Running as the user already — root's store is not ours to read and asking twice
+    would just query the same store twice."""
+    assert _stores(euid=1000) == [("docker", None), ("podman", None)]
+
+
+def test_no_second_podman_store_without_an_invoking_user():
+    """A systemd service with no SUDO_USER has nobody to drop back to."""
+    assert _stores(sudo_user=None) == [("docker", None), ("podman", None)]
+
+
+def test_findings_name_the_store_they_came_from():
+    """With two podman stores in play, the store name is what tells you *where* a
+    flagged image lives — which is what you need in order to act on it."""
+    import json as _json
+
+    def fake_run(cmd, *, as_user=None, capture=False):
+        c = list(cmd)
+        if c[:2] == ["podman", "images"] and as_user == "paul":
+            return command.Proc(0, _json.dumps(_img("mine", "latest")), "")
+        if c[:2] == ["podman", "images"]:
+            return command.Proc(0, _json.dumps(_img("roots", "latest")), "")
+        return command.Proc(0, "", "")
+
+    cfg = Config()
+    cfg.containers = {}
+    ctx = Context(output=Output(color=False), config=cfg, sudo_user="paul")
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n == "podman"), \
+         patch("os.geteuid", return_value=0):
+        f = ContainerSource().findings(ctx)
+    pkgs = {x.package for x in f}
+    assert "podman:roots:latest" in pkgs, pkgs
+    assert "podman(paul):mine:latest" in pkgs, pkgs
+
+
+def test_a_failed_user_store_is_blindness_not_an_empty_store():
+    """The whole point: an unreadable store must never render as a store with nothing
+    in it, which is what the bug did for weeks."""
+    def fake_run(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["podman", "images"] and as_user == "paul":
+            return command.Proc(125, "", "cannot re-exec process")
+        return command.Proc(0, "", "")
+
+    cfg = Config()
+    cfg.containers = {}
+    ctx = Context(output=Output(color=False), config=cfg, sudo_user="paul")
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("fettle.command.which", side_effect=lambda n: n == "podman"), \
+         patch("os.geteuid", return_value=0):
+        f = ContainerSource().findings(ctx)
+    blind = [x for x in f if x.question == UNVERIFIABLE]
+    assert blind and blind[0].package == "podman(paul)"
+    assert "NOT audited" in blind[0].detail
+
+
+def test_the_invoking_user_being_root_is_not_a_second_store():
+    """`sudo fettle` from a root shell leaves SUDO_USER=root. Dropping to root is not
+    dropping at all — it would read one store twice and double every finding in it."""
+    with patch("fettle.command.which", side_effect=lambda n: n == "podman"), \
+         patch("os.geteuid", return_value=0), \
+         patch("pwd.getpwnam", return_value=MagicMock(pw_uid=0)):
+        cfg = Config()
+        cfg.containers = {}
+        ctx = Context(output=Output(color=False), config=cfg, sudo_user="root")
+        assert ContainerSource._stores(ctx) == [("podman", None)]

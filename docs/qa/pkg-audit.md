@@ -50,12 +50,17 @@ guests.
 | QA-PA-16 *(new)* | "could not look" is not recorded as "examined zero" | PASS — guard on the fix |
 | QA-PA-17 *(new)* | The enabled GNOME extensions are named | **FAIL → fixed** (P-04) |
 | QA-PA-18 *(new)* | The enabled list does not inflate the finding count | PASS — guard on the fix |
+| QA-PA-19 *(new)* | **podman's per-user image store is audited** | **FAIL → fixed** (P-05) |
+| QA-PA-20 *(new)* | podman's root store is audited too, and the two are told apart | **FAIL → fixed** (P-05) |
+| QA-PA-21 *(new)* | docker is never asked as the user | PASS — guard on the fix |
+| QA-PA-22 *(new)* | **flatpak is asked as the invoking user** | **FAIL → fixed** (P-05) |
+| QA-PA-23 *(new)* | A store that cannot be read is blindness, not an empty store | **FAIL → fixed** (P-05) |
 
 ## Open
 
-- **The podman half of the container source is dark under a root run — silently.**
-  *(P-04 makes this visible from the terminal now: the line reads `[container] N container
-  images examined`, so a store that came back empty is stated rather than implied.)* Same
+- ~~**The podman half of the container source is dark under a root run**~~ — **FIXED
+  v1.15.0** (P-05).
+- ~~**`flatpak list` is unscoped**~~ — **FIXED v1.15.0** (P-05). Same
   root cause as P-03 (per-user state queried as root), worse failure mode: rootless
   podman's store is `~/.local/share/containers/storage`, so as root it reads root's
   store, finds nothing, and reports **no findings at all** rather than `UNVERIFIABLE`.
@@ -68,12 +73,6 @@ guests.
   reached through a `root:docker` socket — so dropping privileges for docker would make
   *it* dark on any host where the invoking user is not in the `docker` group. The fix has
   to be per-runtime, and it wants verifying under real elevation.
-
-- **`flatpak list` is unscoped, and is the same shape.** `flatpak_source` passes no
-  `as_user` and no scope flag, so under a root run it sees system installs plus *root's*
-  per-user ones — the invoking user's `~/.local/share/flatpak` apps are invisible.
-  **Unverified end to end:** the QA workstation has zero flatpaks installed (user and
-  system both), so there is nothing here to observe the discrepancy against.
 
 ## Findings
 
@@ -90,6 +89,49 @@ the point. It now uses the three-state vocabulary:
 
 The CRIT case now fails the run. This is the one read-only audit where that is right: a
 package on a known-malicious list is not a to-do item, and a scripted run should stop.
+
+### P-05 — two more per-user stores audited as the wrong identity. FIXED v1.15.0
+
+The third and fourth instances of the shape behind P-03: **software that belongs to a
+person, checked as if it belonged to the machine.**
+
+**podman — 11 images never audited.** Rootless podman gives each user a private image
+store in their home directory. fettle asks as root, so podman answers from
+`/var/lib/containers/storage` — empty on the QA host — instead of
+`~/.local/share/containers/storage`, which holds 11.
+
+| how the audit ran | docker | podman |
+|---|---|---|
+| as the invoking user | 16 findings | **5** |
+| as root (every stored report) | 16 findings | **0** |
+
+No report fettle had ever written mentioned podman. **Worse than P-03 in one specific
+way:** GNOME *failed* and said so daily for a week; podman *succeeds* and returns an empty
+list, so there was no error to notice at all.
+
+**The obvious fix would have broken docker.** docker is the opposite shape — one
+system-wide daemon behind a `root:docker` socket that root can always reach and an
+ordinary user can reach only if they are in that group. A blanket "ask as the user" fixes
+podman here and breaks docker on any host where the invoking user is not in that group.
+
+**And asking *only* as the user would just move the blind spot,** since running containers
+as root is ordinary on a server. So podman is now asked **twice** when the two identities
+differ, each finding naming its store (`podman:` vs `podman(paulda):`), and the examined
+line says where it looked: *33 container images examined — across docker, podman,
+podman(paulda)*. `SUDO_USER=root` (a `sudo fettle` from a root shell) is not a second
+store, or one store would be read twice and every finding in it doubled.
+
+**flatpak — the same shape.** A `--user` install lives under `~/.local/share/flatpak`, so
+as root fettle saw the system apps plus *root's own*. Asked as the invoking user now, which
+needs no second query: a normal user's `flatpak list` covers both scopes. Its exit status
+was also being discarded, so a flatpak that could not run read as a host with no flatpaks —
+that is now `UNVERIFIABLE`. **Honestly unverified end to end:** the QA host has zero flatpak
+apps installed, system or user, so there is nothing here to observe the difference against.
+The code path is identical to podman's, and identical-looking is not the same as verified.
+
+Both now route through one helper, `util.invoking_user_for`, whose docstring carries the
+list of what is per-user and what is machine-wide — so the next provider asks the question
+deliberately instead of rediscovering it.
 
 ### P-04 — a provider that found nothing said nothing. FIXED v1.14.0
 

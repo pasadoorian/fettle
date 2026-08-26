@@ -11,6 +11,74 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.15.0] — podman's and flatpak's per-user stores are finally audited
+
+Third and fourth instances of the shape behind v1.13.0: **software that belongs to a
+person, checked as if it belonged to the machine.** A maintenance run is usually root,
+because most of it has to be — and at that moment the personal half of the host goes
+invisible.
+
+### podman — 11 images that had never been audited
+
+Rootless podman gives every user a private image store in their home directory. fettle
+asked as root, so podman answered from `/var/lib/containers/storage` — empty on the
+reporting host — rather than `~/.local/share/containers/storage`, which held 11.
+
+| how the audit ran | docker | podman |
+|---|---|---|
+| as the invoking user | 16 findings | **5** |
+| as root (every stored report, weeks of them) | 16 findings | **0** |
+
+No report fettle had ever written mentioned podman.
+
+**Worse than the GNOME bug in one specific way:** GNOME *failed*, loudly, and said
+"extensions were NOT audited" every day for a week. podman *succeeds* and hands back an
+empty list. There was no error to notice.
+
+### Why the obvious fix was wrong, twice over
+
+**"Always ask as the user" would have broken docker.** docker is the opposite shape: one
+system-wide daemon behind a `root:docker` socket that root can always reach and an
+ordinary user can reach only if they are in that group. A blanket privilege drop fixes
+podman on one machine and silently breaks docker on another.
+
+**Asking *only* as the user would have moved the blind spot rather than closed it.**
+Running containers as root is ordinary on a server, and that store would then be the
+invisible one.
+
+So podman is asked **twice** when the two identities differ. Each finding names its store —
+`podman:` versus `podman(paulda):` — because with two stores in play the name is what tells
+you where a flagged image actually lives. The examined line follows: *33 container images
+examined — across docker, podman, podman(paulda)*. `SUDO_USER=root`, which is what a `sudo
+fettle` from a root shell leaves behind, is **not** a second store; without that guard one
+store would be read twice and every finding in it doubled.
+
+### flatpak — the same shape, plus a discarded exit status
+
+A `--user` flatpak install lives under `~/.local/share/flatpak`, so as root fettle saw the
+system apps plus *root's own* and never yours. It is asked as the invoking user now, which
+needs no second query — a normal user's `flatpak list` covers both scopes at once.
+
+Its exit status was also being thrown away, so a flatpak that could not run read as a host
+with no flatpak apps. That is now `UNVERIFIABLE`, like every other "could not look" in this
+audit.
+
+**Stated plainly: the flatpak half is unverified end to end.** The reporting host has zero
+flatpak apps installed, system or user, so there is nothing there to observe the difference
+against. The code path is identical to podman's, and identical-looking is not verified.
+
+### One helper, so this stops recurring
+
+Both route through `util.invoking_user_for`, whose docstring carries the list of what is
+per-user (GNOME extensions, rootless podman, `--user` flatpak) and what is machine-wide
+(docker, snap, every distro package manager). The next provider gets to ask the question
+deliberately instead of rediscovering it the hard way.
+
+Eleven tests, ten proved to fail against the old code. The tenth is a guard that nothing
+changes when fettle is already unprivileged — and one of them earned its keep immediately,
+catching a fourth flatpak call site (`remote-info`, inside the still-offered check) that
+would otherwise have asked root whether *your* app still exists upstream and been told no.
+
 ## [1.14.0] — a provider that finds nothing now says what it looked at
 
 Follow-on from v1.13.0, raised immediately: with the GNOME session bug fixed, `pkg-audit`

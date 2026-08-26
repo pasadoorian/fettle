@@ -60,7 +60,7 @@ MUTABLE_REFERENCE = "MUTABLE_REFERENCE"
 UNVERIFIABLE = "UNVERIFIABLE"
 
 
-def still_upstream(argv, absent_marker: str):
+def still_upstream(argv, absent_marker: str, *, as_user: str | None = None):
     """Does an installed item still exist in the index it came from?
 
     Returns **True** (still there), **False** (definitively gone), or **None** (could
@@ -85,7 +85,11 @@ def still_upstream(argv, absent_marker: str):
     """
     from .. import command
 
-    proc = command.run(list(argv), capture=True)
+    # `as_user` matters for a per-user store: a `--user` flatpak listed as the invoking
+    # user and then asked about as root would come back "not there" — a withdrawal
+    # reported for an app that is present, which is the false alarm this helper's whole
+    # three-state design exists to avoid.
+    proc = command.run(list(argv), capture=True, as_user=as_user)
     if proc.returncode == 0:
         return True
     text = ((proc.stdout or "") + (proc.stderr or "")).lower()

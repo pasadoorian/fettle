@@ -129,3 +129,56 @@ def test_app_is_checked_against_its_own_remote_not_flathub():
     _, calls = _run_remote("com.vendor.Tool\tvendor-remote\n")
     info = next(c for c in calls if c[:2] == ["flatpak", "remote-info"])
     assert info[2] == "vendor-remote", info
+
+
+# -- `--user` installs belong to a person, not the machine -------------------
+# A `--user` flatpak lives under ~/.local/share/flatpak, so asking as root returns the
+# system apps plus *root's own* and never yours. One ask as the user covers both scopes,
+# because a normal user's `flatpak list` shows system and user installs together.
+def _asked_as(euid=0, sudo_user="paul"):
+    """Every (argv, as_user) pair the provider issues."""
+    calls = []
+
+    def fake_run(cmd, *, as_user=None, capture=False):
+        calls.append((list(cmd), as_user))
+        if list(cmd)[:2] == ["flatpak", "list"]:
+            return command.Proc(0, "org.x.App\tflathub\n", "")
+        return command.Proc(0, "", "")
+
+    ctx = Context(output=Output(color=False), config=Config(), sudo_user=sudo_user)
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("os.geteuid", return_value=euid):
+        FlatpakSource().findings(ctx)
+    return calls
+
+
+def test_flatpak_is_asked_as_the_invoking_user():
+    for argv, as_user in _asked_as():
+        assert as_user == "paul", f"asked as root: {argv}"
+
+
+def test_the_permissions_query_uses_the_same_identity():
+    """Listed as the user then queried as root would find the app and no permissions."""
+    perms = [(a, u) for a, u in _asked_as() if a[:3] == ["flatpak", "info",
+                                                        "--show-permissions"]]
+    assert perms and all(u == "paul" for _a, u in perms)
+
+
+def test_nothing_changes_when_already_unprivileged():
+    assert all(u is None for _a, u in _asked_as(euid=1000))
+
+
+def test_a_failed_listing_is_not_an_empty_host():
+    """The status was discarded, so a flatpak that could not run read as a machine with
+    no flatpak apps — the same false clean this provider exists to prevent."""
+    def fake_run(cmd, *, as_user=None, capture=False):
+        if list(cmd)[:2] == ["flatpak", "list"]:
+            return command.Proc(1, "", "error: Unable to load summary")
+        return command.Proc(0, "", "")
+
+    ctx = Context(output=Output(color=False), config=Config(), sudo_user="paul")
+    with patch("fettle.command.run", side_effect=fake_run), \
+         patch("os.geteuid", return_value=0):
+        f = FlatpakSource().findings(ctx)
+    assert len(f) == 1 and f[0].question == UNVERIFIABLE
+    assert "NOT audited" in f[0].detail

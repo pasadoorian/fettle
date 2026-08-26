@@ -54,11 +54,28 @@ class FlatpakSource(SourceProvider):
         return command.which("flatpak")
 
     def findings(self, ctx) -> list[Finding]:
+        # **Flatpak apps can belong to a person, not the machine.** A `--user` install
+        # lives under `~/.local/share/flatpak`, so asking as root returns the system
+        # apps plus *root's own* — never yours. Asking as the invoking user needs no
+        # second query, because a normal user's `flatpak list` covers both scopes.
+        from .. import util
+
+        as_user = util.invoking_user_for(ctx)
         out: list[Finding] = []
         unknown: list[str] = []
         seen = 0
-        apps = command.run(["flatpak", "list", "--app", "--columns=application,origin"],
-                           capture=True).stdout
+        proc = command.run(["flatpak", "list", "--app", "--columns=application,origin"],
+                           capture=True, as_user=as_user)
+        if proc.returncode != 0:
+            # The status used to be discarded, so a flatpak that could not run read as a
+            # host with no flatpaks — the same false clean this provider exists to avoid.
+            why = (proc.stderr or proc.stdout).strip().splitlines()
+            return [Finding(
+                Severity.MEDIUM, self.source, "flatpak", UNVERIFIABLE,
+                f"could not list apps (exit {proc.returncode}"
+                + (f": {why[0][:120]}" if why else "")
+                + ") — flatpak apps were NOT audited")]
+        apps = proc.stdout
         for line in apps.splitlines():
             cols = _cols(line)
             if len(cols) < 2:
@@ -72,7 +89,7 @@ class FlatpakSource(SourceProvider):
             # rather than flathub, so an app from a third-party remote is checked
             # against its own source instead of being flagged for not being on flathub.
             present = still_upstream(["flatpak", "remote-info", origin, appid],
-                                     "can't find ref")
+                                     "can't find ref", as_user=as_user)
             if present is False:
                 out.append(Finding(Severity.MEDIUM, self.source, appid,
                                    STALE_OR_ABANDONED,
@@ -81,9 +98,10 @@ class FlatpakSource(SourceProvider):
                                    "like this"))
             elif present is None:
                 unknown.append(appid)
-            out.extend(self._permission_findings(appid))
+            out.extend(self._permission_findings(appid, as_user))
 
-        remotes = command.run(["flatpak", "remotes", "--columns=name,url"], capture=True).stdout
+        remotes = command.run(["flatpak", "remotes", "--columns=name,url"],
+                              capture=True, as_user=as_user).stdout
         for line in remotes.splitlines():
             cols = _cols(line)
             if len(cols) >= 2 and cols[1].startswith("http://"):
@@ -103,10 +121,12 @@ class FlatpakSource(SourceProvider):
             else ("all from their declared remote" if not out else ""))
         return out
 
-    def _permission_findings(self, appid: str) -> list[Finding]:
+    def _permission_findings(self, appid: str, as_user: str | None = None) -> list[Finding]:
         # `--` so an app id can never be read as an option (matches aur/audit.py).
+        # Asked as the same identity that listed the app, or a `--user` install would be
+        # listed and then have no permissions readable.
         perms = command.run(["flatpak", "info", "--show-permissions", "--", appid],
-                            capture=True).stdout
+                            capture=True, as_user=as_user).stdout
         out: list[Finding] = []
         fs = _perm_field(perms, "Context", "filesystems")
         broad = [x for x in fs if x in _BROAD_FS or x.startswith("/")]

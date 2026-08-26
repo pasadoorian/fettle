@@ -72,6 +72,41 @@ def invoking_user() -> str | None:
     return os.environ.get("SUDO_USER") or None
 
 
+def invoking_user_for(ctx) -> str | None:
+    """Who a **per-user** store must be queried as, or ``None`` to stay as we are.
+
+    Some things belong to the machine and some belong to a person, and the second kind
+    lives in that person's home directory where only they (or a query made *as* them)
+    can see it. fettle usually runs as root — most of a maintenance run needs it — and
+    at that moment the personal half of the host goes invisible. It does not error; it
+    returns an empty list, which is indistinguishable from having nothing installed.
+
+    Known per-user stores, all found the hard way:
+
+    ``gnome-extensions``
+        Answers from the *session* bus, so as root it fails outright (fixed v1.13.0).
+    ``podman``
+        Rootless images live under ``~/.local/share/containers/storage``. Root reads
+        ``/var/lib/containers/storage`` instead and finds nothing — **silently**.
+    ``flatpak``
+        ``--user`` installs live under ``~/.local/share/flatpak``. Root sees the system
+        ones plus *root's own*, never yours.
+
+    Machine-wide by contrast, and deliberately NOT routed through here: ``docker`` (one
+    system daemon behind a group-owned socket — root can always reach it and an ordinary
+    user often cannot, so dropping privileges would break it), ``snap``, and every
+    distro package manager.
+
+    Returns ``None`` when we are not root, or when there is no invoking user to drop
+    back to — in both cases the current identity is already the right one to ask as.
+    """
+    import os
+
+    if os.geteuid() != 0:
+        return None
+    return getattr(ctx, "sudo_user", None) or invoking_user()
+
+
 # How to install a package, per package manager. Detected from what is on PATH rather
 # than from the backend, so any code path can produce a working instruction without
 # having to be handed a distro.

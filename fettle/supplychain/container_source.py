@@ -29,6 +29,21 @@ from .base import (
 # Checked in order; the first one installed is used.
 RUNTIMES = ("docker", "podman")
 
+
+def _is_root(user: str) -> bool:
+    """Whether a username resolves to uid 0 (it need not be spelled "root")."""
+    import pwd
+
+    try:
+        return pwd.getpwnam(user).pw_uid == 0
+    except (KeyError, TypeError):
+        return False
+
+
+def _store_name(runtime: str, as_user: str | None) -> str:
+    """``podman`` vs ``podman(paulda)`` — which image store a finding came from."""
+    return f"{runtime}({as_user})" if as_user else runtime
+
 # Registries with a known operator and a published trust story. Anything else is
 # worth a second look — not because it is bad, but because you should know it is
 # there. Local builds (no registry in the name) are reported as context, not flagged.
@@ -164,31 +179,75 @@ class ContainerSource(SourceProvider):
         # Every installed runtime, not just the first. docker and podman keep separate
         # image stores, and a host with both had one of them audited while the report
         # read as though it covered the machine.
-        runtimes = [r for r in RUNTIMES if command.which(r)]
+        stores = self._stores(ctx)
         out: list[Finding] = []
         self._seen = 0
-        for runtime in runtimes:
-            out.extend(self._runtime_findings(ctx, runtime, tagged=len(runtimes) > 1))
-        # Counted per runtime and summed, so a host running both docker and podman says
-        # so — a store that came back empty is exactly what this line exists to expose.
+        for runtime, as_user in stores:
+            out.extend(self._runtime_findings(ctx, runtime, as_user,
+                                              tagged=len(stores) > 1))
+        # Counted per store and summed, so a host running both docker and podman says so
+        # — a store that came back empty is exactly what this line exists to expose.
+        where = ", ".join(_store_name(r, u) for r, u in stores)
         self.examined = Examined(
             self._seen, "container images",
-            "no images present in " + " or ".join(runtimes) if not self._seen else "")
+            f"no images present in {where}" if not self._seen
+            else (f"across {where}" if len(stores) > 1 else ""))
         return out
 
-    def _runtime_findings(self, ctx, runtime: str, *, tagged: bool) -> list[Finding]:
-        def label(ref: str) -> str:
-            """Name the runtime only when two are installed — otherwise every finding
-            on an ordinary single-runtime host would grow noise for no information."""
-            return f"{runtime}:{ref}" if tagged else ref
+    @staticmethod
+    def _stores(ctx) -> list[tuple[str, str | None]]:
+        """``(runtime, ask-as-user)`` pairs to query — **podman has two of them.**
 
-        proc = command.run(images_argv(runtime), capture=True)
+        Rootless podman gives every user a private image store in their home directory,
+        so "the machine's images" is not one list. Measured on the QA host: as the
+        invoking user, 11 images; as root, none of them — and no report fettle had ever
+        written mentioned podman, because the audit only ever asked root.
+
+        Asking *only* as the user would just move the blind spot: running containers as
+        root is ordinary on a server, and that store would then be the invisible one.
+        So when the two identities differ, podman is asked twice and each finding says
+        which store it came from.
+
+        docker is deliberately excluded. It is one system-wide daemon behind a
+        group-owned socket: root can always reach it, an ordinary user only if they are
+        in that group, so dropping privileges could turn a working docker audit into a
+        failing one on somebody else's machine.
+        """
+        from .. import util
+
+        user = util.invoking_user_for(ctx)
+        if user and _is_root(user):
+            # `sudo fettle` from a root shell leaves SUDO_USER=root, and dropping to
+            # root is not dropping at all — it would query one store twice and report
+            # every image in it as two findings.
+            user = None
+        stores: list[tuple[str, str | None]] = []
+        for runtime in RUNTIMES:
+            if not command.which(runtime):
+                continue
+            stores.append((runtime, None))
+            if runtime == "podman" and user:
+                stores.append((runtime, user))
+        return stores
+
+    def _runtime_findings(self, ctx, runtime: str, as_user: str | None, *,
+                          tagged: bool) -> list[Finding]:
+        store = _store_name(runtime, as_user)
+
+        def label(ref: str) -> str:
+            """Name the store only when more than one was read — otherwise every
+            finding on an ordinary single-runtime host would grow noise for no
+            information. With two podman stores in play the name is what tells you
+            *where* a flagged image actually lives, which is what you need to act."""
+            return f"{store}:{ref}" if tagged else ref
+
+        proc = command.run(images_argv(runtime), capture=True, as_user=as_user)
         if proc.returncode != 0:
             # The daemon is down, or the user is not in the `docker` group. Reporting
             # nothing here would look identical to "no problems found".
             why = (proc.stderr or proc.stdout).strip().splitlines()
             return [Finding(
-                Severity.MEDIUM, self.source, runtime, UNVERIFIABLE,
+                Severity.MEDIUM, self.source, store, UNVERIFIABLE,
                 f"could not list images (exit {proc.returncode}"
                 + (f": {why[0][:120]}" if why else "")
                 + ") — images were NOT audited")]
