@@ -29,6 +29,19 @@ but explains itself badly is still a **FAIL**, recorded as such.
 cross-cutting rows swept.** Roughly 90 findings fixed across the pass, at v0.110.0 with
 1172 unit tests.
 
+**And a fourth wave, 2026-08-26 (v1.13.0-1.16.0), from Paul reading his own run logs.**
+Four bugs of one family — *software that belongs to a person, checked as if it belonged to
+the machine*: GNOME extensions (asked as root, so the session bus refused), rootless podman
+(11 images invisible to every elevated run), `--user` flatpak, and providers that examined
+things and then said nothing at all. Plus a fifth that was a different animal entirely: a
+stopped `snapd` **hung fettle forever**, `--dry-run` included, because nothing in
+`command.run` had a timeout.
+
+**The pattern in it worth keeping:** an action in the **no-root set still runs as root
+inside `-a`**. Being in that set means it does not *elevate on its own*, not that it
+executes unprivileged — and that is what put three per-user checks in front of the wrong
+identity for months. Ask, for any new check, *whose* data this is.
+
 **A sixth family and a code review came after.** `compromise-check` (`-M`) was built and
 swept at v1.6.1. Then an external code review on 2026-08-12 reopened four already-swept
 features — `clean`, `update`, `pkg-integrity` and `report` — and found a false-assurance
@@ -124,7 +137,7 @@ Status of each feature's QA pass. `—` = not started.
 
 | Feature | Flag | QA file | Status |
 |---|---|---|---|
-| clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 9 findings fixed, 2 deferred by decision** *(F-05 closed v1.8.0: it deleted pacman's db lock)* |
+| clean | `-c` | [clean.md](clean.md) | **DONE — 2 sweeps, 98 PASS / 0 FAIL; 10 findings fixed, 2 deferred** *(F-05 v1.8.0: it deleted pacman's db lock; F-13 v1.16.0: a stopped snapd hung the action, `--dry-run` included)* |
 | orphans | `-o` | [orphans.md](orphans.md) | **swept — 3 findings fixed, 1 open** |
 | update | `-u` | [update.md](update.md) | **swept — 8 findings, all fixed** *(sweep 3, v1.9.0-1.10.0: extras ran after a failed upgrade; an unreachable repo upgraded to success)* |
 | only-update | `-O` | [only-update.md](only-update.md) | **swept — 4 findings fixed, 2 open for decision** |
@@ -136,7 +149,7 @@ Status of each feature's QA pass. `—` = not started.
 | kernel | `-k` | [kernel.md](kernel.md) | **swept — 2 fixed, 1 open (Arch-only)** |
 | aur-audit | `-A` | [aur-audit.md](aur-audit.md) | **swept — 2 findings, both fixed** |
 | ~~aur-ioc-scan~~ | ~~`-I`~~ | [aur-ioc-scan.md](aur-ioc-scan.md) | **RETIRED v0.73.0 — folded into `-P`; its feed-coverage reporting moved with it** |
-| pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 1 fixed, 1 open** |
+| pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 5 fixed, 1 open** *(P-03..P-05, v1.13.0-1.15.0: three sources audited as the wrong identity, and providers that found nothing said nothing)* |
 | hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** |
 | container-update | `-C` | [container-update.md](container-update.md) | **swept — 5 fixed, 2 of them in the audit half too** |
 | pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **3 sweeps — split out of sys-audit v0.72.0; sweep 3 (v1.11.0) found a failed verifier reporting a clean system on every backend** |
