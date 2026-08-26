@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 from .. import command, util
 from .base import (
+    Examined,
     UNOFFICIAL_SOURCE,
     UNVERIFIABLE,
     Finding,
@@ -141,12 +142,15 @@ class GnomeSource(SourceProvider):
 
         uuids = _uuids(listing.stdout)
         if not uuids:
+            self.examined = Examined(0, "extensions", "no GNOME extensions installed")
             return []
         details = parse_details(
             command.run([_TOOL, "list", "--details"], capture=True,
                         as_user=user, session=True).stdout, uuids)
 
         home = str(Path(getattr(ctx, "user_home", None) or Path.home()))
+        enabled_uuids = [u for u in uuids
+                         if details.get(u, {}).get("Enabled", "").strip().lower() == "yes"]
         out: list[Finding] = []
         unknown: list[str] = []
         for uuid in uuids:
@@ -196,4 +200,21 @@ class GnomeSource(SourceProvider):
         if unknown:
             out.append(unverifiable_finding(self.source, unknown,
                                             "extensions.gnome.org"))
+        unattributed = sum(1 for f in out if f.question == UNOFFICIAL_SOURCE)
+        self.examined = Examined(
+            len(uuids), "extensions",
+            (f"{unattributed} not traceable to a package" if unattributed
+             else "all traceable to a package")
+            + f"; {len(enabled_uuids)} enabled")
+        # The enabled set, listed rather than counted. These are the extensions running
+        # in-process right now; "packaged" says where one came from, not that it is
+        # inert, and the packaged ones were the only thing this audit never mentioned.
+        home_p = home
+        self.detail_rows = ([f"enabled and running inside gnome-shell "
+                             f"({len(enabled_uuids)} of {len(uuids)}):"]
+                            + [f"  {u}"
+                               + ("  [in your home directory]"
+                                  if (details.get(u, {}).get("Path", "") or "").startswith(home_p)
+                                  else "")
+                               for u in enabled_uuids]) if enabled_uuids else []
         return out

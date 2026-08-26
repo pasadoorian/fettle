@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from .. import command
 from .base import (
+    Examined,
     OVER_PRIVILEGED,
     STALE_OR_ABANDONED,
     UNOFFICIAL_SOURCE,
@@ -37,12 +38,14 @@ class SnapSource(SourceProvider):
     def findings(self, ctx) -> list[Finding]:
         out: list[Finding] = []
         unknown: list[str] = []
+        seen = 0
         # `snap list` columns: Name Version Rev Tracking Publisher Notes
         for line in command.run(["snap", "list"], capture=True).stdout.splitlines()[1:]:
             cols = line.split()
             if len(cols) < 6:
                 continue
             name, publisher, notes = cols[0], cols[4], cols[5]
+            seen += 1
             sideloaded = publisher in ("-", "")
             if sideloaded:
                 out.append(Finding(Severity.MEDIUM, self.source, name, UNOFFICIAL_SOURCE,
@@ -76,4 +79,8 @@ class SnapSource(SourceProvider):
                                f"could not reach the Snap Store to check whether "
                                f"{len(unknown)} snap(s) are still published — not "
                                "checked, rather than checked and clean"))
+        self.examined = Examined(
+            seen, "snaps",
+            "no snaps installed" if not seen
+            else ("all from a verified Store publisher" if not out else ""))
         return out

@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 
 from .. import command
 from ..util import matches_any
-from .base import (MUTABLE_REFERENCE, STALE_OR_ABANDONED, UNOFFICIAL_SOURCE,
+from .base import (
+    Examined,MUTABLE_REFERENCE, STALE_OR_ABANDONED, UNOFFICIAL_SOURCE,
                    UNVERIFIABLE, Finding, Severity, SourceProvider)
 
 # Checked in order; the first one installed is used.
@@ -165,8 +166,14 @@ class ContainerSource(SourceProvider):
         # read as though it covered the machine.
         runtimes = [r for r in RUNTIMES if command.which(r)]
         out: list[Finding] = []
+        self._seen = 0
         for runtime in runtimes:
             out.extend(self._runtime_findings(ctx, runtime, tagged=len(runtimes) > 1))
+        # Counted per runtime and summed, so a host running both docker and podman says
+        # so — a store that came back empty is exactly what this line exists to expose.
+        self.examined = Examined(
+            self._seen, "container images",
+            "no images present in " + " or ".join(runtimes) if not self._seen else "")
         return out
 
     def _runtime_findings(self, ctx, runtime: str, *, tagged: bool) -> list[Finding]:
@@ -189,7 +196,9 @@ class ContainerSource(SourceProvider):
         max_age, ignore = _cfg(ctx)
         now = datetime.now(timezone.utc)
         out: list[Finding] = []
-        for img in parse_images(proc.stdout):
+        images = parse_images(proc.stdout)
+        self._seen = getattr(self, "_seen", 0) + len(images)
+        for img in images:
             repo = str(img.get("Repository", "") or "")
             tag = str(img.get("Tag", "") or "")
             ref = image_ref(repo, tag)

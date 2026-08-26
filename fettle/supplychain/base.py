@@ -156,9 +156,38 @@ def finding_to_dict(f: "Finding") -> dict:
             "question": f.question, "detail": f.detail}
 
 
+@dataclass(frozen=True)
+class Examined:
+    """What a provider actually looked at — so "clean" cannot render as "never ran".
+
+    `coverage` says what a provider *can* answer. This says what it *did*, on this host,
+    this run. Without it a provider that examined 24 extensions and cleared every one
+    produced exactly the same output as one that never executed: its coverage sentence
+    and nothing else.
+
+    Four outcomes have to stay distinguishable, and only two of them were:
+
+    ==========================  ==================================================
+    the tool is not installed   already handled — "[x] not present on this system"
+    installed, nothing to see   ``Examined(0, …)`` — "nothing to examine"
+    examined N, all clean       ``Examined(N, …)`` — the case that was invisible
+    could not look              already handled — an ``UNVERIFIABLE`` finding
+    ==========================  ==================================================
+
+    ``detail`` completes the sentence and is where the useful part goes: *why* there
+    was nothing to report, not merely that there wasn't.
+    """
+    count: int
+    unit: str                    # plural noun: "extensions", "images", "snaps"
+    detail: str = ""
+
+
 class SourceProvider(abc.ABC):
     source: str = "base"
     coverage: str = ""
+    #: Set by :meth:`findings` while it works. ``None`` means this provider has not
+    #: adopted the outcome line yet, and it renders exactly as it always has.
+    examined: "Examined | None" = None
 
     @abc.abstractmethod
     def is_present(self, ctx: "Context") -> bool:

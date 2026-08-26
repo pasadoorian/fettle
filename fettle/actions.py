@@ -291,6 +291,45 @@ def _skipped_sources(ctx: "Context") -> set[str]:
     return {str(s) for s in (chosen.get("skip_sources") or [])}
 
 
+def _extra_detail(out, provider) -> None:
+    """Body detail a provider wants shown even when it has no findings.
+
+    Today that is the GNOME enabled set. An enabled extension runs **inside the
+    gnome-shell process** with the full privileges of your session — the provider's own
+    trust model — and on a machine where every extension is distro-packaged the audit
+    had that list in hand and threw it away, reporting nothing at all.
+
+    Deliberately NOT a `Finding`: findings feed the count and the summary mark, so an
+    informational one would turn every GNOME desktop into "N supply-chain finding(s)"
+    with a warn beside it. This is context, and context does not get an alarm. It routes
+    through `out.detail` so `--quiet` suppresses it like any other body output.
+    """
+    rows = getattr(provider, "detail_rows", None)
+    for row in rows or []:
+        out.detail(row)
+
+
+def _examined_line(provider, n_found: int) -> str:
+    """One line per provider saying what it looked at, or "" if it has not adopted this.
+
+    Deliberately kept separate from the coverage line: `coverage` is a fixed sentence
+    about what the ecosystem permits, this changes every run and is the part that
+    answers "did it actually look?".
+    """
+    e = getattr(provider, "examined", None)
+    if e is None:
+        return ""
+    if e.count == 0:
+        # Present but empty is not the same as absent (reported separately, above) and
+        # not the same as clean — nothing was examined, so nothing was cleared.
+        return (f"[{provider.source}] nothing to examine"
+                + (f" — {e.detail}" if e.detail else ""))
+    unit = e.unit if e.count != 1 else e.unit.rstrip("s")
+    tail = e.detail or (f"{n_found} finding(s) below" if n_found else "")
+    return (f"[{provider.source}] {e.count} {unit} examined"
+            + (f" — {tail}" if tail else ""))
+
+
 def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
     """Run every present Package Supply Chain provider and report normalized findings."""
     from . import reports
@@ -320,7 +359,19 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
     findings = []
     for p in providers:
         out.note(f"[{p.source}] coverage: {p.coverage}")
-        findings.extend(p.findings(ctx))
+        found = p.findings(ctx)
+        # What it looked at, said out loud. `coverage` is what this provider *can*
+        # answer; this is what it *did*, here, now. Without it a provider that examined
+        # 24 extensions and cleared every one printed its coverage sentence and nothing
+        # else — identical output to one that never ran. The same reasoning is already
+        # written into the action loop at the bottom of this file ("no way to tell
+        # twelve checks were clean from twelve never ran"); it was never carried down
+        # to the providers inside this audit.
+        line = _examined_line(p, len(found))
+        if line:
+            out.note(line)
+        _extra_detail(out, p)
+        findings.extend(found)
     findings.sort(key=lambda f: (-int(f.severity), f.source, f.package))
 
     if not findings:
@@ -347,7 +398,13 @@ def pkg_audit(backend: "PackageBackend", ctx: "Context") -> None:
             lines += [f"[{f.severity.name}] [{f.source}] {f.package}: {f.detail}"
                       for f in findings] or ["no findings"]
             from .supplychain.base import finding_to_dict
-            data = {"findings": [finding_to_dict(f) for f in findings]}
+            data = {"findings": [finding_to_dict(f) for f in findings],
+                    # Recorded, not just printed: a stored report that says "no findings"
+                    # is worth nothing unless it also says what was looked at.
+                    "examined": {p.source: {"count": p.examined.count,
+                                            "unit": p.examined.unit,
+                                            "detail": p.examined.detail}
+                                 for p in providers if p.examined is not None}}
             report = reports.write_report("pkg-audit", "\n".join(lines), ctx, data=data)
             out.note(f"full report saved to {report}")
         except OSError as exc:

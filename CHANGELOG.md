@@ -11,6 +11,75 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.14.0] — a provider that finds nothing now says what it looked at
+
+Follow-on from v1.13.0, raised immediately: with the GNOME session bug fixed, `pkg-audit`
+reported *nothing at all* about 24 installed extensions except its coverage sentence.
+
+**The check was right; the reporting was not.** All 24 were distro-packaged, so all 24 were
+deliberately skipped — the provider only reports extensions it cannot attribute to a
+package. But it then printed no line of its own, and because other providers *did* find
+things, even the `no supply-chain findings` fallback never fired.
+
+Not a GNOME bug. Measured across the six providers present on the reporting host:
+
+| provider | findings | actually examined |
+|---|---|---|
+| aur | 30 | 76 packages |
+| container | 21 | 22 images |
+| **gnome** | **0** | **24 extensions, 5 enabled** |
+| **vscode** | **0** | **11 extensions** |
+| **snap** | **0** | **0 — nothing installed** |
+| **flatpak** | **0** | **0 — nothing installed** |
+
+**Four of six were silent, and two different facts were hiding behind that silence.** gnome
+and vscode examined 35 objects and cleared every one; snap and flatpak examined nothing at
+all. Those are different statements about a machine, and they rendered identically.
+
+fettle had already fixed this one layer up — the action loop carries the comment *"no way
+to tell 'twelve checks were clean' from 'twelve never ran'"* with the fix directly under
+it. It was never carried down to the providers inside this audit.
+
+### What it looks like now
+
+```
+[gnome]     24 extensions examined — all traceable to a package; 5 enabled
+              enabled and running inside gnome-shell (5 of 24):
+                appindicatorsupport@rgcjonas.gmail.com
+                dash-to-panel@jderose9.github.com
+                …
+[vscode]    11 editor extensions examined — all installed from a marketplace
+[snap]      nothing to examine — no snaps installed
+[flatpak]   nothing to examine — no flatpak apps installed
+[aur]       76 AUR packages examined — 30 finding(s) below
+```
+
+Four outcomes stay distinct, because collapsing any two is how an audit starts lying: **not
+installed** (already handled) · **installed but nothing to examine** · **examined N, all
+clean** · **could not look** (the existing `UNVERIFIABLE` finding). Opt-in per provider —
+`examined = None` renders exactly as before — and recorded in the stored JSON, because a
+report that says "no findings" is worth nothing unless it also says what was looked at.
+
+### The enabled GNOME extensions are named
+
+Extension code runs **inside the `gnome-shell` process** with the full privileges of the
+session — the provider's own trust model. On a machine where every extension is packaged,
+that list was the one thing the audit never mentioned, despite having it in hand.
+
+Listed as body detail through `out.detail` (so `--quiet` suppresses it), deliberately **not
+as a `Finding`**: findings drive the count and the summary mark, so an informational one
+would turn every GNOME desktop into "N supply-chain finding(s)" with a warn beside it.
+Context does not get an alarm.
+
+### Still open, unchanged by this
+
+The podman half of the container audit remains dark under a root run — rootless podman's
+store is per-user, so as root it reads root's store and finds nothing. This release makes
+that *visible* (`[container] N container images examined` rather than silence) but does not
+fix it: docker and podman need opposite treatment, since docker is a system daemon behind a
+`root:docker` socket and dropping privileges for it would break *that*. Recorded under
+**Open** in `docs/qa/pkg-audit.md`.
+
 ## [1.13.0] — the GNOME extension audit had been dark for a week
 
 Reported by a user from his own run logs: the same line in four consecutive runs

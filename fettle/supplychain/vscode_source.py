@@ -31,6 +31,7 @@ import json
 from pathlib import Path
 
 from .base import (
+    Examined,
     UNOFFICIAL_SOURCE,
     UNVERIFIABLE,
     Finding,
@@ -193,6 +194,7 @@ class VSCodeSource(SourceProvider):
     def findings(self, ctx) -> list[Finding]:
         out: list[Finding] = []
         unknown: list[str] = []
+        seen = 0
         for path, label in _index_paths(self._home(ctx)):
             try:
                 text = path.read_text(errors="replace")
@@ -235,6 +237,7 @@ class VSCodeSource(SourceProvider):
                         f"from a present one — {label} extensions were NOT checked for "
                         "removal"))
 
+            seen += len(exts)
             for ext in exts:
                 name = f"{label}:{ext['id']}"
                 if ext["source"] == _SIDELOADED:
@@ -273,4 +276,8 @@ class VSCodeSource(SourceProvider):
         if unknown:
             out.append(unverifiable_finding(self.source, unknown,
                                             "the extension registry"))
+        self.examined = Examined(
+            seen, "editor extensions",
+            "no editor extensions installed" if not seen
+            else ("all installed from a marketplace" if not out else ""))
         return out

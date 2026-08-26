@@ -17,6 +17,7 @@ import time
 from ..aur import common as aur_common
 from ..aur import meta as aur_meta
 from .base import (
+    Examined,
     KNOWN_BAD,
     STALE_OR_ABANDONED,
     UNVERIFIABLE,
@@ -40,6 +41,7 @@ class AURSource(SourceProvider):
     def findings(self, ctx) -> list[Finding]:
         foreign = aur_common.foreign_packages(ctx)
         if not foreign:
+            self.examined = Examined(0, "AUR packages", "no foreign packages installed")
             return []
         results = aur_meta.query_info(foreign)
         by_name = {r.get("Name"): r for r in results if r.get("Name")}
@@ -103,6 +105,7 @@ class AURSource(SourceProvider):
 
         # Maintainer-change / re-adoption tell (state diff across runs).
         out.extend(self._maintainer_changes(by_name, ctx))
+        self.examined = Examined(len(foreign), "AUR packages")
         return out
 
     def _maintainer_changes(self, by_name, ctx) -> list[Finding]:

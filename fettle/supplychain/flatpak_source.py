@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from .. import command
 from .base import (
+    Examined,
     INSECURE_TRANSPORT,
     OVER_PRIVILEGED,
     STALE_OR_ABANDONED,
@@ -55,6 +56,7 @@ class FlatpakSource(SourceProvider):
     def findings(self, ctx) -> list[Finding]:
         out: list[Finding] = []
         unknown: list[str] = []
+        seen = 0
         apps = command.run(["flatpak", "list", "--app", "--columns=application,origin"],
                            capture=True).stdout
         for line in apps.splitlines():
@@ -62,6 +64,7 @@ class FlatpakSource(SourceProvider):
             if len(cols) < 2:
                 continue
             appid, origin = cols[0], cols[1]
+            seen += 1
             if origin.lower() != "flathub":
                 out.append(Finding(Severity.LOW, self.source, appid, UNOFFICIAL_SOURCE,
                                    f"installed from non-flathub remote '{origin}'"))
@@ -94,6 +97,10 @@ class FlatpakSource(SourceProvider):
                                f"could not reach the remote(s) to check whether "
                                f"{len(unknown)} app(s) are still offered — not checked, "
                                "rather than checked and clean"))
+        self.examined = Examined(
+            seen, "flatpak apps",
+            "no flatpak apps installed" if not seen
+            else ("all from their declared remote" if not out else ""))
         return out
 
     def _permission_findings(self, appid: str) -> list[Finding]:

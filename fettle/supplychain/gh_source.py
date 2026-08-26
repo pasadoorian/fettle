@@ -23,6 +23,7 @@ import re
 from pathlib import Path
 
 from .base import (
+    Examined,
     UNVERIFIED_PUBLISHER,
     Finding,
     Severity,
@@ -106,7 +107,8 @@ class GhSource(SourceProvider):
             return []
         out: list[Finding] = []
         unknown: list[str] = []
-        for ext_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        dirs = sorted(p for p in root.iterdir() if p.is_dir())
+        for ext_dir in dirs:
             owner, repo = extension_origin(ext_dir)
             if owner and owner.lower() in _FIRST_PARTY:
                 continue                       # ships with the CLI project itself
@@ -140,4 +142,8 @@ class GhSource(SourceProvider):
                     "from the extension directory — provenance unknown"))
         if unknown:
             out.append(unverifiable_finding(self.source, unknown, "the GitHub API"))
+        self.examined = Examined(
+            len(dirs), "gh extensions",
+            "no gh extensions installed" if not dirs
+            else ("all first-party" if not out else ""))
         return out

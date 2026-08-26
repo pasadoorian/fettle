@@ -45,10 +45,17 @@ guests.
 | QA-PA-11 | Report written 0600 | PASS |
 | QA-PA-12 | Runs unprivileged | PASS *alone* — but see P-03: inside `-a` the process is already root |
 | QA-PA-13 *(new)* | **A per-user source is queried as that user, not as root** | **FAIL → fixed for GNOME** (P-03); podman still open |
+| QA-PA-14 *(new)* | **Every provider says what it examined** | **FAIL → fixed** (P-04) |
+| QA-PA-15 *(new)* | "nothing installed" and "examined N, all clean" read differently | **FAIL → fixed** (P-04) |
+| QA-PA-16 *(new)* | "could not look" is not recorded as "examined zero" | PASS — guard on the fix |
+| QA-PA-17 *(new)* | The enabled GNOME extensions are named | **FAIL → fixed** (P-04) |
+| QA-PA-18 *(new)* | The enabled list does not inflate the finding count | PASS — guard on the fix |
 
 ## Open
 
-- **The podman half of the container source is dark under a root run — silently.** Same
+- **The podman half of the container source is dark under a root run — silently.**
+  *(P-04 makes this visible from the terminal now: the line reads `[container] N container
+  images examined`, so a store that came back empty is stated rather than implied.)* Same
   root cause as P-03 (per-user state queried as root), worse failure mode: rootless
   podman's store is `~/.local/share/containers/storage`, so as root it reads root's
   store, finds nothing, and reports **no findings at all** rather than `UNVERIFIABLE`.
@@ -83,6 +90,50 @@ the point. It now uses the three-state vocabulary:
 
 The CRIT case now fails the run. This is the one read-only audit where that is right: a
 package on a known-malicious list is not a to-do item, and a scripted run should stop.
+
+### P-04 — a provider that found nothing said nothing. FIXED v1.14.0
+
+Raised by Paul immediately after P-03: with the session bug fixed, `pkg-audit` reported
+*nothing at all* about his 24 GNOME extensions except the coverage sentence.
+
+**The check was right; the reporting was not.** All 24 are distro-packaged, so all 24 are
+deliberately skipped — the provider only reports unattributed extensions. But the audit
+then printed no line of its own, and because other providers *did* find things, even the
+`no supply-chain findings` fallback never fired.
+
+Not a GNOME bug. Measured across the six providers present on the QA workstation:
+
+| provider | findings | actually examined |
+|---|---|---|
+| aur | 30 | 76 packages |
+| container | 21 | 22 images |
+| **gnome** | **0** | **24 extensions, 5 enabled** |
+| **vscode** | **0** | **11 extensions** |
+| **snap** | **0** | **0 — nothing installed** |
+| **flatpak** | **0** | **0 — nothing installed** |
+
+**Four of six were silent, hiding two different facts.** gnome and vscode examined 35
+objects and cleared every one; snap and flatpak examined nothing because nothing is
+installed. Those are different statements about a machine and they rendered identically.
+
+`fettle` had already fixed this one layer up — the action loop in `actions.py` carries the
+comment *"no way to tell 'twelve checks were clean' from 'twelve never ran'"* with the fix
+directly under it. It was never carried down to the providers inside this audit: the
+recurring shape where **a fix applied to one layer is not a fix applied to the pattern.**
+
+Providers now record an `Examined(count, unit, detail)` as they work, and every one prints
+its outcome. Four states stay distinct: *not installed* (already handled) · *installed,
+nothing to examine* · *examined N, all clean* · *could not look* (the existing
+`UNVERIFIABLE`). It is opt-in per provider — `examined = None` renders exactly as before —
+and it is recorded in the stored JSON, because a report saying "no findings" is worth
+nothing unless it also says what was looked at.
+
+**And the enabled extensions are now named.** The provider's own trust model is that
+extension code runs *inside the gnome-shell process* with full session privileges; on a
+machine where everything is packaged, the audit had that list in hand and discarded it.
+Listed as body detail through `out.detail` (so `--quiet` suppresses it), deliberately
+**not** as a `Finding` — findings drive the count and the summary mark, so an informational
+one would turn every GNOME desktop into "N supply-chain finding(s)" with a warn beside it.
 
 ### P-03 — the GNOME channel was dark for a week. FIXED v1.13.0
 

@@ -56,6 +56,17 @@ def _ctx():
                    sudo_user="paul", user_home=Path(_HOME))
 
 
+def _scan(tools, responses):
+    """(unused scan, run-patch, which-patch) — the `_run` plumbing, without the call,
+    so a test can inspect the provider instance afterwards."""
+    def fake_run(cmd, *, as_user=None, capture=False, session=False):
+        val = responses.get(tuple(cmd), "")
+        text, rc = val if isinstance(val, tuple) else (val, 0)
+        return command.Proc(rc, text, "")
+    return None, patch("fettle.command.run", side_effect=fake_run), \
+        patch("fettle.command.which", side_effect=lambda n: n in tools)
+
+
 def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman",
          upstream=True, calls=None):
     def fake_run(cmd, *, as_user=None, capture=False, session=False):
@@ -213,3 +224,70 @@ def test_packaged_extension_is_never_asked_about():
                side_effect=lambda u, **k: seen.append(u) or True):
         _run(owned=True)
     assert seen == []
+
+
+# -- M1/M2: what was examined, and what is enabled ---------------------------
+def test_the_provider_records_what_it_examined():
+    """A provider that examined 24 extensions and cleared every one used to render
+    identically to one that never ran: its coverage sentence, and nothing else."""
+    src = GnomeSource()
+    scan, p_run, p_which = _scan({"gnome-extensions", "pacman"},
+                                 {("gnome-extensions", "list"): _UUIDS,
+                                  ("gnome-extensions", "list", "--details"): _DETAILS})
+    with p_run, p_which, patch(
+            "fettle.supplychain.gnome_source.still_upstream_url", return_value=True):
+        src.findings(_ctx())
+    assert src.examined is not None
+    assert src.examined.count == len(_UUIDS.split())
+    assert src.examined.unit == "extensions"
+    assert "enabled" in src.examined.detail
+
+
+def test_nothing_installed_is_recorded_as_examined_zero():
+    """`Examined(0)` is not `Examined(24, all clean)` and must not read like it."""
+    src = GnomeSource()
+    scan, p_run, p_which = _scan({"gnome-extensions", "pacman"},
+                                 {("gnome-extensions", "list"): ""})
+    with p_run, p_which:
+        src.findings(_ctx())
+    assert src.examined is not None and src.examined.count == 0
+
+
+def test_a_failed_listing_records_no_examination_at_all():
+    """Could-not-look must not be recorded as examined-zero — that would turn the
+    blind case into the empty case, which is the whole bug this project is about."""
+    src = GnomeSource()
+    scan, p_run, p_which = _scan({"gnome-extensions", "pacman"},
+                                 {("gnome-extensions", "list"): ("", 2)})
+    with p_run, p_which:
+        f = src.findings(_ctx())
+    assert src.examined is None
+    assert f and f[0].question == UNVERIFIABLE
+
+
+def test_enabled_extensions_are_listed_even_when_all_are_packaged():
+    """The provider's own trust model is that extension code runs inside gnome-shell
+    with full session privileges. On a machine where everything is distro-packaged it
+    had that list in hand and said nothing."""
+    src = GnomeSource()
+    scan, p_run, p_which = _scan({"gnome-extensions", "pacman"},
+                                 {("gnome-extensions", "list"): _UUIDS,
+                                  ("gnome-extensions", "list", "--details"): _DETAILS})
+    with p_run, p_which, patch(
+            "fettle.supplychain.gnome_source.still_upstream_url", return_value=True):
+        src.findings(_ctx())
+    rows = getattr(src, "detail_rows", [])
+    assert rows and "enabled and running inside gnome-shell" in rows[0]
+
+
+def test_the_enabled_list_is_not_a_finding():
+    """Findings drive the count and the summary mark, so an informational one would
+    turn every GNOME desktop into `N supply-chain finding(s)` with a warn beside it."""
+    src = GnomeSource()
+    scan, p_run, p_which = _scan({"gnome-extensions", "pacman"},
+                                 {("gnome-extensions", "list"): _UUIDS,
+                                  ("gnome-extensions", "list", "--details"): _DETAILS})
+    with p_run, p_which, patch(
+            "fettle.supplychain.gnome_source.still_upstream_url", return_value=True):
+        f = src.findings(_ctx())
+    assert not any("enabled and running" in x.detail for x in f)
