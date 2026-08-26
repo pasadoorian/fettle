@@ -36,7 +36,7 @@ import re
 
 from pathlib import Path
 
-from .. import command, reports
+from .. import command, reports, util
 from ..util import matches_any
 from .base import (Context, PackageBackend, Result, Transaction, TxItem,
                    is_regenerated)
@@ -1218,6 +1218,9 @@ class RhelBackend(PackageBackend):
             ctx.execute(["flatpak", "update", "-y"])
             did.append("flatpak")
         if snap != "none" and command.which("snap"):
+            if not util.snap_ready():
+                out.warn(util.SNAPD_DOWN)
+                return Result(summary=", ".join(did))
             out.note("refreshing snaps...")
             ctx.execute(["snap", "refresh"])
             did.append("snap")

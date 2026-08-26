@@ -47,7 +47,7 @@ def _run(refs, ctx, *, answers=None, list_rc=0, pull_rc=0, local=(),
     def images_for(rt):
         return (by_runtime or {}).get(rt, refs)
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         calls.append(c)
         rt = c[0]
@@ -161,7 +161,7 @@ def test_no_runtime_does_nothing(capsys):
 
 
 def test_dangling_images_are_not_pull_targets():
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[1:2] == ["images"]:
             return command.Proc(0, json.dumps(

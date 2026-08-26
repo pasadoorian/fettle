@@ -21,7 +21,7 @@ class _Harness:
         self.tools, self.responses = tools, responses
 
     def __enter__(self):
-        def fake_run(cmd, *, as_user=None, capture=False):
+        def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
             # A response may be "text" (exit 0) or ("text", rc) to drive failures.
             val = self.responses.get(tuple(cmd), "")
             text, rc = val if isinstance(val, tuple) else (val, 0)
@@ -142,7 +142,7 @@ def _chipsec(tmp_path, capsys, *, summary=None, stdout="", rc=0, root=True,
     if configured:
         cfg.secure = {"chipsec_cmd": ["/usr/bin/chipsec_main"]}
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         if write_json and "-j" in cmd:
             Path(cmd[cmd.index("-j") + 1]).write_text(json.dumps(summary or {}))

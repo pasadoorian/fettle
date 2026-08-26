@@ -204,6 +204,64 @@ reports PASS is worse than no test:
 Filled as the sweep runs. Each FAIL is copied into
 `~/src/claude-scratchpad/qa-runs-outstanding-issues-questions.md` with a next step.
 
+### F-13 — a stopped snapd hung the whole action, --dry-run included. FIXED v1.16.0
+
+Found while verifying an unrelated fix: the test suite stopped returning. A stack dump
+rather than a guess showed a real `snap` command blocked in `subprocess.communicate` —
+
+```
+subprocess.run → command.run → _prune_disabled_snaps → clean_caches → _clean
+```
+
+Reproduced outside fettle entirely on the QA host, where `snapd` had been **deliberately
+disabled** (it was throwing AppArmor errors):
+
+| | |
+|---|---|
+| `/usr/bin/snap` | present, so fettle uses it |
+| `snapd.service` / `snapd.socket` | **inactive (dead)**, service **disabled** |
+| `snap list`, `snap list --all`, `snap version` | **never return** |
+
+**This is not an exotic configuration.** On Arch and Manjaro `snapd` ships
+`preset: disabled`, so anyone who installs it and does not run `systemctl enable --now
+snapd.socket` has a permanently hanging `snap` binary — and had a permanently hanging
+fettle: `-c`, `-P` and `-a` all wedged, `--dry-run` included, because the snap inventory
+is a read-only query and read-only queries deliberately bypass the dry-run gate.
+
+**The obvious probe is wrong.** `/run/snapd.socket` *still exists* while snapd is
+disabled — a stale file left from the last time the service ran. So "does the socket
+exist?" answers **yes** on exactly the host where snap does not work. Measured before
+building anything on it.
+
+Two parts:
+
+- **`command.run` gained an opt-in `timeout=`.** No default, deliberately: `pacman -Syu`
+  legitimately runs for twenty minutes and `rpm -Va` for several, so a blanket limit
+  would kill the commands fettle exists to run. A timeout returns `Proc(124)` — the
+  status GNU `timeout` uses — keeping whatever partial output the tool managed first, and
+  never raises.
+- **A cached `util.snap_ready()` probe** asks `snap version` under a short clock. Every
+  snap call site gates on it: `clean` skips the prune with a warning, `pkg-audit` emits
+  `UNVERIFIABLE`, `update` skips the refresh. **`examined` stays `None` for the audit** —
+  "could not look" is not "examined zero", and recording it as an empty examination would
+  put this host in the same bucket as one with no snaps.
+
+**Measured after:** `fettle -c --dry-run` completes in **5.2s** where it previously never
+returned, and says *"snapd is installed but not responding … `systemctl start
+snapd.socket` if you use snaps, or remove the snapd package if you do not"*. `fettle -P`
+reports `snaps were NOT audited` — distinct from the `nothing to examine — no snaps
+installed` it correctly printed that same morning while snapd was still alive.
+
+**Honest gap:** the healthy-path latency is unmeasured — no working snapd was available
+to time against — so 5s (probe) and 30s (inventory) are conservative choices, not fitted
+ones. Erring short reports "could not look", which is the safe direction; erring long is
+what the old behaviour did forever.
+
+**A test-isolation lesson came with it.** The probe caches per process, which is right in
+production and leaks between tests: one test that resolved it to `False` left every later
+snap test skipping its own subject — passing in isolation, failing in the suite. Reset in
+`conftest.py` via an autouse fixture.
+
 ### F-07 — `clean` has never cleaned the pacman cache. CONFIRMED, arch, v0.49.1  ⚠ headline
 
 `ArchBackend.clean_caches` runs **`pacman -Scc --noconfirm`**. `--noconfirm` makes pacman

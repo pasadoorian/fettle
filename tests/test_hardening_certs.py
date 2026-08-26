@@ -30,7 +30,7 @@ def _ctx(root: Path, **cfg) -> Context:
 def _openssl(expiries: dict[str, str]):
     """Stub openssl. ``expiries`` maps a file name to its raw `notAfter` value, or to
     the literal "ERROR:<text>" to simulate a failure."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         if argv[:2] != ["openssl", "x509"]:
             return command.Proc(0, "", "")

@@ -33,7 +33,7 @@ def _run(images, *, rc=0, stderr="", tools=("docker",), **containers):
     import json as _json
     stdout = "\n".join(_json.dumps(i) for i in images)
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] in (["docker", "images"], ["podman", "images"]):
             return command.Proc(rc, stdout, stderr)
         return command.Proc(0, "", "")
@@ -122,7 +122,7 @@ def test_no_runtime_installed_yields_nothing():
 def test_podman_is_used_when_docker_is_absent():
     seen = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         seen.append(list(cmd))
         return command.Proc(0, "", "")
 
@@ -140,7 +140,7 @@ def test_ignore_globs_skip_images():
 
 
 def test_malformed_json_lines_are_skipped():
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         return command.Proc(0, 'not json\n{"Repository":"ok","Tag":"latest",'
                                '"CreatedAt":"bad","ID":"i","Size":"1MB"}\n', "")
 
@@ -209,7 +209,7 @@ def test_created_at_parses_both_runtimes():
 def test_podman_output_produces_real_findings_end_to_end():
     """The regression that matters: podman's own output must yield findings, not
     an empty list."""
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         return command.Proc(0, _PODMAN_JSON, "")
 
     with patch("fettle.command.run", side_effect=fake_run), \
@@ -263,7 +263,7 @@ def test_findings_name_the_store_they_came_from():
     flagged image lives — which is what you need in order to act on it."""
     import json as _json
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:2] == ["podman", "images"] and as_user == "paul":
             return command.Proc(0, _json.dumps(_img("mine", "latest")), "")
@@ -286,7 +286,7 @@ def test_findings_name_the_store_they_came_from():
 def test_a_failed_user_store_is_blindness_not_an_empty_store():
     """The whole point: an unreadable store must never render as a store with nothing
     in it, which is what the bug did for weeks."""
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["podman", "images"] and as_user == "paul":
             return command.Proc(125, "", "cannot re-exec process")
         return command.Proc(0, "", "")

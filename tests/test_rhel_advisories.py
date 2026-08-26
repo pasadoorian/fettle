@@ -112,7 +112,7 @@ def test_nevra_name_strips_version_release_and_arch():
 
 # -- severity ----------------------------------------------------------------
 def _refresh(conn, listing=_LIST, info=_INFO, list_rc=0):
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:3] == ["dnf", "updateinfo", "list"]:
             return command.Proc(list_rc, listing, "")
@@ -159,7 +159,7 @@ def test_zero_advisories_with_pending_updates_is_reported_as_a_blind_spot(tmp_pa
     conn = db.connect(tmp_path / "a.db")
     _refresh(conn, listing="Last metadata expiration check: now.\n", info="")
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:3] == ["dnf", "-q", "check-update"]:
             # dnf exits 100 when updates ARE available — success, not failure.
             return command.Proc(100, "bash.x86_64 5.2-1 baseos\ncurl.x86_64 8.9-1 baseos\n", "")
@@ -178,7 +178,7 @@ def test_zero_advisories_and_nothing_pending_is_genuinely_quiet(tmp_path, capsys
     conn = db.connect(tmp_path / "a.db")
     _refresh(conn, listing="", info="")
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:3] == ["dnf", "-q", "check-update"]:
             return command.Proc(0, "", "")          # 0 = nothing to update
         return command.Proc(0, "", "")
@@ -225,7 +225,7 @@ def test_findings_show_installed_and_fixed_versions(tmp_path):
     from fettle.advisories import db
     conn = db.connect(tmp_path / "a.db")
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:3] == ["dnf", "updateinfo", "list"]:
             return command.Proc(0, _LIST, "")
@@ -318,7 +318,7 @@ def test_dnf5_end_to_end_produces_findings(tmp_path):
     from fettle.advisories import db
     conn = db.connect(tmp_path / "a.db")
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:2] == ["dnf", "--version"]:
             return command.Proc(0, "dnf5 version 5.4.2.1\n", "")
@@ -344,7 +344,7 @@ def test_dnf5_uses_advisory_not_updateinfo():
     returns an unparseable shape — the version gate must pick the JSON command."""
     seen = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         seen.append(c)
         if c[:2] == ["dnf", "--version"]:

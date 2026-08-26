@@ -25,7 +25,7 @@ def _write_sources(root, list_body="", sources_body=""):
 
 def _run(root, *, debsums=None):
     """debsums=None => tool absent; else string of changed-file lines."""
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["debsums", "-c"]:
             return command.Proc(0, debsums or "", "")
         return command.Proc(0, "", "")

@@ -20,7 +20,7 @@ def _ctx(cfg=None, **kw):
 
 def _fake(responses, calls):
     """responses: {(cmd prefix tuple): stdout}. Records every call into `calls`."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append((list(cmd), as_user))
         for key, val in responses.items():
             if list(cmd)[: len(key)] == list(key):
@@ -179,7 +179,7 @@ _APT_OLD = "apt 2.0.6 (amd64)"   # < 2.1, would reject it with exit 100
 
 def _fake_failing(responses, calls, *, fails=()):
     """`_fake`, except any command whose argv contains a word in `fails` exits 100."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         calls.append((argv, as_user))
         for key, val in responses.items():
@@ -600,7 +600,7 @@ def _pro_json(*, attached=False, infra=0, apps=0, universe=18, multiverse=0, ser
 def _with_pro(payload, method="check_auto_updates", ctx=None, rc=0, have_pro=True):
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if cmd[:2] == ["pro", "security-status"]:
@@ -785,7 +785,7 @@ def _kernels(installed, running, chosen, assume_yes=False):
     """Run manage_kernels with a stubbed dpkg/uname; `chosen` is what the user picks."""
     calls, state = [], {"pkgs": list(installed) + ["linux-image-cloud-amd64"]}
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if cmd[:2] == ["dpkg", "-l"]:

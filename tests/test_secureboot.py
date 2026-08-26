@@ -24,7 +24,7 @@ def _run(*, tools, cmd_out, capsys, verbose=False, as_root=False):
     """
     out = Output(color=False, verbose=verbose)
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         # A response may be "text" (exit 0) or ("text", rc) to drive failures.
         val = cmd_out.get(tuple(cmd), "")
         text, rc = val if isinstance(val, tuple) else (val, 0)
@@ -103,7 +103,7 @@ def test_no_tool_skips_cert_expiry(capsys):
 def test_efi_readvar_preferred_over_mokutil(capsys):
     calls = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append(tuple(cmd))
         return command.Proc(0, "Microsoft Corporation KEK CA 2023\n", "")
 

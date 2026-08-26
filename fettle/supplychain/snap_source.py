@@ -36,11 +36,20 @@ class SnapSource(SourceProvider):
         return command.which("snap")
 
     def findings(self, ctx) -> list[Finding]:
+        from .. import util
+
+        if not util.snap_ready():
+            # `examined` stays None on purpose: "could not look" is not "examined zero".
+            # Recording it as an empty examination would put this host in the same
+            # bucket as one with no snaps, which is the bug this model exists to stop.
+            return [Finding(Severity.MEDIUM, self.source, "snapd", UNVERIFIABLE,
+                            util.SNAPD_DOWN)]
         out: list[Finding] = []
         unknown: list[str] = []
         seen = 0
         # `snap list` columns: Name Version Rev Tracking Publisher Notes
-        for line in command.run(["snap", "list"], capture=True).stdout.splitlines()[1:]:
+        for line in command.run(["snap", "list"], capture=True,
+                                timeout=util.SNAP_QUERY_TIMEOUT).stdout.splitlines()[1:]:
             cols = line.split()
             if len(cols) < 6:
                 continue

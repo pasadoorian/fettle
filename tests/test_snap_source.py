@@ -1,5 +1,6 @@
 """Snap source provider — publisher verification + confinement."""
 
+import pytest
 from unittest.mock import patch
 
 from fettle import command
@@ -16,12 +17,22 @@ from fettle.supplychain.base import (
 from fettle.supplychain.snap_source import SnapSource
 
 
+@pytest.fixture(autouse=True)
+def _snapd_is_up():
+    """These tests are about parsing what snap says. Whether the daemon answers at all
+    is a different question, tested in test_command.py — without this, every one of them
+    would depend on whether the machine running the suite happens to have a working
+    snapd, which is exactly the trap that hung the suite in the first place."""
+    with patch("fettle.util.snap_ready", return_value=True):
+        yield
+
+
 def _ctx():
     return Context(output=Output(color=False), config=Config())
 
 
 def _run(snap_list):
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["snap", "list"]:
             return command.Proc(0, snap_list, "")
         return command.Proc(0, "", "")
@@ -71,7 +82,7 @@ def test_starred_publisher_is_verified():
 def _run_store(snap_list, *, info_rc=0, info_err=""):
     calls = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         calls.append(c)
         if c[:2] == ["snap", "list"]:
@@ -114,3 +125,20 @@ def test_sideloaded_snap_is_never_asked_about():
     """It was never in the Store, so asking would flag it on every run forever."""
     _, calls = _run_store(_HEADER + "local 1 x2 - - -\n")
     assert not [c for c in calls if c[:2] == ["snap", "info"]]
+
+
+# -- snapd installed but not running -----------------------------------------
+# Measured on Manjaro, where snapd ships `preset: disabled`: the `snap` binary and a
+# stale /run/snapd.socket both remain, so `snap list` connects to a socket nobody is
+# accepting on and blocks forever. fettle inherited that: `fettle -c` and `fettle -P`
+# never returned. The socket existing is NOT evidence the daemon is up — that obvious
+# probe answers "yes" on exactly the host where snap does not work.
+def test_a_wedged_snapd_is_blindness_not_an_empty_host():
+    from fettle import util
+    util._reset_snap_probe()
+    with patch("fettle.util.snap_ready", return_value=False):
+        src = SnapSource()
+        f = src.findings(_ctx())
+    assert len(f) == 1 and f[0].question == UNVERIFIABLE
+    assert "not responding" in f[0].detail
+    assert src.examined is None, "'could not look' must not be recorded as 'examined 0'"

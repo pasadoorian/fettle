@@ -74,6 +74,11 @@ guests.
   *it* dark on any host where the invoking user is not in the `docker` group. The fix has
   to be per-runtime, and it wants verifying under real elevation.
 
+## Open
+
+- **A stopped `snapd` used to hang this action outright** — fixed v1.16.0, written up as
+  **F-13** in [clean.md](clean.md) because it hung `clean` too, `--dry-run` included.
+
 ## Findings
 
 ### P-01 — 46 open items under a green tick. FIXED v0.67.0

@@ -516,13 +516,19 @@ class PackageBackend(abc.ABC):
         Each revision is confirmed individually — removing an installed snap
         revision is never done without asking (only ``--yes`` opts into all).
         """
-        from .. import command
+        from .. import command, util
 
         if not command.which("snap"):
             return
+        if not util.snap_ready():
+            # Not a silent skip: a clean that could not look at snaps is not a clean
+            # that found none. This used to hang the entire run — including --dry-run.
+            ctx.output.warn(util.SNAPD_DOWN)
+            return
         # `snap list --all` lists every revision; the Notes column marks the
         # superseded ones "disabled". Header row skipped.
-        out = command.run(["snap", "list", "--all"], capture=True).stdout
+        out = command.run(["snap", "list", "--all"], capture=True,
+                          timeout=util.SNAP_QUERY_TIMEOUT).stdout
         disabled = []  # (name, revision)
         for line in out.splitlines()[1:]:
             cols = line.split()

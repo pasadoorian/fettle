@@ -59,7 +59,7 @@ def _ctx(cfg=None, **kw):
 
 def _fake(responses, calls):
     """responses: {cmd-prefix tuple: (rc, stdout)} or {prefix: stdout}. Records calls."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append((list(cmd), as_user))
         for key, val in responses.items():
             if list(cmd)[: len(key)] == list(key):
@@ -417,7 +417,7 @@ def _kernels(tmp_path, *, listing=_KERNELS, running="6.12.0-218.el10.x86_64",
     (tmp_path / "etc/dnf/dnf.conf").write_text("[main]\n" + limit)
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if cmd[:2] == ["rpm", "-q"]:
@@ -517,7 +517,7 @@ def test_a_running_kernel_rpm_does_not_know_is_flagged(tmp_path, capsys):
 def _mapfiles(paths, *, stdout, existing=None):
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append(list(cmd))
         return command.Proc(0, stdout, "")
 
@@ -579,7 +579,7 @@ def _rebuilds(*, standalone=True, hint=(0, _NR_CLEAN, ""), services=(0, "", ""),
               root=True, dnf5=True):
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if cmd == ["dnf", "--version"]:
@@ -717,7 +717,7 @@ def _auto(tmp_path, *, enabled=(), present=True, conf=_AUTO_CONF_OFF,
         path.write_text(conf)
     ctx = _ctx(root=tmp_path)
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         if cmd[:2] == ["systemctl", "is-enabled"]:
             unit = cmd[2]
@@ -837,7 +837,7 @@ def test_auto_updates_runs_no_mutating_command(tmp_path):
     """It is in cli.READ_ONLY_ACTIONS."""
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append(list(cmd))
         return command.Proc(1, "disabled\n", "")
 
@@ -875,7 +875,7 @@ def _drift(root, check=(0, "", ""), which=True):
     calls = []
     ctx = _ctx(root=root)
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append(list(cmd))
         if list(cmd)[:2] == ["dnf", "check"]:
             return command.Proc(*check)
@@ -1199,9 +1199,11 @@ def test_clean_honors_flatpak_updater_none():
 
 def test_clean_deletes_nothing_under_dry_run():
     _, argvs = _clean(dry_run=True)
-    # Only the read-only snap listing, which previews the disabled revisions a real run
-    # would offer (dry-run declines every prompt). Nothing that changes the system.
-    assert argvs == [["snap", "list", "--all"]]
+    # Only read-only snap queries: the probe, then the listing that previews the
+    # disabled revisions a real run would offer (dry-run declines every prompt).
+    # snapd can be installed, leave a stale socket on disk, and still never answer
+    # — measured on Manjaro, where that hung this action, --dry-run included.
+    assert argvs == [["snap", "version"], ["snap", "list", "--all"]]
 
 
 # -- update + the unsigned-repo gate -----------------------------------------
@@ -1412,7 +1414,7 @@ def test_firmware_no_updatable_devices_is_not_an_error(capsys):
     err = ("Idle…: 0%\nWARNING: UEFI capsule updates not available or enabled in "
            "firmware setup\nNo updatable devices\n")
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["fwupdmgr", "get-updates"]:
             return command.Proc(2, "", err)
         return command.Proc(0, "", "")

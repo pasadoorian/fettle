@@ -31,7 +31,7 @@ def _clean(backend, *, snaps=SNAP_LIST_ALL, present=True, ctx=None, **kw):
     """Run `backend().clean_caches`, answering `snap list --all` with `snaps`."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if cmd[:3] == ["snap", "list", "--all"]:
@@ -114,7 +114,7 @@ def test_dry_run_previews_the_revisions_it_would_offer(capsys):
 # -- auto-updates: enabled is not the same as working -------------------------
 def _systemd(props):
     """Stub `systemctl show <unit> -p <prop> --value` from a {(unit, prop): value} map."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         if cmd[:2] == ["systemctl", "show"]:
             return command.Proc(0, props.get((cmd[2], cmd[4]), "") + "\n", "")
         return command.Proc(0, "", "")

@@ -23,7 +23,7 @@ def _ctx(cfg=None, **kw):
 def _recorder():
     calls: list[tuple[list[str], str | None]] = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append((list(cmd), as_user))
         return command.Proc(0, "", "")
 
@@ -431,9 +431,12 @@ def test_dry_run_executes_no_commands():
     with patch("fettle.command.run", side_effect=fake), \
          patch("fettle.command.which", return_value=True):
         ArchBackend().clean_caches(_ctx(dry_run=True))
-    # Only the read-only snap listing, which previews the disabled revisions a real run
-    # would offer (dry-run declines every prompt). Nothing that changes the system.
-    assert [c for c, _ in calls] == [["snap", "list", "--all"]]
+    # Only read-only snap queries: the probe, then the listing that previews the
+    # disabled revisions a real run would offer (dry-run declines every prompt).
+    # snapd can be installed, leave a stale socket on disk, and still never answer
+    # — measured on Manjaro, where that hung this action, --dry-run included.
+    assert [c for c, _ in calls] == [["snap", "version"],
+                                     ["snap", "list", "--all"]]
 
 
 # -- automatic updates -------------------------------------------------------
@@ -442,7 +445,7 @@ def _timer_fake(enabled_units):
     'disabled' otherwise. Everything else returns empty stdout."""
     enabled = set(enabled_units)
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         if cmd[:2] == ["systemctl", "is-enabled"]:
             state = "enabled" if cmd[2] in enabled else "disabled"
@@ -686,7 +689,7 @@ def _pyreb(tmp_path, dirs, owners=None, current="3.14", rebuild_rc=0, **kw):
         (lib / d).mkdir()
     owners = owners or {}
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         if cmd[:2] == ["python3", "-c"]:
             return command.Proc(0, current + "\n", "")
@@ -769,7 +772,7 @@ def _kernel_ctx(tmp_path, releases):
 
 def _run_kernels(tmp_path, releases, running, owners):
     """owners: {release: package-name}; a missing entry means no package owns it."""
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:2] == ["pacman", "-Qoq"]:
             for rel, pkg in owners.items():
@@ -802,7 +805,7 @@ def test_arch_running_kernel_is_identified_by_pacman_not_by_name(tmp_path):
     then looks like just another removable entry."""
     seen = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         seen.append(list(cmd))
         return command.Proc(0, "linux-custom\n", "")
 
@@ -818,7 +821,7 @@ def test_arch_never_removes_a_kernel(tmp_path):
     """Removal on Arch is a deliberate `pacman -R` the user runs; fettle must not."""
     seen = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         seen.append(list(cmd))
         return command.Proc(0, "linux\n", "")
 

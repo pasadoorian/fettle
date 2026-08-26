@@ -59,7 +59,8 @@ def _ctx():
 def _scan(tools, responses):
     """(unused scan, run-patch, which-patch) — the `_run` plumbing, without the call,
     so a test can inspect the provider instance afterwards."""
-    def fake_run(cmd, *, as_user=None, capture=False, session=False):
+    def fake_run(cmd, *, as_user=None, capture=False, session=False,
+                 timeout=None):
         val = responses.get(tuple(cmd), "")
         text, rc = val if isinstance(val, tuple) else (val, 0)
         return command.Proc(rc, text, "")
@@ -69,7 +70,8 @@ def _scan(tools, responses):
 
 def _run(*, uuids=_UUIDS, details=_DETAILS, list_rc=0, owned=True, pm="pacman",
          upstream=True, calls=None):
-    def fake_run(cmd, *, as_user=None, capture=False, session=False):
+    def fake_run(cmd, *, as_user=None, capture=False, session=False,
+                 timeout=None):
         c = list(cmd)
         if calls is not None:
             calls.append({"argv": c, "as_user": as_user, "session": session})

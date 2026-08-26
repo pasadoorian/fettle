@@ -17,7 +17,7 @@ def _ctx(cfg=None, **kw):
 
 def _fake(responses, calls):
     """responses: {(cmd prefix tuple): stdout}. Records every call into `calls`."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append((list(cmd), as_user))
         for key, val in responses.items():
             if list(cmd)[: len(key)] == list(key):
@@ -89,7 +89,7 @@ def test_rebuilds_auto_rebuild_invokes_yay():
 def _pyfake(current, dir_owners, os_py_owners):
     """python-rebuild mock: dir_owners[ver] = recursive `-Qoq <dir>` output;
     os_py_owners[ver] = owner of the stdlib sentinel <dir>/os.py (the interpreter)."""
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         if cmd[:2] == ["python3", "-c"]:
             return command.Proc(0, current, "")
         if cmd[:2] == ["pacman", "-Qoq"]:
@@ -205,7 +205,7 @@ def test_config_drift_on_a_clean_tree_says_so(tmp_path, capsys):
 # empty stdout, exit 1. fettle used to ignore the code and match English prose, so both
 # produced "no firmware updates available".
 def _fw(rc, stdout="", stderr=""):
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["fwupdmgr", "get-updates"]:
             return command.Proc(rc, stdout, stderr)
         return command.Proc(0, "", "")

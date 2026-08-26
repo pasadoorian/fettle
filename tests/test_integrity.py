@@ -19,7 +19,7 @@ def _scan(tools, responses):
     out = Output(color=False)
     scan = Scan(output=out, root=Path("/"))
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         val = responses.get(tuple(cmd), "")
         text, rc = val if isinstance(val, tuple) else (val, 0)
         return command.Proc(rc, text, "")

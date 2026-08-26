@@ -24,7 +24,7 @@ def _run(*, apps, remotes="", perms=None):
     """apps/remotes: tab-separated column text. perms: {appid: permissions-dump}."""
     perms = perms or {}
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:2] == ["flatpak", "list"]:
             return command.Proc(0, apps, "")
@@ -92,7 +92,7 @@ def test_app_id_passed_after_end_of_options_guard():
 def _run_remote(apps, *, info_rc=0, info_err=""):
     calls = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         calls.append(c)
         if c[:2] == ["flatpak", "list"]:
@@ -139,7 +139,7 @@ def _asked_as(euid=0, sudo_user="paul"):
     """Every (argv, as_user) pair the provider issues."""
     calls = []
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         calls.append((list(cmd), as_user))
         if list(cmd)[:2] == ["flatpak", "list"]:
             return command.Proc(0, "org.x.App\tflathub\n", "")
@@ -171,7 +171,7 @@ def test_nothing_changes_when_already_unprivileged():
 def test_a_failed_listing_is_not_an_empty_host():
     """The status was discarded, so a flatpak that could not run read as a machine with
     no flatpak apps — the same false clean this provider exists to prevent."""
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if list(cmd)[:2] == ["flatpak", "list"]:
             return command.Proc(1, "", "error: Unable to load summary")
         return command.Proc(0, "", "")

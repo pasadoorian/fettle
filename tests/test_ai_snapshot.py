@@ -25,7 +25,7 @@ def test_gather_builds_snapshot(tmp_path):
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/os-release").write_text('PRETTY_NAME="Manjaro Linux"\nID=manjaro\n')
 
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         if cmd[0] == "uname":
             return command.Proc(0, "6.12.1-2-MANJARO\n", "")
         if cmd[0] == "inxi":

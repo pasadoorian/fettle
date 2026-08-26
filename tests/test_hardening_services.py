@@ -47,7 +47,7 @@ def _fake(*, security: str, running="", enabled="", show="", per_unit="[]",
     def which(name):
         return None if name in missing else f"/usr/bin/{name}"
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         if argv[:2] == ["systemd-analyze", "security"]:
             # With a trailing unit name it is the per-unit query, not the sweep.
@@ -233,7 +233,7 @@ def test_a_blanked_attribution_does_not_turn_every_service_into_a_finding():
     def which(name):
         return f"/usr/bin/{name}"
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         if argv[:2] == ["systemd-analyze", "security"]:
             tail = [a for a in argv[2:] if not a.startswith("-")]
@@ -269,7 +269,7 @@ def test_the_per_unit_fallback_only_runs_when_the_batch_failed():
     be a real cost to pay for nothing."""
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         calls.append(tuple(argv))
         return command.Proc(0, "Id=a.service\nFragmentPath=/lib/systemd/system/a.service\n"

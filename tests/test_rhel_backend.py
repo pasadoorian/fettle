@@ -31,7 +31,7 @@ def _scan(**kw):
 
 def _run(*, va=_VA, va_rc=1, probe="rpm-4.19.1-1.el10.x86_64\n", probe_rc=0,
          has_rpm=True, **scan_kw):
-    def fake_run(cmd, *, as_user=None, capture=False):
+    def fake_run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:3] == ["rpm", "-q", "rpm"]:
             return command.Proc(probe_rc, probe, "")

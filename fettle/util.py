@@ -72,6 +72,61 @@ def invoking_user() -> str | None:
     return os.environ.get("SUDO_USER") or None
 
 
+#: Cached per process — the probe costs a real timeout on a wedged host, and three
+#: call sites (clean, pkg-audit, update-extras) would otherwise each pay it.
+_SNAP_READY: bool | None = None
+
+#: Long enough for `snap version` on a healthy daemon, short enough not to feel like a
+#: hang. **The healthy-path latency is unmeasured** — the host this was found on has
+#: snapd deliberately disabled and no working snapd was available to time against — so
+#: this is chosen conservatively rather than fitted. The failure mode of it being too
+#: short is "could not look", which is honest; the failure mode of having no timeout at
+#: all was fettle never returning.
+SNAP_PROBE_TIMEOUT = 5.0
+
+#: The inventory queries themselves, once the probe has passed. More generous than the
+#: probe because a host with many snaps has more to enumerate; still bounded, because a
+#: daemon can wedge between the probe and the query.
+SNAP_QUERY_TIMEOUT = 30.0
+
+
+def snap_ready(*, timeout: float | None = None) -> bool:
+    """Whether ``snap`` will actually answer, rather than block forever.
+
+    **A stale socket is not a running daemon.** Measured on Manjaro with `snapd`
+    disabled — which is its default state on Arch, `preset: disabled` — the `snap`
+    binary is still installed *and* `/run/snapd.socket` is still on disk, left behind
+    from the last time the service ran. `snap` connects to it, nobody is accepting, and
+    it waits forever. `snap list`, `snap list --all` and `snap version` all hang.
+
+    So the obvious probe — does the socket exist? — answers *yes* on exactly the host
+    where snap does not work. The only reliable question is whether snap replies, which
+    means asking it something cheap under a clock.
+
+    Cached: on a wedged host the answer costs a real wait, and three call sites would
+    each pay it otherwise.
+    """
+    global _SNAP_READY
+    if _SNAP_READY is None:
+        from . import command
+
+        _SNAP_READY = bool(command.which("snap")) and command.run(
+            ["snap", "version"], capture=True,
+            timeout=timeout or SNAP_PROBE_TIMEOUT).returncode != command.TIMED_OUT
+    return _SNAP_READY
+
+
+def _reset_snap_probe() -> None:
+    """Tests only — the cache is per-process and per-host, never per-run."""
+    global _SNAP_READY
+    _SNAP_READY = None
+
+
+SNAPD_DOWN = ("snapd is installed but not responding (the service is stopped or "
+              "wedged) — snaps were NOT audited; `systemctl start snapd.socket` if "
+              "you use snaps, or remove the snapd package if you do not")
+
+
 def invoking_user_for(ctx) -> str | None:
     """Who a **per-user** store must be queried as, or ``None`` to stay as we are.
 

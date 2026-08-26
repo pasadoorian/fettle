@@ -29,7 +29,7 @@ def _fake(*, active=(), nft=None, iptables=None, have=("systemctl", "nft")):
     def which(name):
         return f"/usr/bin/{name}" if name in have else None
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         if argv[:2] == ["systemctl", "is-active"]:
             ok = argv[2] in active

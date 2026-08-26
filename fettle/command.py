@@ -24,6 +24,13 @@ class Proc:
         return self.returncode == 0
 
 
+def _as_text(raw) -> str:
+    """`TimeoutExpired.stdout` is bytes when the child was killed mid-write."""
+    if raw is None:
+        return ""
+    return raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+
+
 def which(name: str) -> bool:
     """True if ``name`` is on PATH."""
     return shutil.which(name) is not None
@@ -73,8 +80,13 @@ def session_available(user: str) -> bool:
     return bool(_session_env(user))
 
 
+#: What a timed-out command reports. 124 is the status GNU `timeout` uses, so a caller
+#: matching on it is matching on a convention rather than an invented number.
+TIMED_OUT = 124
+
+
 def run(cmd: Sequence[str], *, as_user: str | None = None, capture: bool = False,
-        session: bool = False) -> Proc:
+        session: bool = False, timeout: float | None = None) -> Proc:
     """Run ``cmd``. With ``as_user`` set, drop privileges via ``sudo -u`` first.
 
     ``session=True`` additionally restores that user's session bus (see
@@ -83,7 +95,21 @@ def run(cmd: Sequence[str], *, as_user: str | None = None, capture: bool = False
     *identity* (an AUR build, pamac's per-user database), not their session, and those
     callers must keep the clean environment they have always had.
 
-    Never raises — a missing binary returns ``Proc(127)`` (not a traceback), and a
+    ``timeout`` bounds how long to wait, in seconds, and is **opt-in per call site**.
+    There is deliberately no default: `pacman -Syu` legitimately runs for twenty minutes
+    and `rpm -Va` for several, so a blanket limit would kill the very commands fettle
+    exists to run. It belongs on short queries whose tool can wedge.
+
+    That is not hypothetical. Measured on a Manjaro host where `snapd` had been disabled
+    (its default state on Arch — `preset: disabled`) while the `snap` binary and a stale
+    `/run/snapd.socket` both remained: ``snap list``, ``snap list --all`` and even
+    ``snap version`` all block **forever**, connecting to a socket nobody is accepting
+    on. With no timeout here, `fettle -c` never returned — not even under ``--dry-run``,
+    because the snap inventory is a read-only query and read-only queries deliberately
+    bypass the dry-run gate.
+
+    Never raises — a missing binary returns ``Proc(127)`` (not a traceback), a timeout
+    returns ``Proc(TIMED_OUT)`` with whatever the tool managed to say first, and a
     non-zero exit is returned as-is. Callers decide what a failure means (this is
     an advisory maintenance tool, not a fail-fast pipeline).
     """
@@ -103,7 +129,15 @@ def run(cmd: Sequence[str], *, as_user: str | None = None, capture: bool = False
         # could not look at them.
         argv = [*_runtime_env(os.getuid()), *argv]
     try:
-        completed = subprocess.run(argv, capture_output=capture, text=True)  # noqa: S603
+        completed = subprocess.run(argv, capture_output=capture, text=True,  # noqa: S603
+                                   timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        # subprocess.run has already killed the child by the time this is raised. Keep
+        # the partial output: what a tool managed to say before it wedged is evidence.
+        return Proc(returncode=TIMED_OUT,
+                    stdout=_as_text(exc.stdout),
+                    stderr=(_as_text(exc.stderr)
+                            + f"{argv[0]} did not respond within {timeout}s"))
     except FileNotFoundError:
         prog = argv[0] if argv else "(empty command)"
         return Proc(returncode=127, stderr=f"command not found: {prog}")

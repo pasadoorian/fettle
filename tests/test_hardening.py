@@ -308,7 +308,7 @@ def test_baseline_wants_accessor():
 def _rpm_runner(macros):
     from fettle import command
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         c = list(cmd)
         if c[:2] == ["rpm", "--eval"]:
             key = c[2].strip("%{}")
@@ -370,7 +370,7 @@ def _run_v2(payloads):
     """Fake a host where only the 2.x interface works: the 3.x call yields nothing."""
     calls = []
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         cmd = list(cmd)
         calls.append(cmd)
         if "listfile" in cmd:

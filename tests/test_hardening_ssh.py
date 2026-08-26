@@ -138,7 +138,7 @@ def _run(*, rc=0, stdout="", stderr="", have_sshd=True, active=True):
     def which(name):
         return name == "sshd" and have_sshd or name == "systemctl"
 
-    def run(cmd, *, as_user=None, capture=False):
+    def run(cmd, *, as_user=None, capture=False, timeout=None):
         argv = list(cmd)
         if argv[:2] == ["systemctl", "is-active"]:
             return command.Proc(0 if active else 3, "", "")
