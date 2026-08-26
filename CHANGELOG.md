@@ -11,7 +11,68 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [1.16.0] — a stopped snapd no longer hangs fettle forever
+## [1.16.0] — the audit stops looking in the wrong place, and stops hanging
+
+**Four fixes since 1.12.0, and three of them are the same bug wearing different clothes:
+software that belongs to *a person* was being checked as though it belonged to *the
+machine*.** A maintenance run is usually root, because most of it has to be — and at that
+moment the personal half of the host goes quiet.
+
+Every one was found by reading real run logs on a real workstation, not by re-reading code.
+
+| version | what had been happening |
+|---|---|
+| **1.13.0** | GNOME extensions reported `NOT audited` for a week straight, on a desktop with 24 of them working. `gnome-extensions` asks the *session bus*, and `sudo` had discarded the address. |
+| **1.14.0** | Four of six audit providers printed their coverage sentence and **nothing else** — "examined 24 and cleared them all" looked exactly like "never ran". |
+| **1.15.0** | **11 rootless podman images had never once been audited.** Not an error: as root, podman answers from root's store, which was empty. No report fettle had ever written mentioned podman. `--user` flatpak apps were invisible the same way. |
+| **1.16.0** | A stopped `snapd` made fettle **hang forever** — `-c`, `-P` and `-a`, `--dry-run` included. |
+
+### The distinction that hid three of them
+
+**Being in fettle's no-root set does not mean an action executes unprivileged.** It means
+it does not *elevate on its own*. Run it inside `-a` and the process has already re-exec'd
+under `sudo` for the mutating half, so everything after that is root — including
+`pkg-audit`, which reads three things that live in *your* account.
+
+Those three are now asked as the invoking user regardless of how the run started. podman is
+asked **twice**, once per store, because running containers as root is ordinary on a server
+and picking one identity would simply move the blind spot. docker is deliberately left
+alone: it is one system daemon behind a group-owned socket that root can always reach and an
+ordinary user often cannot, so dropping privileges there would break it.
+
+The measure that matters: **an elevated `fettle -P` and an unprivileged one now return the
+same findings.** The audit describes the machine, not the way it was launched.
+
+### What you will notice
+
+Every provider now states what it looked at, so a clean result stops being silent:
+
+```
+[gnome]     24 extensions examined — all traceable to a package; 5 enabled
+              enabled and running inside gnome-shell (5 of 24): …
+[container] 22 container images examined — across docker, podman, podman(paulda)
+[snap]      nothing to examine — no snaps installed
+```
+
+Four outcomes stay distinct, because collapsing any two is how an audit starts lying: *not
+installed* · *installed but nothing to examine* · *examined N, all clean* · *could not
+look*.
+
+**Upgrading from 1.12.0 is a drop-in replacement** — no configuration changes, no report
+format changes. You may see findings you have not seen before, on a machine that has not
+changed: those were always there.
+
+### Honest gaps
+
+- **The flatpak fix is unverified end to end.** The host it was written on has no flatpak
+  apps to observe the difference against. The code path is identical to podman's, which
+  *is* verified — but identical-looking is not verified.
+- The snap probe's healthy-path latency is unmeasured; its timeouts are conservative
+  choices, not fitted ones.
+
+---
+
+### The snapd hang in detail
 
 Every bug fixed this week was fettle giving a **wrong answer**. This one made fettle
 **stop responding entirely**, and it was live on the reporting host.
