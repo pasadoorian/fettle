@@ -109,6 +109,12 @@ No report fettle had ever written mentioned podman. **Worse than P-03 in one spe
 way:** GNOME *failed* and said so daily for a week; podman *succeeds* and returns an empty
 list, so there was no error to notice at all.
 
+Confirmed under a real `sudo` once the fix had landed: `sudo podman images` → **0**,
+`sudo -u paulda podman images` → **11**. The second proves the mechanism works under
+genuine elevation rather than only under the development proxy; the first proves root's
+store is empty *here*, which is why the double-ask below earns its keep somewhere else
+rather than on this machine.
+
 **The obvious fix would have broken docker.** docker is the opposite shape — one
 system-wide daemon behind a `root:docker` socket that root can always reach and an
 ordinary user can reach only if they are in that group. A blanket "ask as the user" fixes

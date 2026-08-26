@@ -31,6 +31,10 @@ reporting host — rather than `~/.local/share/containers/storage`, which held 1
 
 No report fettle had ever written mentioned podman.
 
+Confirmed directly under a real `sudo` after the fix landed: `sudo podman images` lists
+**0** images, `sudo -u paulda podman images` lists **11** — the store the audit had been
+reading, and the store it should have been reading.
+
 **Worse than the GNOME bug in one specific way:** GNOME *failed*, loudly, and said
 "extensions were NOT audited" every day for a week. podman *succeeds* and hands back an
 empty list. There was no error to notice.
