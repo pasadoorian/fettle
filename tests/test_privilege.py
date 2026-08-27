@@ -42,13 +42,17 @@ def test_sys_audit_is_read_only_but_still_elevates():
 # -- the remote decision -------------------------------------------------------
 def test_remote_does_not_elevate_for_read_only_audits():
     """`fettle remote` elevated for everything except --dry-run, so a read-only audit
-    ran as root and asked for a password to do it."""
-    for toks in (["-P"], ["-D"], ["-H"], ["-P", "-D", "-H"]):
+    ran as root and asked for a password to do it.
+
+    `-H` was in this list until v1.17.0 and moved to the one below. It did not change
+    because a test was inconvenient: the AppArmor axis reads state that is root-only,
+    so `-H` now genuinely needs root the way `-V` always has."""
+    for toks in (["-P"], ["-D"], ["-P", "-D"]):
         assert _forwarded_needs_root(toks) is False, toks
 
 
 def test_remote_still_elevates_for_work_that_needs_it():
-    for toks in (["-u"], ["-c"], ["-V"], ["-P", "-u"], ["--everything"]):
+    for toks in (["-u"], ["-c"], ["-V"], ["-H"], ["-P", "-u"], ["--everything"]):
         assert _forwarded_needs_root(toks) is True, toks
 
 

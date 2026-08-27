@@ -203,7 +203,17 @@ READ_ONLY_ACTIONS = {"pkg_audit", "aur_audit", "config_drift",
 #       persistence checks need nothing special — and it names the half it could not
 #       reach rather than reporting a clean result over an unasked question.
 _MUTATES_BUT_NO_ROOT = {"container_update"}
-_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity", "sys_audit", "compromise_check"}
+# Read-only, and still needs root. "Does this change the system?" and "does this need
+# root?" are different questions, and they come apart both ways.
+#
+# `hardening_audit` joined this set in v1.17.0 for the AppArmor axis. Measured on three
+# hosts: unprivileged, `aa-status` prints "You do not have enough privilege to read the
+# profile set" and **exits 0**, and /sys/kernel/security/apparmor/profiles is mode 0444
+# and still returns EACCES. So without root the axis can report that the module is
+# loaded and nothing about whether a single process is actually confined, which is the
+# reassuring half of the answer on its own.
+_READ_ONLY_BUT_NEEDS_ROOT = {"pkg_integrity", "sys_audit", "compromise_check",
+                             "hardening_audit"}
 
 # Elevation keys off this set; READ_ONLY_ACTIONS above keeps its literal meaning.
 NO_ROOT_ACTIONS = (READ_ONLY_ACTIONS - _READ_ONLY_BUT_NEEDS_ROOT) | _MUTATES_BUT_NO_ROOT
@@ -421,6 +431,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="plain text with no ANSI colour (also honoured when output "
                         "is not a terminal)")
     p.add_argument("--dry-run", action="store_true", help="show what would run; change nothing")
+    p.add_argument("--user", action="store_true",
+                   help="run read-only audits unprivileged; checks that need root "
+                        "report what they could not look at instead of prompting "
+                        "(same meaning as `fettle sys-audit --user`)")
     p.add_argument("--no-sync", action="store_true",
                    help="dry-run preview: use cached repo data instead of a fresh sync")
     p.add_argument("--full-preview", action="store_true",
@@ -1469,6 +1483,19 @@ def _main(argv: list[str]) -> int:
     # root (it refuses otherwise, and there is no `apt-get -s` equivalent).
     no_root = NO_ROOT_ACTIONS | getattr(backend, "extra_no_root", set())
     needs_root = any(a not in no_root for a in runnable)
+    if args.user and needs_root:
+        # `--user` says "audit me unprivileged", not "skip the sudo you actually need".
+        # A mutating action run without root fails deep inside the package manager with
+        # a permission error that says nothing about why, so refuse here instead.
+        mutating = [a for a in runnable if a not in READ_ONLY_ACTIONS]
+        if mutating:
+            out.summary_fail(
+                f"--user cannot be combined with {', '.join(sorted(mutating))}: it "
+                "applies to read-only audits, and these change the system, so they "
+                "need root. Drop --user, or select only audits.", kind=FAILED)
+            out.print_summary()
+            return 1
+        needs_root = False
     if needs_root and (not args.dry_run or args.full_preview) \
             and not _is_root() and not _in_test():
         _reexec_with_sudo(args)

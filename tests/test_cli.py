@@ -709,3 +709,43 @@ def test_host_label_is_appended_after_the_action_check():
     assert fwd[-2:] == ["--host-label", "bifrost"], fwd
     # the default set still got prepended despite the bare word
     assert any(a.replace("_", "-") in fwd for a in cli.REMOTE_DEFAULT_ACTIONS), fwd
+
+
+# -- hardening-audit needs root now ------------------------------------------
+# Measured on three hosts: the useful AppArmor state is root-only. `aa-status`
+# unprivileged prints "You do not have enough privilege to read the profile set" and
+# exits 0, and /sys/kernel/security/apparmor/profiles is mode 0444 yet still returns
+# EACCES. Without root the axis can report that the module is loaded and nothing about
+# whether anything is confined, which is the reassuring half of the answer.
+def test_hardening_audit_elevates():
+    assert _elevation(["--distro", "arch", "-H"]) is True
+
+
+def test_hardening_audit_stays_unprivileged_with_user():
+    """The opt-out. An action that starts demanding root with no way to decline is a
+    worse change than the one it fixes."""
+    assert _elevation(["--distro", "arch", "-H", "--user"]) is False
+
+
+def test_user_does_not_disarm_elevation_for_a_mutating_action():
+    """--user says 'audit me unprivileged', not 'skip the sudo you actually need'.
+    Silently running `-u` without root would fail deep inside the package manager."""
+    from unittest.mock import patch
+    with patch("fettle.cli._is_root", return_value=False), \
+         patch("fettle.cli._in_test", return_value=False), \
+         patch("fettle.cli._reexec_with_sudo") as reexec, \
+         patch("fettle.actions.run"):
+        rc = main(["--distro", "arch", "-u", "--user"])
+    assert reexec.called is False, "elevated anyway"
+    assert rc == 1, "should refuse rather than run a mutating action unprivileged"
+
+
+def test_user_is_accepted_for_the_other_root_audits():
+    """sys-audit already has its own --user; pkg-integrity and compromise-check have
+    the same shape, so the flag means the same thing everywhere."""
+    assert _elevation(["--distro", "arch", "-V", "--user"]) is False
+
+
+def test_the_other_read_only_actions_still_do_not_elevate():
+    """Guard: -H moving does not drag the rest of the read-only set with it."""
+    assert _elevation(["--distro", "arch", "-P"]) is False

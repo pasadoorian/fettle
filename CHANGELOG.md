@@ -11,6 +11,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.17.0] — `hardening-audit` elevates, and `--user` opts out
+
+Groundwork for the AppArmor axis. Shipped on its own so that any change in what the
+existing five axes report is attributable to this commit rather than found later inside a
+larger one.
+
+`-H` was in the no-root set. The AppArmor state worth having is root-only, and the
+unprivileged view is the reassuring half of the answer on its own. Measured on three hosts:
+
+* `aa-status` unprivileged prints *"You do not have enough privilege to read the profile
+  set"*, then *"apparmor module is loaded"*, and **exits 0**.
+* `/sys/kernel/security/apparmor/profiles` is mode `-r--r--r--` and still returns EACCES
+  to a normal user. securityfs enforces past the mode bits.
+
+So without root the axis could say the module is loaded and nothing about whether a single
+process is confined.
+
+`--user` keeps the old behaviour for anyone who wants it, and means the same thing as
+`fettle sys-audit --user` already did. It applies to read-only audits only: combined with
+an action that changes the system it refuses rather than running unprivileged and failing
+somewhere inside the package manager.
+
+**Verified before shipping**, on the Debian 13 lab guest, same host both ways:
+
+| | findings | time |
+|---|---|---|
+| `-H` as root | 3 High, 32 Medium, 13 Low | 28 s |
+| `-H --user` | 3 High, 32 Medium, 13 Low | 27 s |
+
+Identical output, and no return of the checksec-as-root problem from QA-HA-13, where an
+elevated run once took over 30 minutes because checksec 2.x sleeps 2 seconds per
+invocation when it cannot find `sysctl` as root.
+
+`fettle remote` now elevates for `-H`, alongside `-V`.
+
 ### The release pipeline can no longer ship a half-populated release
 
 Packaging only — no change to fettle itself, so no version bump.
