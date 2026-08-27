@@ -67,12 +67,13 @@ fettle has six feature families.
 3. **System Supply Chain** — *the machine's firmware/boot/hardware posture*:
    Secure Boot, BIOS/UEFI, TPM, Intel ME, CPU microcode, hardware and storage
    firmware. Exposed as `sys-audit`, runnable locally or over SSH.
-4. **System Hardening** — *is this machine configured safely?* Seven independent
+4. **System Hardening** — *is this machine configured safely?* Eight independent
    axes: were the installed binaries built with the distro's hardening flags, can a
    local user tamper with shared directories, how much of the system can each
    running service reach, are the kernel's runtime protections switched on, what is
-   sshd *actually* configured to do, is a firewall both active and filtering, and are
-   any TLS certificates expired. Exposed as `hardening-audit` (`-H`).
+   sshd *actually* configured to do, is a firewall both active and filtering, are
+   any TLS certificates expired, and is AppArmor confining anything or merely
+   switched on. Exposed as `hardening-audit` (`-H`).
 5. **Security advisories** — *is what you have installed known-vulnerable?*
    Per-package CVEs from your distro's own tracker, including the ones you're
    vulnerable to with **no fix released yet**, plus the Python/Node/Rust packages
@@ -426,7 +427,7 @@ behind the defaults — is in the
 |---|---|
 | [Maintenance actions](https://github.com/pasadoorian/fettle/wiki/Maintenance-actions) | Reading fettle's output, the full action table per distro family, what each action actually runs, `--everything`, and previewing an upgrade |
 | [Package supply-chain](https://github.com/pasadoorian/fettle/wiki/Package-supply-chain) | `pkg-audit`, `pkg-integrity`, `aur-audit`, `aur-precheck` — provenance, IoC feeds, and the pre-upgrade gate |
-| [System hardening audit](https://github.com/pasadoorian/fettle/wiki/System-hardening-audit) | `-H` and its seven axes, what each one can and can't see, and how to tune or disable them |
+| [System hardening audit](https://github.com/pasadoorian/fettle/wiki/System-hardening-audit) | `-H` and its eight axes, what each one can and can't see, and how to tune or disable them |
 | [System supply-chain](https://github.com/pasadoorian/fettle/wiki/System-supply-chain) | `sys-audit` — Secure Boot, TPM, microcode, SPI/BIOS, storage firmware; local and remote |
 | [Security advisories](https://github.com/pasadoorian/fettle/wiki/Security-advisories) | `advisory-check` — distro CVE feeds, OSV for language dependencies, and the warn-gate |
 | [Remote maintenance](https://github.com/pasadoorian/fettle/wiki/Remote-maintenance) | `fettle remote`, host groups, and how fettle gets itself onto a host that doesn't have it |
