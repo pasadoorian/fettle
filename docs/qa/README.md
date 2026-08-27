@@ -150,7 +150,7 @@ Status of each feature's QA pass. `—` = not started.
 | aur-audit | `-A` | [aur-audit.md](aur-audit.md) | **swept — 2 findings, both fixed** |
 | ~~aur-ioc-scan~~ | ~~`-I`~~ | [aur-ioc-scan.md](aur-ioc-scan.md) | **RETIRED v0.73.0 — folded into `-P`; its feed-coverage reporting moved with it** |
 | pkg-audit | `-P` | [pkg-audit.md](pkg-audit.md) | **swept — 5 fixed, 1 open** *(P-03..P-05, v1.13.0-1.15.0: three sources audited as the wrong identity, and providers that found nothing said nothing)* |
-| hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** *(v1.17.0-1.18.0: now elevates with `--user` to opt out, and gained an eighth axis for AppArmor)* |
+| hardening-audit | `-H` | [hardening-audit.md](hardening-audit.md) | **swept — 4 fixed; a recorded EL gap disproved** *(v1.17.0-1.19.0: now elevates with `--user` to opt out, and gained axes for AppArmor and SELinux)* |
 | container-update | `-C` | [container-update.md](container-update.md) | **swept — 5 fixed, 2 of them in the audit half too** |
 | pkg-integrity | `-V` | [pkg-integrity.md](pkg-integrity.md) | **3 sweeps — split out of sys-audit v0.72.0; sweep 3 (v1.11.0) found a failed verifier reporting a clean system on every backend** |
 | sys-audit | `-S` | [sys-audit.md](sys-audit.md) | **swept — 7 fixed, incl. one affecting every `fettle remote` run; + chipsec config v0.84.x** |

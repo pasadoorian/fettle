@@ -5,7 +5,7 @@
 **Purpose as a user understands it:** *"is anything on this box built without the
 protections my distro says it builds with?"*
 
-Seven axes since v1.18.0 (AppArmor added). Read-only, **elevating since v1.17.0** (`--user` opts out), and **opt-in** — not in the default set, because it produces a long
+Nine axes since v1.19.0 (AppArmor and SELinux added). Read-only, **elevating since v1.17.0** (`--user` opts out), and **opt-in** — not in the default set, because it produces a long
 list by design and the user prunes it via config.
 
 Status: **swept and fixed.** Three findings fixed in v0.68.0, plus a documented gap that
@@ -49,6 +49,13 @@ binaries) and Rocky 9 (checksec 2.5.0 from EPEL).
 | QA-HA-21 *(new)* | "Enabled but confining nothing" fires on a stock Debian | PASS by design — debian 13, 0 of 19 running executables confined |
 | QA-HA-22 *(new)* | A host confining anything gets no finding | PASS — ubuntu 26.04, 2 of 20 confined, `nothing to report` |
 | QA-HA-23 *(new)* | Unprivileged is blindness, not a clean policy | PASS — `aa-status` exits 0 unprivileged, so output must parse before it is believed |
+| QA-HA-24 *(new)* | SELinux axis: enforcing hosts report clean | PASS — alma9, rocky9, fedora44 all `nothing to report` |
+| QA-HA-25 *(new)* | Permissive is a Medium finding | PASS — verified by temporarily setting `setenforce 0` on alma9 and reverting |
+| QA-HA-26 *(new)* | Runtime disagreeing with the config is caught | PASS — same run, `running permissive but configured enforcing` |
+| QA-HA-27 *(new)* | Booleans are counted, never judged individually | PASS — 4 high-risk-sounding booleans are on by default on every host measured |
+| QA-HA-28 *(new)* | Missing `semanage` is blindness, not "no changes" | PASS — alma9 and fedora44 report it; rocky9 has the package so does not |
+| QA-HA-29 *(new)* | Non-SELinux distros point at the apparmor axis | PASS — debian 13 |
+| QA-HA-30 *(new)* | `SELINUX=disabled` on RHEL 9+ is flagged | unit tests only, by decision: creating that state needs a config edit and a reboot |
 
 ## Findings
 

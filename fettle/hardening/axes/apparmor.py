@@ -167,7 +167,8 @@ def run(backend, ctx) -> AxisResult:
     # RHEL uses SELinux. Reporting "no AppArmor" there would be true and useless, and
     # would read as a finding on half the supported fleet.
     if backend.name == "rhel":
-        res.na = "this is an SELinux distribution; AppArmor is not used here"
+        res.na = ("this is an SELinux distribution; mandatory access control is "
+                  "covered by the selinux axis")
         return res
 
     enabled = _enabled(root)

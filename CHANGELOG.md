@@ -11,6 +11,82 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.19.0] — a ninth hardening axis: what mode is SELinux in?
+
+The AppArmor axis reported "not applicable" on RHEL, leaving the family that is roughly
+53% of the enterprise fleet with a placeholder instead of an answer.
+
+**SELinux is in far better shape than AppArmor, so this axis asks a different question.**
+Measured on three untuned guests:
+
+| host | mode | confined processes |
+|---|---|---|
+| AlmaLinux 9.8 | enforcing | 141 of 147 |
+| Rocky Linux 9.8 | enforcing | 140 of 146 |
+| Fedora 44 | enforcing | 150 of 154 |
+
+No daemon runs unconfined on a stock EL9 install. The unconfined processes are the login
+session and nothing else. Coverage is not the question here; mode and configuration drift
+are.
+
+### Enabled or disabled has five answers on RHEL 9
+
+| state | how it is told apart |
+|---|---|
+| enforcing | `/sys/fs/selinux/enforce` is 1 |
+| permissive | `enforce` is 0, policy loaded |
+| disabled at boot | `selinux=0` on the kernel command line |
+| `SELINUX=disabled` on RHEL 9+ | the config file, plus the release |
+| runtime and config disagree | `getenforce` against `SELINUX=` in the config |
+
+The fourth is why this axis is worth having. Red Hat deprecated disabling SELinux through
+`SELINUX=disabled`: on RHEL 9 the system then starts with SELinux **enabled and no policy
+loaded**, and `selinux=0` on the kernel command line is the documented way to actually
+disable it. An admin who edited that file believes SELinux is off. It is on, with no
+policy, and both the config file and `getenforce` agree with the mistaken belief.
+
+### Four findings, each with a measured floor of zero
+
+`selinux-not-enforcing` at Medium covers permissive, disabled at boot and no-policy, with
+the wording naming which. `selinux-mode-mismatch` at Low catches a `setenforce` that will
+not survive a reboot. `selinux-config-disabled-el9` at Low catches the state above.
+`selinux-boolean-changed` at Low lists booleans that differ from the policy default, which
+measured 0 differences on all three hosts.
+
+### The boolean rules that measurement rejected
+
+Of 17 candidate high-risk booleans, four are **on by default on every host tested**
+(`selinuxuser_execstack`, `unconfined_login`, `httpd_enable_cgi`, `nfs_export_all_rw`) and
+two more on Fedora. A curated "dangerous booleans" list would fire four times on a stock
+EL9 host.
+
+The ones that are off are no better. `httpd_can_network_connect` and `samba_export_all_rw`
+are legitimately switched on by anyone running a reverse proxy or a Samba share, and
+flagging those reports what the machine needs in order to work. The kernel-sysctl axis
+already refuses that on principle. Booleans are counted, never judged individually.
+
+`semanage boolean -l` is the exception and it is not always available: it needs root **and**
+`policycoreutils-python-utils`, which a stock AlmaLinux 9 does not install. Its absence is
+reported as blindness, never as "no booleans were changed".
+
+### Verified on five hosts
+
+| host | result |
+|---|---|
+| AlmaLinux 9.8, permissive (temporarily) | `1 Medium, 1 Low` — permissive, and running mode disagreeing with the config |
+| AlmaLinux 9.8, enforcing | `nothing to report`, plus semanage blindness |
+| Rocky 9.8 | `nothing to report`, semanage present so no blindness |
+| Fedora 44 | `nothing to report`, 150 of 154 confined, policy version 35 |
+| Debian 13 | `not applicable, covered by the apparmor axis` |
+
+The permissive run was done by temporarily setting `setenforce 0` on the AlmaLinux guest
+and reverting in the same operation. The RHEL 9 config-file state was not created on a
+machine, because recovering from it needs a config edit and a reboot; that finding is
+covered by unit tests against synthetic inputs and by Red Hat's documentation.
+
+The AppArmor axis's not-applicable wording now points at this axis instead of saying
+SELinux "is not used here".
+
 ## [1.18.0] — a seventh hardening axis: is AppArmor confining anything?
 
 `hardening-audit` answered six questions and said nothing about mandatory access
