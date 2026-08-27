@@ -131,6 +131,32 @@ with a next step, so no defect lives only inside a results table.
    tests + ruff + live re-run, version bump, CHANGELOG, commit, push.
 6. **Re-run** the failed cases to confirm the fix, and record the second result.
 
+## Pre-release sweep, v1.19.0, 2026-08-27
+
+Full lab matrix, 13 actions across 6 snapshot-pinned guests, reverted between runs:
+
+**71 pass · 7 issue · 0 FAIL · 0 skip**
+
+All seven issues were examined and none is a defect:
+
+* **5 x `aur-audit` on debian, ubuntu, rocky9, alma9, fedora.** The action correctly
+  declines: *"no requested action ran, rhel implements none of aur_audit"*. AUR is
+  Arch-only and the harness counts a non-zero exit as an issue.
+* **ubuntu `clean` and `update`.** Both failed on `Could not get lock
+  /var/lib/apt/lists/lock. It is held by process 3708 (apt-get)`, which is `apt-daily`
+  running concurrently with the matrix. fettle reported both truthfully rather than
+  claiming success: clean said *"did NOT complete, apt-get failed (39.0 MiB reclaimed
+  before it stopped)"* and update said *"upgrade SKIPPED, the package lists could not be
+  refreshed"*. Re-run with apt free, both pass: `caches cleaned, 39.0 MiB reclaimed` and
+  `packages updated (apt, snap)`.
+
+Worth noting which guards fired there. The v1.10.0 refresh guard stopped the upgrade
+rather than running `full-upgrade` against stale lists, and the v1.9.0 extras guard then
+skipped snap and flatpak. Neither condition was staged.
+
+Also in this sweep: 1595 unit tests pass, ruff clean, `check-tag.sh` and
+`release-notes.sh` both succeed for 1.19.0.
+
 ## Coverage matrix
 
 Status of each feature's QA pass. `—` = not started.
