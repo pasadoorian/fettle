@@ -16,6 +16,7 @@ kernel       are the runtime kernel protections switched on?
 ssh          is the *effective* sshd configuration weak anywhere?
 firewall     is a host firewall active, and does it actually have rules?
 certs        are any TLS certificates expired or about to be?
+apparmor     is mandatory access control confining anything, or just on?
 ===========  ===============================================================
 
 The contract every axis keeps, and the reason this module exists at all:
@@ -122,7 +123,8 @@ class AxisResult:
 # This tuple holds the axes that EXIST, and grows one entry per milestone. The table
 # above describes the design; listing an unbuilt axis here would make `run_all` report
 # it as blind on every host, which is a louder lie than not mentioning it.
-AXIS_NAMES = ("filesystem", "services", "kernel", "ssh", "firewall", "certs")
+AXIS_NAMES = ("filesystem", "services", "kernel", "ssh", "firewall", "certs",
+              "apparmor")
 
 # The binary axis predates this module and still lives in engine/report/score. It is
 # named here so `disable_axes = ["binary"]` works and so the help can list one set.

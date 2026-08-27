@@ -11,6 +11,71 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.18.0] — a seventh hardening axis: is AppArmor confining anything?
+
+`hardening-audit` answered six questions and said nothing about mandatory access
+control, which on Debian and Ubuntu is the main thing between a compromised service and
+the rest of the machine.
+
+"AppArmor is enabled" is the number people quote and it says very little. Measured on
+three untuned installs:
+
+| host | loaded | enforce | complain | name-only | confined processes |
+|---|---|---|---|---|---|
+| Manjaro desktop | 168 | 84 | 5 | 79 | 7 of 92 |
+| Debian 13 server | 106 | 7 | 23 | 76 | **0 of 19** |
+| Ubuntu 26.04 server | 173 | 97 | 2 | 74 | 2 of 20 |
+
+A stock Debian 13 loads 106 profiles and confines nothing that is running. `sshd`,
+`systemd-resolved`, `systemd-networkd`, `ModemManager` and `udisksd` are all unconfined.
+No count of loaded profiles shows that.
+
+### The three profile modes are never added together
+
+`enforce` applies a policy. `complain` logs and applies nothing. `unconfined` applies
+nothing either and is not a defect: distros ship those so applications keep working
+after Ubuntu set `kernel.apparmor_restrict_unprivileged_userns=1`. The profile files say
+so, e.g. `/etc/apparmor.d/brave`:
+
+> "This profile allows everything and only exists to give the application a name instead
+> of having the label 'unconfined'"
+
+They are reported as exemptions, counted apart from enforcing profiles, never as coverage.
+
+### One finding, and it fires on a stock Debian
+
+**AppArmor is enabled and no running process is confined by it**, at Low, naming
+`apparmor-profiles` and `apparmor-profiles-extra` when they are absent. Neither is
+installed on either lab server and a default install does not pull them in. It fires on
+a stock Debian 13 by deliberate choice, because that is the real state of the host and
+there is something specific to do about it.
+
+Also kept, and quiet by measurement rather than luck: a process running unconfined while
+a profile is loaded **for that exact executable**. That measured 0 on all three hosts.
+
+### Two rules dropped on the numbers
+
+**Profile files on disk that are not loaded.** Filenames and profile names are different
+namespaces. 151 files produce 168 loaded profiles, 13 of them children like `zgrep//sed`,
+and only 106 filenames match a profile name. The naive difference reports 45 non-problems.
+
+**Profiles in complain mode.** The floor swings from 2 to 23 across three ordinary hosts,
+16 of Debian's 23 come from `sbuild` alone, and every complain-mode profile file on both
+servers is owned by the `apparmor` package. Nobody chose complain mode. It is counted and
+never flagged.
+
+### Verified on four hosts
+
+| host | result |
+|---|---|
+| Debian 13, root | `1 Low (106 checked)`, 0 of 19 confined |
+| Ubuntu 26.04, root | `nothing to report (173 checked)`, 2 of 20 confined |
+| AlmaLinux 9, root | `not applicable, this is an SELinux distribution` |
+| Manjaro, `--user` | `not checked`, reported as blindness rather than as a clean policy |
+
+SELinux gets its own axis later. RHEL reports not-applicable until then rather than
+implying it has no mandatory access control.
+
 ## [1.17.0] — `hardening-audit` elevates, and `--user` opts out
 
 Groundwork for the AppArmor axis. Shipped on its own so that any change in what the

@@ -5,7 +5,7 @@
 **Purpose as a user understands it:** *"is anything on this box built without the
 protections my distro says it builds with?"*
 
-Read-only, **elevating since v1.17.0** (`--user` opts out), and **opt-in** — not in the default set, because it produces a long
+Seven axes since v1.18.0 (AppArmor added). Read-only, **elevating since v1.17.0** (`--user` opts out), and **opt-in** — not in the default set, because it produces a long
 list by design and the user prunes it via config.
 
 Status: **swept and fixed.** Three findings fixed in v0.68.0, plus a documented gap that
@@ -43,6 +43,12 @@ binaries) and Rocky 9 (checksec 2.5.0 from EPEL).
 | QA-HA-15 *(new)* | Elevating does not change what the other five axes report | PASS — same host, root and `--user` both give 3 High / 32 Medium / 13 Low (debian 13) |
 | QA-HA-16 *(new)* | Elevating does not make `-H` slower | PASS — 28 s root vs 27 s `--user` on debian 13; the checksec-as-root sleep fixed in QA-HA-13 still holds |
 | QA-HA-17 *(new)* | `--user` refuses to disarm a mutating action | PASS — `-u --user` exits 1 and says why |
+| QA-HA-18 *(new)* | AppArmor axis: SELinux distros are n/a, not a finding | PASS — alma9: `not applicable, this is an SELinux distribution` |
+| QA-HA-19 *(new)* | The three profile modes are never summed | PASS — debian 13: `106 loaded: 7 enforcing, 23 complain, 76 name-only` |
+| QA-HA-20 *(new)* | Name-only profiles are called exemptions, never coverage | PASS — 74 to 79 of them per host, all `apparmor`-package owned |
+| QA-HA-21 *(new)* | "Enabled but confining nothing" fires on a stock Debian | PASS by design — debian 13, 0 of 19 running executables confined |
+| QA-HA-22 *(new)* | A host confining anything gets no finding | PASS — ubuntu 26.04, 2 of 20 confined, `nothing to report` |
+| QA-HA-23 *(new)* | Unprivileged is blindness, not a clean policy | PASS — `aa-status` exits 0 unprivileged, so output must parse before it is believed |
 
 ## Findings
 
