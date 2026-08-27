@@ -218,15 +218,19 @@ jobs:
       #
       # --draft is deliberate. The release is assembled but not announced, so a bad
       # build can be deleted before anyone sees it. Publishing is a human step.
+      #
+      # A script rather than inline YAML for the same reason `check-tag.sh` is one: the
+      # suite can exercise it. This step used to be a single
+      # `gh release create … staged/*`, which during v1.16.0 hit HTTP 400 on one asset
+      # and stopped with two of nine attached — unable to be re-run, and with nothing
+      # checking the result. See packaging/publish.sh.
       - name: create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.guard.outputs.version }}
           PRERELEASE: ${{ needs.guard.outputs.prerelease }}
         run: |
-          flags="--draft --notes-file NOTES.md"
-          [ "$PRERELEASE" = "true" ] && flags="$flags --prerelease"
-          # shellcheck disable=SC2086
-          gh release create "$GITHUB_REF_NAME" $flags \
-            --title "fettle $VERSION" \
-            staged/*
+          pre=""
+          [ "$PRERELEASE" = "true" ] && pre="--prerelease"
+          packaging/publish.sh "$GITHUB_REF_NAME" "fettle $VERSION" \
+            NOTES.md staged $pre

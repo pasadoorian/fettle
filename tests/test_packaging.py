@@ -23,7 +23,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ("install.sh", "version.sh", "check-tag.sh",
            "deb/build.sh", "rpm/build.sh", "arch/build.sh", "zipapp/build.sh",
-           "release-notes.sh")
+           "release-notes.sh", "publish.sh")
 
 
 def _run(script: str, *args: str, cwd: Path | None = None):
@@ -285,3 +285,134 @@ def test_the_smoke_test_checks_for_positive_results():
     assert "(binary)" in smoke, "must check the build reports its own kind"
     assert "FileNotFoundError" in smoke, "must detect a missing embedded zipapp"
     assert "checked" in smoke, "must check something was actually examined"
+
+
+# -- publish.sh --------------------------------------------------------------
+# Written after the v1.16.0 release, where `gh release create … staged/*` hit HTTP 400
+# on one asset: it aborted with 2 of 9 attached, could not be re-run (`create` refuses
+# when the release exists), and had nothing checking the result. The third is the one
+# that matters — had the 400 hit the last file, `gh` would have exited 0 with a package
+# missing from the release.
+def _gh_stub(tmp_path: Path, script: str) -> dict:
+    """Put a fake `gh` on PATH and return an env that finds it first."""
+    import os
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    gh = bindir / "gh"
+    gh.write_text("#!/bin/sh\n" + script)
+    gh.chmod(0o755)
+    env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}",
+               GH_LOG=str(tmp_path / "gh.log"))
+    return env
+
+
+def _publish(tmp_path: Path, env: dict, files=("a.deb", "b.rpm")):
+    staged = tmp_path / "staged"
+    staged.mkdir(exist_ok=True)
+    for f in files:
+        (staged / f).write_text("x")
+    notes = tmp_path / "NOTES.md"
+    notes.write_text("# notes\n")
+    return subprocess.run(
+        [str(ROOT / "packaging" / "publish.sh"), "v9.9.9", "fettle 9.9.9",
+         str(notes), str(staged)],
+        capture_output=True, text=True, env=env)
+
+
+_LOG_AND_LIST = '''
+echo "$@" >> "$GH_LOG"
+case "$1 $2" in
+  "release view") [ "$3" = "v9.9.9" ] && [ "$4" = "--json" ] && { %s; exit 0; }
+                  exit 1 ;;
+esac
+exit 0
+'''
+
+
+def test_publish_attaches_each_asset_separately_not_as_one_glob():
+    """One `gh release upload` per file, so a failure is isolated to that file instead
+    of aborting every asset after it."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        env = _gh_stub(tmp, _LOG_AND_LIST % 'printf "a.deb\\nb.rpm\\n"')
+        out = _publish(tmp, env)
+        log = (tmp / "gh.log").read_text()
+    assert out.returncode == 0, out.stderr
+    uploads = [ln for ln in log.splitlines() if ln.startswith("release upload")]
+    assert len(uploads) == 2, log
+    assert all("--clobber" in ln for ln in uploads)
+
+
+def test_publish_adopts_an_existing_release_instead_of_failing():
+    """`gh release create` refuses when the release exists, so the obvious recovery —
+    re-run the failed job — could only ever print "already exists"."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        # `release view <tag>` succeeds => the release already exists
+        env = _gh_stub(tmp, '''
+echo "$@" >> "$GH_LOG"
+[ "$1 $2" = "release view" ] && { printf "a.deb\\nb.rpm\\n"; exit 0; }
+exit 0
+''')
+        out = _publish(tmp, env)
+        log = (tmp / "gh.log").read_text()
+    assert out.returncode == 0, out.stderr
+    assert "release create" not in log, "tried to create a release that already exists"
+    assert "repair run" in out.stdout
+
+
+def test_publish_fails_when_an_asset_is_missing_from_the_release():
+    """The check that makes a silent partial release impossible: asked of the release
+    itself, not inferred from the upload loop, because an upload can report success and
+    still leave nothing attached."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        # every upload "succeeds", but the release only ever lists one asset
+        env = _gh_stub(tmp, _LOG_AND_LIST % 'printf "a.deb\\n"')
+        out = _publish(tmp, env)
+    assert out.returncode == 1
+    assert "INCOMPLETE" in out.stderr
+    assert "b.rpm" in out.stderr
+    assert "still a draft" in out.stderr
+
+
+def test_publish_retries_a_failed_upload_before_giving_up():
+    """The failure that prompted this was transient — the same file uploaded fine on a
+    later attempt."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        env = _gh_stub(tmp, '''
+echo "$@" >> "$GH_LOG"
+case "$1 $2" in
+  "release view") printf "a.deb\\nb.rpm\\n"; exit 0 ;;
+  "release upload")
+      n=$(grep -c "release upload .*a.deb" "$GH_LOG" 2>/dev/null || echo 0)
+      case "$4" in *a.deb) [ "$n" -lt 2 ] && exit 1 ;; esac
+      exit 0 ;;
+esac
+exit 0
+''')
+        out = _publish(tmp, env)
+        log = (tmp / "gh.log").read_text()
+    assert out.returncode == 0, out.stderr
+    assert log.count("a.deb") >= 2, "did not retry"
+    assert "retrying" in out.stderr
+
+
+def test_publish_refuses_an_empty_staged_directory():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        env = _gh_stub(tmp, "exit 0")
+        out = _publish(tmp, env, files=())
+    assert out.returncode == 1 and "empty" in out.stderr

@@ -11,6 +11,40 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### The release pipeline can no longer ship a half-populated release
+
+Packaging only — no change to fettle itself, so no version bump.
+
+Cutting v1.16.0 exposed three faults in one line of workflow YAML
+(`gh release create … staged/*`). One asset upload returned HTTP 400 and:
+
+1. **It aborted mid-upload.** The release object existed with **2 of 9** assets
+   attached; `gh` exits on the first upload error, so the remaining seven were never
+   attempted.
+2. **It could not be re-run.** `gh release create` fails when the release already
+   exists, so the obvious recovery — re-run the failed job — could only print
+   *"already exists"*.
+3. **Nothing checked the result.** It failed loudly *that* time only because the 400
+   hit the seventh asset. Had it hit the ninth, `gh` would have exited **0** with a
+   package missing from the release, and the only signal would have been someone
+   counting files on the release page.
+
+The third is the one worth fixing: a half-populated release is not a failed release. It
+installs, it runs, and the artifact somebody wanted is simply absent.
+
+Now `packaging/publish.sh` — a script rather than inline YAML for the same reason
+`check-tag.sh` is one, so the suite can exercise it. It creates the release **with no
+assets**, attaches each file separately with three attempts (the failure that prompted
+this was transient), and then **asks the release what it actually has** and fails if
+anything is missing. Re-running repairs instead of refusing: an existing release is
+adopted rather than recreated.
+
+Asked of the release rather than inferred from the upload loop, deliberately — an upload
+can report success and still leave nothing attached, and this is the last chance to
+notice before a human hits publish.
+
+Five tests, all proved to fail against the old one-line command.
+
 ## [1.16.0] — the audit stops looking in the wrong place, and stops hanging
 
 **Four fixes since 1.12.0, and three of them are the same bug wearing different clothes:
