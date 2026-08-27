@@ -416,3 +416,37 @@ def test_publish_refuses_an_empty_staged_directory():
         env = _gh_stub(tmp, "exit 0")
         out = _publish(tmp, env, files=())
     assert out.returncode == 1 and "empty" in out.stderr
+
+
+def test_publish_keeps_a_multiword_title_as_one_argument():
+    """Caught in production on v1.19.0. The title is built from `fettle $VERSION`, so it
+    contains a space; expanded from an unquoted string it split into `--title fettle`
+    plus a stray `1.19.0`, which gh read as an asset pattern and rejected with
+    "no matches found for 1.19.0". The earlier test only checked that `release create`
+    was called, not that its arguments survived."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        # one argument per line, so a split title is visible
+        env = _gh_stub(tmp, '''
+printf '%s\\n' "$@" >> "$GH_LOG"
+echo "--" >> "$GH_LOG"
+[ "$1 $2" = "release view" ] && { printf "a.deb\\nb.rpm\\n"; exit 1; }
+exit 0
+''')
+        # `release view` exits 1 so the create branch runs
+        env2 = _gh_stub(tmp, '''
+printf '%s\\n' "$@" >> "$GH_LOG"
+case "$1 $2" in
+  "release view") [ "$4" = "--json" ] && { printf "a.deb\\nb.rpm\\n"; exit 0; }; exit 1 ;;
+esac
+exit 0
+''')
+        out = _publish(tmp, env2)
+        log = (tmp / "gh.log").read_text().splitlines()
+    assert out.returncode == 0, out.stderr
+    assert "fettle 9.9.9" in log, \
+        f"the title was split into separate arguments: {log}"
+    assert "9.9.9" not in log, "a bare version leaked in as a positional argument"
+    assert env  # the first stub is unused; kept to document the shape

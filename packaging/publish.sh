@@ -31,8 +31,10 @@ prerelease="${5:-}"
 [ -f "$notes" ] || { echo "publish: no notes file at $notes" >&2; exit 1; }
 [ -d "$staged" ] || { echo "publish: no staged directory at $staged" >&2; exit 1; }
 
-set -- "$staged"/*
-[ -e "$1" ] || { echo "publish: $staged is empty — nothing to attach" >&2; exit 1; }
+# find rather than ls, and not the `set -- "$staged"/*` trick, because the positional
+# parameters are needed for the gh argument list below before the file list is built.
+[ -n "$(find "$staged" -maxdepth 1 -type f -print 2>/dev/null | head -n 1)" ] \
+    || { echo "publish: $staged is empty — nothing to attach" >&2; exit 1; }
 
 # -- create, or adopt an existing draft --------------------------------------
 # Idempotent on purpose: re-running this job after a flaky upload must repair the
@@ -40,16 +42,23 @@ set -- "$staged"/*
 if gh release view "$tag" >/dev/null 2>&1; then
     echo "publish: $tag already exists — attaching to it (repair run)"
 else
-    flags="--draft --notes-file $notes --title $title"
+    # `set --` rather than a flags string, because the title contains a space. Built as
+    # `flags="--title $title"` and expanded unquoted, "fettle 1.19.0" split into
+    # `--title fettle` plus a stray `1.19.0`, which gh read as an asset pattern and
+    # rejected with "no matches found for 1.19.0". Caught on the first real run of this
+    # script; the test that should have caught it only checked that `release create`
+    # appeared at all, not that its arguments survived intact.
+    set -- --draft --notes-file "$notes" --title "$title"
     if [ "$prerelease" = "--prerelease" ]; then
-        flags="$flags --prerelease"
+        set -- "$@" --prerelease
     fi
     # Created with NO assets. Attaching them separately is what stops one bad upload
     # from taking the release object down with it.
-    # shellcheck disable=SC2086
-    gh release create "$tag" $flags
+    gh release create "$tag" "$@"
     echo "publish: created draft $tag"
 fi
+
+set -- "$staged"/*
 
 # -- attach every file, one at a time, with retries --------------------------
 # One `gh release upload` per file so a failure is isolated to that file, and three
