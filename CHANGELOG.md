@@ -11,10 +11,114 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
-## [1.19.0] — a ninth hardening axis: what mode is SELinux in?
+## [1.19.0] — `hardening-audit` learns about mandatory access control
 
-The AppArmor axis reported "not applicable" on RHEL, leaving the family that is roughly
-53% of the enterprise fleet with a placeholder instead of an answer.
+**Three versions since 1.16.0, and they are one piece of work.** `hardening-audit`
+answered six questions and said nothing about the mechanism that is supposed to contain a
+compromised service. It now answers nine, including AppArmor on Debian and Ubuntu and
+SELinux on the RHEL family.
+
+| version | what changed |
+|---|---|
+| **1.17.0** | `-H` elevates, because the policy is root-only. `--user` opts out. |
+| **1.18.0** | AppArmor axis. |
+| **1.19.0** | SELinux axis. |
+
+### The two systems are not in the same state in the field
+
+This is the part I did not expect, and it is why the two axes ask different questions.
+Measured on five untuned installs, none of them tuned by hand:
+
+| host | mandatory access control | processes actually confined |
+|---|---|---|
+| Debian 13 | AppArmor, 106 profiles loaded | **0 of 19** |
+| Ubuntu 26.04 | AppArmor, 173 profiles loaded | 2 of 20 |
+| AlmaLinux 9.8 | SELinux, enforcing | **141 of 147** |
+| Rocky Linux 9.8 | SELinux, enforcing | 140 of 146 |
+| Fedora 44 | SELinux, enforcing | 150 of 154 |
+
+A stock Debian 13 loads 106 AppArmor profiles and confines nothing that is running.
+`sshd`, `systemd-resolved`, `systemd-networkd`, `ModemManager` and `udisksd` are all
+unconfined. A stock AlmaLinux 9 confines everything except the login session.
+
+So the AppArmor axis reports whether anything is confined, and the SELinux axis reports
+what mode the machine is in and whether it agrees with itself.
+
+### AppArmor: enabled is not the same as confining
+
+The three profile modes are never added together. `enforce` applies a policy, `complain`
+logs and applies nothing, and `unconfined` applies nothing either. That last group is
+between 74 and 79 profiles per host and is not a defect: distros ship them so applications
+keep working after Ubuntu set `kernel.apparmor_restrict_unprivileged_userns=1`.
+`/etc/apparmor.d/brave` says so itself, and Ubuntu's documentation calls such a profile a
+trivial bypass rather than a restriction.
+
+One finding, at Low: AppArmor is enabled and no running process is confined by it, naming
+`apparmor-profiles` and `apparmor-profiles-extra` when they are absent. It fires on a
+stock Debian 13, deliberately, because that is the real state and there is something
+specific to do about it.
+
+### SELinux: what mode, and does the machine agree with itself
+
+"Enabled or disabled" has five answers on RHEL 9. The one worth building for is that Red
+Hat deprecated `SELINUX=disabled` in `/etc/selinux/config`: the system then starts with
+SELinux **enabled and no policy loaded**, and `selinux=0` on the kernel command line is
+the documented way to actually disable it. An admin who edited that file believes SELinux
+is off. It is on, with no policy, and both the file and `getenforce` agree with the
+mistaken belief.
+
+Four findings, each with a measured floor of zero, covering not-enforcing, runtime
+disagreeing with the configured mode, that RHEL 9 config trap, and booleans that differ
+from the policy default.
+
+### Four rules were dropped because the numbers said so
+
+* **AppArmor profile files on disk that are not loaded.** Filenames and profile names are
+  different namespaces. 151 files produce 168 profiles, 13 of them children like
+  `zgrep//sed`, and only 106 filenames match a profile name. The naive difference reports
+  45 non-problems.
+* **AppArmor complain mode.** The floor swings from 2 to 23 across three ordinary hosts, 16
+  of Debian's 23 come from `sbuild` alone, and the `apparmor` package owns every one of
+  those files.
+* **A curated list of dangerous SELinux booleans.** Four high-risk-sounding booleans are
+  **on by default on every host tested** (`selinuxuser_execstack`, `unconfined_login`,
+  `httpd_enable_cgi`, `nfs_export_all_rw`), and two more on Fedora.
+* **Flagging SELinux booleans that are off.** `httpd_can_network_connect` and
+  `samba_export_all_rw` are off everywhere and are exactly what you enable to run a
+  reverse proxy or a Samba share, so flagging them reports what the machine needs in order
+  to work.
+
+What survives measurement is narrow and quiet. An AppArmor process running unconfined
+while a profile exists for that exact executable measured 0 on all three hosts, and
+SELinux booleans differing from the policy default measured 0 on all three.
+
+### `-H` needs root now
+
+The AppArmor policy is root-only. Unprivileged, `aa-status` prints "You do not have enough
+privilege to read the profile set" and **exits 0**, and
+`/sys/kernel/security/apparmor/profiles` is mode 0444 and still returns EACCES because
+securityfs enforces past the mode bits. So the unprivileged view is the reassuring half of
+the answer.
+
+`--user` keeps the old behaviour, applies to read-only audits only, and refuses when
+combined with an action that changes the system. Verified on Debian 13: identical findings
+either way, 28 s as root against 27 s with `--user`.
+
+SELinux is the opposite and needs almost no privilege, so that axis gives a full answer
+under `--user` apart from the boolean comparison, which needs `semanage` from
+`policycoreutils-python-utils`, a package stock AlmaLinux 9 does not install.
+
+### Verified before release
+
+Nine live runs across five guests, plus a full lab matrix of 13 actions across 6 guests
+reverting between runs: **71 pass, 7 issue, 0 FAIL, 0 skip**. Every issue was examined and
+none is a defect. Five are `aur-audit` correctly declining on non-Arch targets, and two are
+Ubuntu hitting the apt lists lock held by `apt-daily`, which fettle reported truthfully and
+which pass on a re-run.
+
+**One path is not verified on a machine**, and this says so rather than implying otherwise:
+the RHEL 9 `SELINUX=disabled` state. Creating it needs a config edit and a reboot, and so
+does recovering, so it rests on unit tests and Red Hat's documentation.
 
 **SELinux is in far better shape than AppArmor, so this axis asks a different question.**
 Measured on three untuned guests:
