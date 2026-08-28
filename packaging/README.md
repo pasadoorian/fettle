@@ -65,6 +65,28 @@ the fallback would be GitHub's auto-generated commit list, which for a release l
 1.0.0 is a wall of `packaging P4: …` lines and says nothing a user wants. A short table
 explaining what each artifact is gets appended, since that part is identical every time.
 
+**Attaching the assets is `packaging/publish.sh`,** for the same reason the guard is a
+script: `tests/test_packaging.py` can exercise it. It creates the release with **no
+assets**, attaches each file separately with three attempts, adopts an existing release
+on a re-run rather than refusing, and then asks the release what it actually has and
+fails if anything is missing.
+
+That last check exists because of how v1.16.0 shipped. The step was a single
+`gh release create … staged/*`; one asset upload returned HTTP 400, `gh` exited on the
+first error with **2 of 9** attached, and re-running the job could only ever print
+"already exists". It failed loudly that time only because the 400 hit the seventh asset.
+Had it hit the ninth, `gh` would have exited 0 with a package missing from the release.
+
+Two things worth knowing when it goes wrong:
+
+* **If `gh release create` itself fails, no release object exists**, so deleting and
+  re-pointing the tag is safe. That is also the only way to get a packaging fix into the
+  build, because the workflow checks out the tag.
+* **To repair a partial release by hand**, pull the artifacts from the run
+  (`gh run download <id> -n <artifact>`), verify them against the already-published
+  `SHA256SUMS` so you know you are uploading exactly what CI built, then
+  `gh release upload <tag> <file> --clobber`.
+
 **The guard is `packaging/check-tag.sh`,** and it exists because a release tagged
 `v1.0.0` whose packages call themselves `0.120.0` installs, runs, and lies about what it
 is — every bug report afterwards then names a version that was never built. It is a
