@@ -31,6 +31,15 @@ hidden: mapping a listening socket to the process holding it means reading
 Unprivileged on the reference machine, **9 of 26 listening sockets resolved** — the
 other 17 belong to root or other users. Reporting "no unowned listeners" from a third
 of the data would be a clean result over an unasked question.
+
+**Root does not always resolve all of them, and the reason must not be guessed.**
+Measured 2026-09-01: Debian 13, Ubuntu 26.04 and AlmaLinux 9 each resolve every
+listening socket as root, while the reference desktop leaves **2 of 56** untraced with
+nothing refused and no process exited. Those two belong to no process on the machine,
+which points at a kernel-side socket, another network namespace, or a container. The
+earlier code reported all three situations as "unreadable for 0 process(es) without
+root", which is a reason its own count had already disproved, and it named no endpoint,
+so there was nothing the reader could go and look at.
 """
 
 from __future__ import annotations
@@ -189,16 +198,30 @@ def _socket_inodes(root: Path) -> dict[str, tuple[str, int]]:
     return out
 
 
-def _fd_owners(root: Path) -> tuple[dict[str, str], int]:
-    """socket inode -> pid, and how many processes would not let us look."""
+def _fd_owners(root: Path) -> tuple[dict[str, str], int, int]:
+    """socket inode -> pid, how many processes refused us, how many exited mid-scan.
+
+    The last two are counted apart because they explain an untraced socket in completely
+    different ways. The earlier version counted only ``PermissionError`` and then blamed
+    *every* untraced socket on privilege, so a root run where nothing had been refused
+    still reported "unreadable for 0 process(es) without root". A reason the code has
+    already disproved is worse than no reason: it sends the reader to re-run something
+    they just ran.
+    """
     owners: dict[str, str] = {}
-    denied = 0
+    denied = vanished = 0
     for pid in _pids(root):
         fd_dir = root / f"proc/{pid}/fd"
         try:
             entries = os.listdir(fd_dir)
         except PermissionError:
             denied += 1
+            continue
+        except (FileNotFoundError, ProcessLookupError):
+            # Exited between the /proc listing and this readdir. Counted rather than
+            # swallowed, because it is one of the few honest explanations for a
+            # listening socket that no live process holds.
+            vanished += 1
             continue
         except OSError:
             continue
@@ -209,7 +232,44 @@ def _fd_owners(root: Path) -> tuple[dict[str, str], int]:
                 continue
             if target.startswith("socket:["):
                 owners[target[8:-1]] = pid
-    return owners, denied
+    return owners, denied, vanished
+
+
+#: How many endpoints to name before the list is noise rather than information. An
+#: unprivileged run can leave forty-odd sockets untraced; a root run leaves a handful,
+#: and that is the case worth naming in full.
+_MAX_NAMED = 6
+
+
+def _endpoints(sockets: dict[str, tuple[str, int]], inodes: list[str]) -> str:
+    """``"tcp/44495, udp/36722"`` for these inodes, deduplicated and capped."""
+    seen = sorted({sockets[ino] for ino in inodes})
+    shown = ", ".join(f"{fam}/{port}" for fam, port in seen[:_MAX_NAMED])
+    extra = len(seen) - _MAX_NAMED
+    return f"{shown}, and {extra} more" if extra > 0 else shown
+
+
+def _why_untraced(sockets: dict[str, tuple[str, int]], inodes: list[str],
+                  denied: int, vanished: int) -> str:
+    """Why these sockets have no process, chosen from what was actually measured.
+
+    Privilege is asserted only when something was actually refused. All three lab servers
+    resolve every socket as root; the reference desktop still leaves 2 of 56, so the last
+    branch is a state real machines are in rather than a theoretical one.
+    """
+    if denied:
+        return (f"/proc/<pid>/fd is unreadable for {denied} process(es) as this user, so "
+                f"re-run without --dry-run or --user and fettle will elevate for you")
+    if vanished:
+        return (f"{vanished} process(es) exited while this run was reading them, which "
+                f"leaves a socket with no live process to attribute it to, and re-running "
+                f"usually resolves them")
+    ports = "|".join(str(port)
+                     for _, port in sorted({sockets[i] for i in inodes})[:_MAX_NAMED])
+    return ("every process on this machine was readable and none of them holds these, so "
+            "they belong to something this run cannot see from here, usually a "
+            "kernel-side socket, another network namespace, or a container. Identify "
+            f"them with: ss -tulnp | grep -E ':({ports})\\b'")
 
 
 def _listeners(backend, ctx, res: CheckResult) -> None:
@@ -226,9 +286,9 @@ def _listeners(backend, ctx, res: CheckResult) -> None:
         return
     res.checked += len(sockets)
 
-    owners, denied = _fd_owners(root)
+    owners, denied, vanished = _fd_owners(root)
     resolved = {ino: owners[ino] for ino in sockets if ino in owners}
-    unresolved = len(sockets) - len(resolved)
+    untraced = [ino for ino in sockets if ino not in owners]
 
     exes: dict[str, list[tuple[str, int]]] = {}
     for ino, pid in resolved.items():
@@ -253,14 +313,16 @@ def _listeners(backend, ctx, res: CheckResult) -> None:
             summary=f"unowned process listening on {where}",
             fix=f"identify it: ss -tlnp | grep -F {path.rsplit('/', 1)[-1]}"))
 
-    if unresolved:
+    if untraced:
         # The honest half. Unprivileged, most listeners belong to processes whose
         # /proc/<pid>/fd this user cannot read, and a clean result over a third of the
-        # data is the failure this action exists to avoid.
+        # data is the failure this action exists to avoid. The reason has to match what
+        # was actually measured, and the endpoints have to be named: "2 of 56" with no
+        # identity is a blind spot the reader cannot act on even when the reason is right.
         res.blind.append((
-            f"{unresolved} of {len(sockets)} listening socket(s)",
-            f"could not be traced to a process — /proc/<pid>/fd is unreadable for "
-            f"{denied} process(es) without root, so run it without --dry-run and fettle elevates for you", ""))
+            f"{len(untraced)} of {len(sockets)} listening socket(s) could not be traced "
+            f"to a process ({_endpoints(sockets, untraced)})",
+            _why_untraced(sockets, untraced, denied, vanished), ""))
 
 
 # --------------------------------------------------------- interfaces and /dev files

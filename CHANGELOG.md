@@ -11,6 +11,41 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### `compromise-check` blamed root for something root could not have fixed
+
+Reported from a run that was already elevated:
+
+```
+? 2 of 56 listening socket(s) — could not be traced to a process — /proc/<pid>/fd is
+  unreadable for 0 process(es) without root, so run it without --dry-run and fettle
+  elevates for you
+```
+
+**Zero processes were refused, so privilege was not the reason.** The code counted
+`PermissionError` correctly and then ignored its own count, printing the privilege
+explanation for every untraced socket no matter what it had measured. On a root run that
+sends the reader to re-run the thing they just ran, and past a socket that nothing on the
+machine accounts for.
+
+Measured 2026-09-01 before changing anything. Debian 13, Ubuntu 26.04 and AlmaLinux 9
+resolve every listening socket as root. The reference desktop leaves 2 of 56, with
+nothing refused, no process exited, no inode 0 and no duplicate inodes, so those two are
+held by no process the run can see.
+
+Three changes. The reason is now chosen from what was measured rather than assumed, and
+privilege is named only when something was actually refused. A process that exits
+mid-scan was being swallowed by a bare `except OSError` without being counted, and it is
+now counted and reported as its own explanation. And the untraced endpoints are named,
+because "2 of 56" with no identity is a blind spot nobody can act on even when the reason
+is right. Unprivileged on the reference desktop the line now reads:
+
+```
+? 17 of 56 listening socket(s) could not be traced to a process (tcp/22, tcp/445,
+  tcp/631, tcp/5001, tcp/27500, tcp/44495, and 10 more) — /proc/<pid>/fd is unreadable
+  for 734 process(es) as this user, so re-run without --dry-run or --user and fettle
+  will elevate for you
+```
+
 ## [1.19.0] — `hardening-audit` learns about mandatory access control
 
 **Three versions since 1.16.0, and they are one piece of work.** `hardening-audit`

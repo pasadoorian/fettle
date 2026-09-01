@@ -180,6 +180,62 @@ def test_unresolvable_sockets_are_blind_not_absent(tmp_path):
     assert any("listening socket" in what for what, _, _ in res.blind)
 
 
+def test_untraced_sockets_do_not_blame_privilege_when_nothing_was_refused(tmp_path):
+    """The v1.19.0 bug: a root run reported "unreadable for 0 process(es) without root".
+
+    Nothing was refused, so privilege cannot be the reason, and the message told the
+    reader to re-run in a way they had already run. A reason the code has itself
+    disproved is worse than no reason at all.
+    """
+    _net(tmp_path, "proc/net/tcp", [(0xADCF, "0A", "99998")])    # tcp/44495, unheld
+    _listening_proc(tmp_path, 400, "/usr/bin/sshd", "55555")     # a readable process
+    res = processes.run(_Backend(owned=["/usr/bin/sshd"]), _ctx(tmp_path))
+    why = [w for what, w, _ in res.blind if "listening socket" in what]
+    assert len(why) == 1
+    assert "without root" not in why[0]
+    assert "0 process(es)" not in why[0]
+    assert "ss -tulnp" in why[0]
+
+
+def test_untraced_sockets_are_named_so_they_can_be_chased(tmp_path):
+    """"2 of 56" with no identity is a blind spot nobody can act on."""
+    _net(tmp_path, "proc/net/tcp", [(0xADCF, "0A", "99998")])
+    _net(tmp_path, "proc/net/udp", [(0x8F72, "07", "99997")])
+    res = processes.run(_Backend(), _ctx(tmp_path))
+    what = [w for w, _, _ in res.blind if "listening socket" in w]
+    assert len(what) == 1
+    assert "tcp/44495" in what[0] and "udp/36722" in what[0]
+    assert what[0].startswith("2 of 2 listening socket(s)")
+
+
+def test_a_process_that_exits_mid_scan_is_not_reported_as_a_privilege_problem(tmp_path):
+    """FileNotFoundError from a vanished process was swallowed without being counted."""
+    _net(tmp_path, "proc/net/tcp", [(0x1F90, "0A", "99999")])
+    (tmp_path / "proc/700").mkdir(parents=True)      # a pid with no fd/ directory
+    res = processes.run(_Backend(), _ctx(tmp_path))
+    why = [w for what, w, _ in res.blind if "listening socket" in what]
+    assert len(why) == 1
+    assert "exited while this run was reading them" in why[0]
+
+
+def test_privilege_is_still_named_when_a_process_really_was_refused(tmp_path, monkeypatch):
+    """The original message was right for the case it was written for. Keep it."""
+    _net(tmp_path, "proc/net/tcp", [(0x1F90, "0A", "99999")])
+    _listening_proc(tmp_path, 401, "/usr/bin/sshd", "55556")
+    real = os.listdir
+
+    def refuse(path, *a, **kw):
+        if str(path).endswith("/401/fd"):
+            raise PermissionError(13, "Permission denied")
+        return real(path, *a, **kw)
+
+    monkeypatch.setattr(os, "listdir", refuse)
+    res = processes.run(_Backend(), _ctx(tmp_path))
+    why = [w for what, w, _ in res.blind if "listening socket" in what]
+    assert len(why) == 1
+    assert "unreadable for 1 process(es)" in why[0]
+
+
 # -------------------------------------------------------------------- interfaces
 
 
