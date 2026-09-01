@@ -78,6 +78,7 @@ implying a confidence the check has not earned.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -118,6 +119,43 @@ UNIT_SUFFIXES = (".service", ".timer", ".socket", ".path")
 # somebody else's unit. `.wants/` and `.requires/` are excluded here for the same reason
 # `_unit_files` excludes them, and only `.d` directories are read.
 DROPIN_GLOB = "*.d/*.conf"
+
+# Boot and login execution that is not a systemd unit. Every directory here is
+# package-managed on all four hosts measured, which is what makes "no package owns this"
+# mean something. Each entry carries what the location *does*, because "an unowned file"
+# is not a finding anybody can act on and "runs as root early in every boot" is.
+#
+# Measured 2026-09-01 across Manjaro, Debian 13, Ubuntu 26.04 and AlmaLinux 9: 178 regular
+# files, 2 of them unowned.
+SCRIPT_DIRS = (
+    ("usr/lib/systemd/system-generators", "a systemd generator, run as root before "
+                                          "almost anything else in the boot"),
+    ("etc/systemd/system-generators", "a systemd generator, run as root before almost "
+                                      "anything else in the boot"),
+    ("etc/init.d", "a SysV init script"),
+    ("etc/profile.d", "sourced into every login shell"),
+    ("etc/update-motd.d", "run on every interactive SSH login"),
+    ("etc/xdg/autostart", "started with every desktop session"),
+)
+
+# Three locations from the same family that are deliberately NOT in SCRIPT_DIRS, each
+# dropped on measurement rather than on taste:
+#
+# `/etc/rc*.d`
+#     Every entry is a symlink into `/etc/init.d` by design. Debian 13 holds 63 of them
+#     and Ubuntu 26.04 holds 40, and neither holds a single regular file. The targets are
+#     scanned through `/etc/init.d` already, so this would add nothing but a second name
+#     for each one. Same reasoning as the `.wants/` exclusion above.
+# `/run/motd.d`
+#     Runtime state, not configuration. `85-fwupd` is written there by fwupd on both the
+#     reference desktop and Debian 13 and is owned by nothing on either, so the test's
+#     answer is known before it runs.
+# `/etc/profile` and `/etc/bash.bashrc`
+#     **`/etc/profile` is owned by no package on Debian 13 and Ubuntu 26.04.** `dpkg-query
+#     -S` exits 1 for it and `base-files` does not list it, while Manjaro and AlmaLinux
+#     both own theirs. A rule this good-sounding would have fired on half the hosts
+#     measured, on a file that exists on every Linux system. Their content is P3's
+#     question, not this one's.
 
 #: What starts the service, for unit types that carry no ExecStart of their own.
 _NO_EXEC = {
@@ -225,6 +263,7 @@ def run(backend, ctx) -> CheckResult:
     res = CheckResult(name="persistence", title="Boot persistence")
     _system_units(backend, ctx, res)
     _dropins(backend, ctx, res)
+    _startup_scripts(backend, ctx, res)
     _user_units(ctx, res)
     _system_cron(backend, ctx, res)
     _user_cron(ctx, res)
@@ -268,6 +307,81 @@ def _system_units(backend, ctx, res: CheckResult) -> None:
         raw = [ln.strip() for ln in bodies[path].splitlines()
                if ln.strip().startswith("ExecStart")]
         res.detail_rows.append(f"{path}: {'; '.join(raw) or '(no ExecStart)'}")
+def _startup_scripts(backend, ctx, res: CheckResult) -> None:
+    """Boot and login execution that no systemd unit describes.
+
+    Six directories, one question, and it is the same question the unit scan asks. What
+    changes between them is only how the thing gets run: a generator runs as root before
+    the boot has properly started, a `profile.d` script is sourced into every login shell,
+    an `update-motd.d` script runs on every interactive SSH login.
+
+    Measured 2026-09-01: 178 regular files across four hosts, **2 unowned**. Those two are
+    `/etc/profile.d/nix.sh` on the reference desktop, written by the Nix installer, and
+    `/etc/update-motd.d/60-unminimize` on Ubuntu 26.04. Both are real, both are explicable
+    in one line, and that is the bar this check was calibrated to in the first place.
+    """
+    root = ctx.root
+    subjects: list[tuple[Path, str]] = []
+    unreadable: list[str] = []
+
+    for rel, what in SCRIPT_DIRS:
+        try:
+            entries = sorted((root / rel).iterdir())
+        except PermissionError:
+            unreadable.append("/" + rel)
+            continue
+        except OSError:
+            continue          # not present on this distribution, which is the norm
+        subjects.extend((p, what) for p in entries if is_regular_file(p))
+
+    res.checked += len(subjects)
+    if subjects:
+        owners = backend.map_files_to_packages([str(p) for p, _ in subjects])
+        for path, what in subjects:
+            if str(path) in owners:
+                continue
+            shown = "/" + str(path.relative_to(root)) if path.is_relative_to(root) \
+                else str(path)
+            res.findings.append(Finding(
+                check="unowned-startup-script", subject=shown, severity=MEDIUM,
+                detail=(f"{shown} is {what}, and no package owns it. Nothing about the "
+                        f"file says who put it there, so the only way to account for it "
+                        f"is to recognise it"),
+                summary=f"no package owns this, and it is {what}",
+                fix=f"read it: cat {shown}"))
+
+    if unreadable:
+        res.blind.append((
+            f"startup scripts in {', '.join(unreadable)}",
+            "the directory could not be read, so anything in it was not examined", ""))
+
+    _rc_local(backend, ctx, res)
+
+
+def _rc_local(backend, ctx, res: CheckResult) -> None:
+    """`/etc/rc.local`, which only runs when it is executable.
+
+    Its presence is not a signal. AlmaLinux 9 ships the file, owned by a package and
+    without the execute bit, and the other three hosts do not have it at all. The state
+    worth reporting is the one where it would actually run and nothing accounts for it.
+    """
+    path = ctx.root / "etc/rc.local"
+    if not is_regular_file(path):
+        return
+    res.checked += 1
+    if not os.access(path, os.X_OK):
+        return                # present but inert, which is AlmaLinux's shipped state
+    if str(path) in backend.map_files_to_packages([str(path)]):
+        return
+    res.findings.append(Finding(
+        check="unowned-startup-script", subject="/etc/rc.local", severity=MEDIUM,
+        detail=("/etc/rc.local is executable, so its contents run late in every boot as "
+                "root, and no package owns it. The file is inert unless the execute bit "
+                "is set, and here it is set"),
+        summary="executable and owned by no package, so it runs at every boot",
+        fix="read it: cat /etc/rc.local"))
+
+
 def _dropin_files(root: Path) -> list[Path]:
     """Real `<unit>.d/*.conf` drop-ins in the system unit directories."""
     found: list[Path] = []

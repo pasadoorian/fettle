@@ -659,3 +659,101 @@ def test_the_dropin_finding_shows_what_the_override_sets(tmp_path):
     assert "Environment=DEBUG=1" in found[0].detail
     assert "a comment" not in found[0].detail
     assert "[Service]" not in found[0].detail
+
+
+# ------------------------------------------- P2: boot and login execution, not units
+
+
+def _script(root: Path, rel: str, name: str, body: str = "#!/bin/sh\ntrue\n") -> Path:
+    directory = root / rel
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(body)
+    return path
+
+
+@pytest.mark.parametrize("rel,phrase", [
+    ("usr/lib/systemd/system-generators", "generator"),
+    ("etc/init.d", "SysV"),
+    ("etc/profile.d", "login shell"),
+    ("etc/update-motd.d", "SSH login"),
+    ("etc/xdg/autostart", "desktop session"),
+])
+def test_an_unowned_startup_script_is_found_and_says_what_runs_it(tmp_path, rel, phrase):
+    """"An unowned file" is not actionable. What runs it, and when, is."""
+    _script(tmp_path, rel, "evil")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-startup-script"]
+    assert len(found) == 1
+    assert found[0].severity == MEDIUM
+    assert phrase in found[0].detail
+
+
+def test_a_packaged_startup_script_is_silent(tmp_path):
+    path = _script(tmp_path, "etc/profile.d", "distro.sh")
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+def test_rc_local_is_not_a_finding_when_it_cannot_run(tmp_path):
+    """AlmaLinux 9 ships /etc/rc.local without the execute bit. It is inert, and
+    reporting it would fire on a stock install for no reason."""
+    path = _script(tmp_path, "etc", "rc.local")
+    path.chmod(0o644)
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+def test_an_executable_unowned_rc_local_is_a_finding(tmp_path):
+    path = _script(tmp_path, "etc", "rc.local")
+    path.chmod(0o755)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-startup-script"]
+    assert [f.subject for f in found] == ["/etc/rc.local"]
+
+
+def test_an_owned_executable_rc_local_is_silent(tmp_path):
+    path = _script(tmp_path, "etc", "rc.local")
+    path.chmod(0o755)
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+def test_rc_dirs_are_not_scanned_because_they_hold_only_symlinks(tmp_path):
+    """Debian 13 has 63 entries under /etc/rc*.d and not one regular file. Every one
+    points into /etc/init.d, which is scanned, so this would only rename each finding."""
+    real = _script(tmp_path, "etc/init.d", "ssh")
+    rc2 = tmp_path / "etc/rc2.d"
+    rc2.mkdir(parents=True)
+    (rc2 / "S01ssh").symlink_to(real)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-startup-script"]
+    assert [f.subject for f in found] == ["/etc/init.d/ssh"]
+
+
+def test_run_motd_d_is_not_scanned(tmp_path):
+    """fwupd writes /run/motd.d/85-fwupd at runtime and no package owns it, on both the
+    reference desktop and Debian 13. The test's answer is known before it runs."""
+    _script(tmp_path, "run/motd.d", "85-fwupd")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+def test_etc_profile_itself_is_not_scanned(tmp_path):
+    """/etc/profile is owned by NO package on Debian 13 and Ubuntu 26.04: dpkg-query -S
+    exits 1 and base-files does not list it. A rule covering it would have fired on half
+    the hosts measured, on a file every Linux system has."""
+    (tmp_path / "etc").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "etc/profile").write_text("export PATH=/usr/bin\n")
+    (tmp_path / "etc/bash.bashrc").write_text("PS1='$ '\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+def test_startup_script_symlinks_are_skipped(tmp_path):
+    real = _script(tmp_path, "opt", "vendor-hook")
+    d = tmp_path / "etc/profile.d"
+    d.mkdir(parents=True)
+    (d / "vendor.sh").symlink_to(real)
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-startup-script"] == []

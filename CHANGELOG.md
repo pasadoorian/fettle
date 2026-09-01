@@ -11,6 +11,42 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### Boot and login execution that is not a systemd unit
+
+`compromise-check` now looks at six more places something runs from, under the same
+ownership test the unit scan uses: systemd generators, `/etc/init.d`, `/etc/profile.d`,
+`/etc/update-motd.d`, `/etc/xdg/autostart`, and `/etc/rc.local`.
+
+Each entry says what runs it and when, because "an unowned file" is not something anybody
+can act on and "a systemd generator, run as root before almost anything else in the boot"
+is.
+
+Measured across four hosts before shipping: **178 regular files, 2 unowned.** Those two
+are `/etc/profile.d/nix.sh` on the reference desktop, written by the Nix installer, and
+`/etc/update-motd.d/60-unminimize` on Ubuntu 26.04. The live run found exactly those two
+and nothing else.
+
+| host | checked before | checked after | new findings |
+|---|---|---|---|
+| Manjaro | 626 | 702 | 1, `nix.sh` |
+| Debian 13 | 189 | 221 | 0 |
+| Ubuntu 26.04 | 253 | 295 | 1, `60-unminimize` |
+| AlmaLinux 9 | 194 | 232 | 0 |
+
+**Four locations that sounded right and are not checked**, each dropped on the numbers:
+
+- **`/etc/rc*.d` holds no regular files at all.** Debian 13 has 63 entries and Ubuntu has
+  40, every one a symlink into `/etc/init.d`, which is scanned. Including it would give
+  each finding a second name and nothing else.
+- **`/run/motd.d` is runtime state.** fwupd writes `85-fwupd` there on both the reference
+  desktop and Debian 13, and no package owns it on either.
+- **`/etc/profile` is owned by no package on Debian 13 and Ubuntu 26.04.** `dpkg-query -S`
+  exits 1 and `base-files` does not list it, while Manjaro and AlmaLinux both own theirs.
+  That rule would have fired on half the hosts measured, on a file every Linux system has.
+- **`/etc/rc.local` existing is not a signal.** AlmaLinux 9 ships it, package-owned and
+  without the execute bit, and it cannot run in that state. The finding requires the
+  execute bit, which measured zero across all four hosts.
+
 ### Persistence that runs with no process to notice
 
 `compromise-check` scanned `.service` and `.timer` units. It now also scans `.socket` and
