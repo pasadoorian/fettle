@@ -11,6 +11,57 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### A tenth axis: will a change to the startup locations leave any record?
+
+Every other check in fettle answers what is on the machine now. `hardening-audit` gained
+an `auditing` axis that answers the one which decides whether the first can be answered
+after the fact. `compromise-check` finds the unit file; only the audit log can say when it
+arrived and what wrote it.
+
+Measured on four hosts before any of the rules were written:
+
+| host | `auditctl` | enabled | active | `/etc/audit/rules.d` | rules loaded |
+|---|---|---|---|---|---|
+| Manjaro | present | disabled | inactive | 0755, 4 watches | not running |
+| Debian 13 | **absent** | not-found | inactive | does not exist | n/a |
+| Ubuntu 26.04 | **absent** | not-found | inactive | does not exist | n/a |
+| AlmaLinux 9 | present | enabled | active | 0750, `audit.rules` | **0** |
+
+Two of those numbers killed the obvious rules. **auditd is not installed at all on a stock
+Debian 13 or Ubuntu 26.04**, so "auditd is not running" would fire on every Debian-family
+host for a package the distribution never shipped, and the axis reports not-applicable
+there instead. **A stock AlmaLinux 9 runs auditd with zero rules loaded**, because its
+`audit.rules` holds only buffer and failure-mode settings, so "no rules loaded" is the
+shipped RHEL default rather than a defect.
+
+What fires, and where it was verified:
+
+- **Rules written on disk and nothing loading them**, at Medium. The reference desktop is
+  in this state now: `audit` 4.2.1-1 installed, `50-persistence.rules` carrying four
+  watches, and auditd both disabled and inactive.
+- **auditd running and not watching the startup locations**, at Low, deliberately firing
+  on a stock AlmaLinux 9. Same reasoning as the AppArmor axis firing on a stock Debian:
+  the host really is in that state and there is a specific thing to do about it. The rule
+  lines are printed for the operator to install; fettle writes nothing.
+- **Not applicable** on Debian and Ubuntu, naming the package that would provide it.
+
+Three traps, each of which produces a confident wrong answer:
+
+- **`/etc/audit/rules.d` is mode 0750 on AlmaLinux and 0755 on Manjaro.** An unprivileged
+  `ls` returns Permission denied on one and a file list on the other. The first pass of
+  this measurement counted the denial as zero rules files, which reads as "nothing is
+  configured" when the truth is "could not look". Unreadable is blindness here.
+- **A rules file on disk is not a loaded rule.** AlmaLinux has `audit.rules` present and
+  the kernel holds nothing, so the axis reads the directory *and* asks the kernel.
+- **`auditctl -l` exits 4 unprivileged**, so unlike `aa-status` its exit code can be
+  trusted, and a refusal is reported as blindness rather than as zero watches.
+
+Verified live on all four hosts. The rule parser was checked against real `auditctl -l`
+output by loading three watches into the AlmaLinux lab VM's kernel, confirming it reported
+"watching 3 path(s)" and one missing location rather than four, then clearing them. That
+run also corrected the suggested fix: `auditctl` prints "Old style watch rules are slower"
+for the `-w` form, so the axis suggests `-a always,exit -F dir=` instead.
+
 ### Boot and login execution that is not a systemd unit
 
 `compromise-check` now looks at six more places something runs from, under the same
