@@ -11,6 +11,89 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+## [1.20.0] — startup persistence, end to end
+
+> **These features are experimental.** Every threshold below was measured across six real
+> hosts before it was written, each one has tests, and all of it was run live on the lab
+> fleet. What it has *not* had is a hand-run QA pass by a person on their own machines,
+> the way the rest of fettle has. Read the findings; do not yet treat them as settled.
+> Nothing here changes an existing check's behaviour, so a run that ignores the new
+> output is the same run it was in 1.19.0.
+
+`compromise-check` looked at `.service` and `.timer` units, cron and `at`. That left most
+of the ways a Linux system starts a program unexamined. This release closes that, adds a
+`hardening-audit` axis for whether any of it would be recorded, and fixes a reporting bug
+that told an already-root run to re-run as root.
+
+**What `compromise-check` looks at now.** `.socket` and `.path` units, which start a
+service when something connects or when a file appears and so never show up in a process
+listing. Drop-in overrides, which change a unit a package owns without touching the unit's
+file, so `cat sshd.service` shows nothing. Systemd generators, `/etc/init.d`,
+`/etc/profile.d`, `/etc/update-motd.d`, `/etc/xdg/autostart` and `/etc/rc.local`. What
+those files *say*, not just where they point: `LD_PRELOAD`, a download piped into a shell,
+a `base64` payload piped into a shell, a bash network redirection, netcat with `-e`. And a
+startup inventory with a diff against the previous run, which is the only check in fettle
+that can see a **package-owned file edited in place**.
+
+**What `hardening-audit` answers now.** A tenth axis, `auditing`: is anything recording
+changes to the startup locations? The other checks find the unit file; only the audit log
+can say when it arrived and what wrote it.
+
+**The measurements, because they decided every rule.** Nothing here was designed and then
+checked. Across Manjaro, Arch, Debian 13, Ubuntu 26.04, AlmaLinux 9 and Fedora 44:
+
+| what was measured | files | fired |
+|---|---|---|
+| `.socket`, `.path` and drop-in files under the ownership test | 247 | **0** |
+| generators, `init.d`, `profile.d`, MOTD, autostart, `rc.local` | 178 | **2** |
+| the five shipped content signals | 2,104 | **0** |
+
+The two are `/etc/profile.d/nix.sh` on the reference desktop, written by the Nix installer,
+and `/etc/update-motd.d/60-unminimize` on Ubuntu. The reference desktop went from 482 files
+checked to 702 and gained exactly one finding.
+
+**Seven candidate rules were rejected on those numbers**, and each has a test that fails
+if it is added back:
+
+| rule | why it died |
+|---|---|
+| scan `/etc/rc*.d` | 63 entries on Debian and 40 on Ubuntu, every one a symlink into `/etc/init.d`, which is scanned. Zero regular files anywhere |
+| scan `/run/motd.d` | fwupd writes `85-fwupd` there on two hosts and no package owns it on either |
+| scan `/etc/profile` | **owned by no package on Debian 13 or Ubuntu 26.04.** `dpkg-query -S` exits 1 and `base-files` does not list it. Would have fired on half the fleet, on a file every Linux system has |
+| `/etc/rc.local` exists | AlmaLinux ships it, package-owned and without the execute bit, so it cannot run. The finding requires the execute bit |
+| `eval` in a startup script | 12 hits, every one a distro-shipped `profile.d` script. `colorls.sh` and `lang.sh` are built on it |
+| mentions `curl` or `wget` | Ubuntu's `50-motd-news` fetches news on every login. Downloading is ordinary; executing the reply is not |
+| `chmod +x` | one hit, in AlmaLinux's own `rc.local`, and every installer does it |
+
+Two more scored zero and were dropped anyway, because a zero floor is not by itself a
+reason to ship a rule: `python -c` and `perl -e` appear in ordinary `ExecStartPre` lines,
+and `bash -i` means little with nothing to connect it to.
+
+**The `auditing` axis, and the two numbers that shaped it.** auditd is **not installed at
+all** on a stock Debian 13 or Ubuntu 26.04, so "auditd is not running" would have fired on
+every Debian-family host for a package the distribution never shipped; the axis reports
+not-applicable there and names the package. And a stock AlmaLinux 9 runs auditd with
+**zero rules loaded**, because its `audit.rules` holds only buffer and failure-mode
+settings, so "no rules loaded" is the shipped RHEL default rather than a defect. What
+fires is narrower: rules written on disk with nothing loading them, and auditd running
+while watching none of the startup locations. It prints the rule lines and writes nothing.
+
+**The baseline enriches, it never gates.** The ownership checks run identically whether or
+not a baseline exists. If the first run happens on a machine that is already compromised
+the implant is recorded as normal, and a design where the baseline decided what got
+reported would go permanently quiet about exactly that machine. Built this way an implant
+present at baseline time is still unowned and still reported, just without the timing.
+There is a test named after this and a gating version fails it.
+
+**One bug fix.** `compromise-check` reported "2 of 56 listening sockets could not be traced
+to a process, /proc/<pid>/fd is unreadable for **0** process(es) without root" on a run
+that was already elevated. Nothing had been refused, so privilege was not the reason, and
+the advice was to re-run what had just been run. The reason now comes from what was
+measured, a process that exits mid-scan is counted rather than swallowed, and the untraced
+endpoints are named so there is something to go and look at.
+
+Full detail for each piece follows.
+
 ### Content that does not belong in a file that runs at boot
 
 The persistence checks graded a unit on *where* its binary lives. They now also read what

@@ -19,6 +19,8 @@ certs        are any TLS certificates expired or about to be?
 apparmor     is mandatory access control confining anything, or just on?
 selinux      what mode is SELinux in, and does the machine agree with itself?
 auditing     will a change to the startup locations leave any record at all?
+             (experimental in 1.20.0: measured on six hosts, not yet through a
+             hand-run QA pass)
 ===========  ===============================================================
 
 The contract every axis keeps, and the reason this module exists at all:

@@ -8,6 +8,14 @@
 > [Releases](https://github.com/pasadoorian/fettle/releases) for the current version and
 > [CHANGELOG.md](CHANGELOG.md) for what changed. The web interface (`fettle web`) is
 > still experimental.
+>
+> **New in 1.20.0 and marked experimental:** the startup-persistence checks added to
+> `compromise-check` (socket, path and drop-in units, generators, init scripts,
+> `profile.d`, MOTD and autostart files, file-content signals, and the startup
+> inventory with its baseline diff) and the `auditing` axis in `hardening-audit`.
+> Every threshold in them was measured across six hosts and every one has tests, but
+> they have not yet been through a full hand-run QA pass on real machines the way the
+> rest of the tool has. Treat their findings as worth reading and not yet as settled.
 
 > *in fine fettle* — in good working order.
 
@@ -74,16 +82,22 @@ fettle has six feature families.
    sshd *actually* configured to do, is a firewall both active and filtering, are
    any TLS certificates expired, is AppArmor confining anything or merely
    switched on, what mode SELinux is in, and will a change to the startup
-   locations leave any record at all. Exposed as `hardening-audit` (`-H`).
+   locations leave any record at all (`auditing`, experimental). Exposed as
+   `hardening-audit` (`-H`).
 5. **Security advisories** — *is what you have installed known-vulnerable?*
    Per-package CVEs from your distro's own tracker, including the ones you're
    vulnerable to with **no fix released yet**, plus the Python/Node/Rust packages
    your distro doesn't manage, via OSV. Exposed as `advisory-check`.
 6. **Compromise indicators** — *is something already here?* What starts at boot that
-   no package installed (units, timers, cron, `at`), the loader and kernel
-   (`/etc/ld.so.preload`, unsigned modules, kernel taint nothing explains, the eBPF
-   surface, processes hidden from `/proc`), what is running (executed from memory,
-   deleted-but-running, listening sockets nothing vouches for) and the boot chain.
+   no package installed (units, timers, sockets, path units, drop-in overrides,
+   generators, init scripts, `profile.d`, MOTD and autostart scripts, cron, `at`),
+   what those files *say* (`LD_PRELOAD`, a download piped into a shell, a bash
+   network redirection), the loader and kernel (`/etc/ld.so.preload`, unsigned
+   modules, kernel taint nothing explains, the eBPF surface, processes hidden from
+   `/proc`), what is running (executed from memory, deleted-but-running, listening
+   sockets nothing vouches for) and the boot chain. It also records a startup
+   inventory and reports what changed since the previous run, which is the only
+   check here that can see a package-owned file edited in place.
    Exposed as `compromise-check` (`-M`). **It reports anomalies to investigate and
    never a fix** — if a finding is real, running the fix destroys the evidence.
 
