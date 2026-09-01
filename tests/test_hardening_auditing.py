@@ -15,6 +15,7 @@ simpler version of it fires on a stock install of something:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -120,13 +121,25 @@ def test_a_trailing_slash_does_not_make_a_path_look_unwatched():
 # -------------------------------------------------- unreadable is not the same as empty
 
 
-def test_an_unreadable_rules_directory_is_blindness_not_an_empty_result(tmp_path):
-    """The trap this axis was written around.
+@pytest.mark.skipif(os.geteuid() == 0,
+                    reason="chmod 000 denies nothing to uid 0")
+@pytest.mark.parametrize("tools", [("auditctl", "systemctl"), ("systemctl",)],
+                         ids=["auditctl-present", "auditctl-absent"])
+def test_an_unreadable_rules_directory_is_blindness_not_an_empty_result(
+        tmp_path, cmd, tools):
+    """The trap this axis was written around, and the bug CI caught in it.
 
-    /etc/audit/rules.d is 0750 root:root on AlmaLinux 9. The first pass of the
-    measurement counted Permission denied as zero rules files, which reads as "nothing is
-    configured" when the truth is "this run could not look".
+    /etc/audit/rules.d is 0750 root:root on AlmaLinux 9, so an unprivileged run gets
+    Permission denied. The first pass of the measurement counted that as zero rules files,
+    which reads as "nothing is configured" when the truth is "this run could not look".
+
+    **Both parameters matter.** The blindness used to be recorded after the auditctl
+    check, so with the tool absent the axis returned "auditd is absent" and no blind entry
+    at all. It passed on the development machine, which has the audit package installed
+    and therefore never took that branch, and failed on CI, which does not. Whichever
+    branch the axis leaves by, it must not claim an answer it did not get.
     """
+    cmd(_Cmd(tools=tools))
     d = tmp_path / "etc/audit/rules.d"
     d.mkdir(parents=True)
     (d / "audit.rules").write_text("-D\n")
@@ -136,6 +149,33 @@ def test_an_unreadable_rules_directory_is_blindness_not_an_empty_result(tmp_path
     finally:
         d.chmod(0o755)
     assert any("were NOT read" in what for what, _, _ in res.blind)
+    assert not res.na, "and it is not 'the question does not arise' either"
+    if "auditctl" not in tools:
+        # Nothing at all was established here: the config could not be read and there is
+        # no tool to ask the kernel with. Asserting anything would be inventing it.
+        assert res.findings == []
+    else:
+        # The kernel *was* asked and answered, and the kernel is the authority on what is
+        # loaded. A finding about the running state is legitimate even when the files on
+        # disk stayed unreadable, which is the same "a rules file is not a loaded rule"
+        # distinction the axis is built on.
+        assert all(f.check == "auditd-startup-paths-unwatched" for f in res.findings)
+
+
+def test_configured_watches_separates_denied_from_empty(tmp_path):
+    """0 and -1 must not be the same answer: one is "no watches", one is "could not ask"."""
+    assert auditing.configured_watches(tmp_path) == 0          # absent
+    d = tmp_path / "etc/audit/rules.d"
+    d.mkdir(parents=True)
+    assert auditing.configured_watches(tmp_path) == 0          # present, empty
+    (d / "audit.rules").write_text("-w /etc/init.d -p wa\n")
+    assert auditing.configured_watches(tmp_path) == 1
+    if os.geteuid() != 0:
+        d.chmod(0o000)
+        try:
+            assert auditing.configured_watches(tmp_path) == -1  # denied
+        finally:
+            d.chmod(0o755)
 
 
 def test_rules_files_reports_readability_separately(tmp_path):

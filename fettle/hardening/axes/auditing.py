@@ -99,28 +99,30 @@ def rules_files(root: Path) -> tuple[list[str], bool]:
 
 
 def configured_watches(root: Path) -> int:
-    """How many watch directives the files on disk hold, or -1 if they cannot be read.
+    """How many watch directives the files on disk hold, or **-1 if they cannot be read**.
 
     Counts both spellings: ``-w /path`` and the ``-a always,exit -F dir=/path`` form that
-    `auditctl -l` prints back.
+    `auditctl -l` prints back. The -1 matters: a directory that denied us and a directory
+    holding no watches must not both come back as 0, or the caller reports "nothing is
+    configured" about a question it never got to ask.
     """
     total = 0
-    seen = False
     try:
         entries = sorted((root / "etc/audit/rules.d").iterdir())
+    except PermissionError:
+        return -1
     except OSError:
-        return 0
+        return 0                  # absent, which really is "nothing is configured"
     for path in entries:
         try:
             text = path.read_text(errors="replace")
         except OSError:
-            continue
-        seen = True
+            return -1             # listed but unreadable, still not an answer
         for line in text.splitlines():
             line = line.strip()
             if line.startswith("-w ") or "-F dir=" in line:
                 total += 1
-    return total if seen else -1
+    return total
 
 
 def watched_paths(raw: str) -> set[str]:
@@ -177,7 +179,27 @@ def run(backend, ctx) -> AxisResult:
     files, readable = rules_files(root)
     configured = configured_watches(root)
 
+    # Recorded BEFORE the tool check, and this is not a stylistic ordering. It used to sit
+    # after it, so on a host where auditctl is absent *and* the rules directory denied us,
+    # the axis skipped the blindness entirely and reported "auditd is absent" as a
+    # confident answer. CI caught it and the development machine could not: wopr has the
+    # audit package installed, so the tool-missing branch never ran there. A check that
+    # could not look must not render as one that looked and found nothing, whichever
+    # branch it leaves by.
+    if not readable:
+        res.checked = 1
+        res.blind.append((
+            "the configured audit rules were NOT read",
+            "/etc/audit/rules.d could not be listed (it is mode 0750 on the RHEL family "
+            "and this run is not root), so a machine with no rules at all cannot be told "
+            "apart from one whose rules could not be read", ""))
+
     if not command.which(_TOOL):
+        # With the rules unreadable there is nothing left worth claiming. The tool being
+        # absent is a fact, but "and nothing is configured" is exactly what was not
+        # established, and both findings below assert it.
+        if not readable:
+            return res
         # Rules written for a tool that is not installed. Rare, and worth saying plainly
         # because the reader clearly meant to have auditing and does not.
         if files:
@@ -205,13 +227,7 @@ def run(backend, ctx) -> AxisResult:
     enabled, active = _unit_state(command, "auditd")
     res.checked = 1
 
-    if not readable:
-        res.blind.append((
-            "the configured audit rules were NOT read",
-            "/etc/audit/rules.d is mode 0750 and this run is not root, so a machine with "
-            "no rules at all cannot be told apart from one whose rules could not be "
-            "listed", ""))
-    else:
+    if readable:
         res.notes.append(f"{len(files)} rule file(s) in /etc/audit/rules.d"
                          + (f", holding {configured} watch directive(s)"
                             if configured > 0 else ""))
