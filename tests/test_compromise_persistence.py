@@ -524,3 +524,138 @@ def test_the_filesystem_predicates_never_raise(monkeypatch):
     monkeypatch.setattr(os.path, "isfile", boom)
     assert is_directory("/anything") is False
     assert is_regular_file("/anything") is False
+
+
+# ------------------------------------------- widened 2026-09-01: sockets, paths, drop-ins
+
+
+SOCKET_UNIT = """\
+[Unit]
+Description=Listener
+
+[Socket]
+ListenStream=4444
+Accept=no
+
+[Install]
+WantedBy=sockets.target
+"""
+
+PATH_UNIT = """\
+[Unit]
+Description=Watcher
+
+[Path]
+PathExists=/tmp/.trigger
+Unit=payload.service
+"""
+
+
+def test_an_unowned_socket_unit_is_found(tmp_path):
+    """`.socket` persists with no always-running process, so nothing looks odd in ps."""
+    _unit(tmp_path, "backdoor.socket", SOCKET_UNIT)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-unit"]
+    assert [f.subject for f in found] == ["backdoor.socket"]
+    assert "when something connects" in found[0].detail
+
+
+def test_an_unowned_path_unit_is_found(tmp_path):
+    """`.path` fires on a filesystem event, which no process listing shows either."""
+    _unit(tmp_path, "watcher.path", PATH_UNIT)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-unit"]
+    assert [f.subject for f in found] == ["watcher.path"]
+    assert "when a file appears" in found[0].detail
+
+
+def test_socket_and_path_units_are_not_described_as_timers(tmp_path):
+    """The old wording said "a timer, or a unit that only orders others" for every unit
+    with no ExecStart. Naming the actual trigger is the point of scanning these."""
+    _unit(tmp_path, "backdoor.socket", SOCKET_UNIT)
+    _unit(tmp_path, "watcher.path", PATH_UNIT)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-unit"]
+    # Asserted before the negative below, so this cannot pass by finding nothing at all.
+    assert len(found) == 2
+    details = " ".join(f.detail for f in found)
+    assert "a timer" not in details
+
+
+def test_a_packaged_socket_unit_is_silent(tmp_path):
+    path = _unit(tmp_path, "cups.socket", SOCKET_UNIT)
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-unit"] == []
+
+
+# ------------------------------------------------------------------- drop-in overrides
+
+
+def _dropin(root: Path, unit: str, name: str, body: str,
+            *, where="etc/systemd/system") -> Path:
+    directory = root / where / f"{unit}.d"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(body)
+    return path
+
+
+def test_an_unowned_dropin_is_found_and_names_the_unit_it_changes(tmp_path):
+    """A drop-in hijacks a unit a package owns without touching the unit's own file."""
+    _dropin(tmp_path, "sshd.service", "override.conf",
+            "[Service]\nExecStartPost=/usr/local/bin/notify\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-dropin"]
+    assert len(found) == 1
+    assert found[0].subject == "sshd.service.d/override.conf"
+    assert "sshd.service" in found[0].summary
+    assert "systemctl cat sshd.service" in found[0].fix
+
+
+def test_a_dropin_running_from_a_suspect_directory_is_high(tmp_path):
+    _dropin(tmp_path, "sshd.service", "10-hijack.conf",
+            "[Service]\nExecStart=\nExecStart=/dev/shm/.x/payload\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-dropin"]
+    assert [f.severity for f in found] == [HIGH]
+    assert "/dev/shm" in found[0].detail
+
+
+def test_an_ordinary_unowned_dropin_admits_it_could_be_systemctl_edit(tmp_path):
+    """No host measured has had `systemctl edit` run on it, so the floor of 0 unowned
+    drop-ins does not cover the case where an admin made one. Say so in the finding."""
+    _dropin(tmp_path, "docker.service", "override.conf",
+            "[Service]\nLimitNOFILE=infinity\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-dropin"]
+    assert [f.severity for f in found] == [MEDIUM]
+    assert "systemctl edit" in found[0].detail
+
+
+def test_a_packaged_dropin_is_silent(tmp_path):
+    path = _dropin(tmp_path, "sshd.service", "50-distro.conf",
+                   "[Service]\nRestart=always\n")
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-dropin"] == []
+
+
+def test_the_dropin_scan_does_not_pick_up_wants_symlinks(tmp_path):
+    """`.wants/` holds what `systemctl enable` creates. Only `.d/` holds real content."""
+    real = _unit(tmp_path, "real.service", "[Service]\nExecStart=/usr/bin/true\n")
+    wants = tmp_path / "etc/systemd/system/multi-user.target.wants"
+    wants.mkdir(parents=True)
+    (wants / "real.service").symlink_to(real)
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "unowned-dropin"] == []
+
+
+def test_the_dropin_finding_shows_what_the_override_sets(tmp_path):
+    """"An unowned file exists" is not actionable; what it changes is."""
+    _dropin(tmp_path, "nginx.service", "override.conf",
+            "# a comment\n[Service]\nUser=root\nEnvironment=DEBUG=1\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "unowned-dropin"]
+    assert "User=root" in found[0].detail
+    assert "Environment=DEBUG=1" in found[0].detail
+    assert "a comment" not in found[0].detail
+    assert "[Service]" not in found[0].detail

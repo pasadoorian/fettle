@@ -37,6 +37,43 @@ puts software the package manager did not install; `/tmp`, `/dev/shm` and the `/
 state directories are not places a persistent service's binary belongs. That distinction
 holds on the reference machine, where it separates the two legitimate agents from
 nothing at all — the intended answer.
+
+## Widened 2026-09-01, and the floor was re-measured before it was
+
+`.socket` and `.path` units joined `.service` and `.timer`, and drop-in overrides became
+their own check. All three persist in ways the original scan could not see: a `.socket`
+starts its service when something connects, a `.path` starts it when a file appears, and
+a drop-in changes a unit that a package owns without altering the unit's own file, so
+`cat sshd.service` shows nothing at all.
+
+Counted across four hosts (Manjaro, Debian 13, Ubuntu 26.04, AlmaLinux 9):
+
+===================  =====  =======
+subject              files  unowned
+===================  =====  =======
+`.socket` units        195        0
+`.path` units           17        0
+drop-in `.conf`         35        0
+===================  =====  =======
+
+**247 files added to the scan and not one new finding.** The reference desktop went from
+482 files checked to 626 and reported the same four things it reported before.
+
+Two results worth keeping, because a naive version of this check would have got both
+wrong:
+
+* **The symlink exclusion carries over to the new suffixes.** `pacman` does not own
+  `/etc/systemd/system/nix-daemon.socket`, and it is still not a finding, because the Nix
+  installer wrote it as a symlink into `/nix/store` and `_unit_files` skips symlinks. The
+  rule that took 41 findings down to 2 for `.service` does the same job here.
+* **Packages really do ship drop-ins into `/etc/systemd/system`.** All 8 on the reference
+  desktop are package-owned, including `httpd.service.d/hardening.conf`, which belongs to
+  `apache`. Treating everything under `/etc` as admin-authored would have been wrong.
+
+**One number that is not a floor.** No host measured has ever had `systemctl edit` run on
+it, and that command writes drop-ins to exactly this path. A hand-made override is
+therefore indistinguishable from a hijacked one here, and the finding says so instead of
+implying a confidence the check has not earned.
 """
 
 from __future__ import annotations
@@ -58,11 +95,36 @@ from .users import real_users
 #
 # `/run/systemd/system` is deliberately absent: it is generator output, regenerated
 # every boot and owned by nothing by construction, so every entry would be a finding.
+# Re-measured 2026-09-01 rather than taken on trust: wopr and AlmaLinux 9 hold 0 entries,
+# Debian 13 holds 3, and all three of Debian's are netplan and networkd generator output
+# that no package owns. The directory is real persistence surface, so it belongs in the
+# inventory, but not under a test whose answer is known in advance.
 UNIT_DIRS = (
     "etc/systemd/system",
     "usr/local/lib/systemd/system",
     "usr/lib/systemd/system",
 )
+
+# `.service` and `.timer` were the original two. `.socket` and `.path` were added
+# 2026-09-01 because they persist with no always-running process to notice: a `.socket`
+# starts its service when something connects, a `.path` starts it when a file appears.
+# Measured across four hosts, adding them costs 212 more files to check and produces no
+# new findings at all, so the ownership test holds up on the wider set.
+UNIT_SUFFIXES = (".service", ".timer", ".socket", ".path")
+
+# Drop-in overrides sit in `<unit>.d/*.conf` beside the unit they modify. Scanned apart
+# from unit files because the claim is different: a drop-in does not add a service, it
+# changes one that is already installed, so an unowned drop-in is an unreviewed edit to
+# somebody else's unit. `.wants/` and `.requires/` are excluded here for the same reason
+# `_unit_files` excludes them, and only `.d` directories are read.
+DROPIN_GLOB = "*.d/*.conf"
+
+#: What starts the service, for unit types that carry no ExecStart of their own.
+_NO_EXEC = {
+    ".timer": "no ExecStart, it starts its service on a schedule",
+    ".socket": "no ExecStart, it starts its service when something connects",
+    ".path": "no ExecStart, it starts its service when a file appears or changes",
+}
 
 # Directories a long-running service's executable has no business being in. Deliberately
 # NOT "anything unowned" and NOT all of /var — see the module docstring. `/var/vanta` on
@@ -81,7 +143,7 @@ _PREFIXES = "-@+!:"
 
 
 def _unit_files(root: Path) -> list[Path]:
-    """Real `.service`/`.timer` files in the system unit directories.
+    """Real unit files, of every type in :data:`UNIT_SUFFIXES`, in the system dirs.
 
     **Symlinks are excluded, and that is the difference between 2 findings and 41.** A
     recursive listing of `/etc/systemd/system` on the reference machine returns 41
@@ -97,7 +159,7 @@ def _unit_files(root: Path) -> list[Path]:
         except OSError:
             continue
         for path in entries:
-            if path.suffix not in (".service", ".timer"):
+            if path.suffix not in UNIT_SUFFIXES:
                 continue
             # is_regular_file() excludes symlinks and never raises — see its
             # docstring for why the second half matters here specifically.
@@ -162,6 +224,7 @@ def run(backend, ctx) -> CheckResult:
     """
     res = CheckResult(name="persistence", title="Boot persistence")
     _system_units(backend, ctx, res)
+    _dropins(backend, ctx, res)
     _user_units(ctx, res)
     _system_cron(backend, ctx, res)
     _user_cron(ctx, res)
@@ -205,6 +268,90 @@ def _system_units(backend, ctx, res: CheckResult) -> None:
         raw = [ln.strip() for ln in bodies[path].splitlines()
                if ln.strip().startswith("ExecStart")]
         res.detail_rows.append(f"{path}: {'; '.join(raw) or '(no ExecStart)'}")
+def _dropin_files(root: Path) -> list[Path]:
+    """Real `<unit>.d/*.conf` drop-ins in the system unit directories."""
+    found: list[Path] = []
+    for rel in UNIT_DIRS:
+        try:
+            entries = sorted((root / rel).glob(DROPIN_GLOB))
+        except OSError:
+            continue
+        found.extend(p for p in entries if is_regular_file(p))
+    return found
+
+
+def _dropins(backend, ctx, res: CheckResult) -> None:
+    """Overrides that change a unit without touching the unit's own file.
+
+    A drop-in is invisible to anyone reading the unit it modifies, which is what makes it
+    worth a separate check: `cat sshd.service` shows none of it, and `systemctl cat
+    sshd.service` shows all of it.
+
+    Measured 2026-09-01 across four hosts: 8 drop-ins on wopr, 9 on Debian 13, 11 on
+    Ubuntu 26.04, 7 on AlmaLinux 9, and **none unowned on any of them**. The limit of that
+    number is worth stating, because none of those hosts has ever had `systemctl edit`
+    run on it. That command writes to exactly this path, so a hand-made override is
+    indistinguishable from a hijack here and the finding says so rather than implying a
+    certainty the check does not have.
+    """
+    dropins = _dropin_files(ctx.root)
+    if not dropins:
+        return
+    res.checked += len(dropins)
+
+    owners = backend.map_files_to_packages([str(p) for p in dropins])
+    unowned = [p for p in dropins if str(p) not in owners]
+
+    bodies = {p: _read(p) for p in unowned}
+    targets = {p: exec_targets(t) for p, t in bodies.items()}
+    flat = sorted({t for ts in targets.values() for t in ts})
+    target_owners = backend.map_files_to_packages(flat) if flat else {}
+
+    for path in unowned:
+        res.findings.append(
+            _dropin_finding(path, bodies[path], targets[path], target_owners))
+    res.detail_rows.extend(f"{p.parent.name}/{p.name}: {_directives(bodies.get(p, ''))}"
+                           for p in unowned)
+
+
+def _directives(body: str) -> str:
+    """The settings a drop-in actually applies, without the section headers or comments."""
+    lines = [ln.strip() for ln in body.splitlines()]
+    return "; ".join(ln for ln in lines
+                     if "=" in ln and not ln.startswith(("#", ";", "["))) or "(empty)"
+
+
+def _dropin_finding(path: Path, body: str, targets: list[str],
+                    target_owners: dict[str, str]) -> Finding:
+    """One unowned drop-in, graded the same way an unowned unit is."""
+    unit = path.parent.name[: -len(".d")]
+    suspect = next((s for t in targets if (s := _suspect(t))), "")
+    vouched = [f"{t} ({target_owners[t]})" if t in target_owners
+               else f"{t} (no package owns it)" for t in targets]
+
+    if suspect:
+        severity, why = HIGH, (
+            f"it makes {unit} run something from {suspect}, which is not a location a "
+            f"service binary belongs in")
+    else:
+        severity, why = MEDIUM, (
+            f"nothing that ships {unit} put this here. `systemctl edit` writes to this "
+            f"path too, so an override you made by hand looks the same as one you did "
+            f"not, and this check cannot tell them apart")
+
+    detail = (f"drop-in override for {unit} owned by no package. {why}. "
+              f"Sets: {_directives(body)}")
+    if vouched:
+        detail += f". Runs: {'; '.join(vouched)}"
+
+    return Finding(
+        check="unowned-dropin", subject=f"{path.parent.name}/{path.name}",
+        severity=severity, detail=detail,
+        summary=(f"override makes {unit} run from {suspect}" if suspect
+                 else f"no package owns this override for {unit}"),
+        fix=f"see everything that applies to it: systemctl cat {unit}")
+
+
 def _finding(path: Path, body: str, targets: list[str],
              target_owners: dict[str, str], root: Path) -> Finding:
     """One unowned unit, graded on where its binary lives rather than on who owns it."""
@@ -237,7 +384,10 @@ def _finding(path: Path, body: str, targets: list[str],
         orphan = [t for t in targets if t not in target_owners and t not in missing]
         runs = "; ".join(vouched + [f"{t} (no package owns it)" for t in orphan])
     else:
-        runs = "no ExecStart — a timer, or a unit that only orders others"
+        # Each of these persists with no always-running process to notice, which is the
+        # reason they are scanned at all. Naming the trigger is the whole value of the
+        # line, so it is not collapsed into one sentence about "a unit with no ExecStart".
+        runs = _NO_EXEC.get(path.suffix, "no ExecStart, a unit that only orders others")
 
     detail = f"unit file owned by no package — {why}. Runs: {runs}"
     if _restarts(body):
@@ -276,7 +426,7 @@ def _user_units(ctx, res: CheckResult) -> None:
         except OSError:
             continue                      # no user units at all — the common case
         for path in entries:
-            if path.suffix not in (".service", ".timer"):
+            if path.suffix not in UNIT_SUFFIXES:
                 continue
             if not is_regular_file(path):
                 continue

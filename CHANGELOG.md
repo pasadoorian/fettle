@@ -11,6 +11,47 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### Persistence that runs with no process to notice
+
+`compromise-check` scanned `.service` and `.timer` units. It now also scans `.socket` and
+`.path`, and drop-in overrides get their own check.
+
+Each of the three hides differently. A `.socket` unit starts its service when something
+connects and a `.path` unit starts it when a file appears, so neither shows up in a
+process listing until the moment it fires. A drop-in changes a unit that a package owns
+without touching the unit's file, so `cat sshd.service` shows nothing at all and only
+`systemctl cat sshd.service` shows the override.
+
+Counted across Manjaro, Debian 13, Ubuntu 26.04 and AlmaLinux 9 before shipping:
+
+| subject | files | unowned |
+|---|---|---|
+| `.socket` units | 195 | 0 |
+| `.path` units | 17 | 0 |
+| drop-in `.conf` | 35 | 0 |
+
+**247 files added to the scan and not one new finding on any host.** The reference desktop
+went from 482 files checked to 626 and reported the same four things as before. Ubuntu's
+seven findings are the same `ubuntu-advantage` units it reported already.
+
+Three things the measurement settled that guesswork would have got wrong:
+
+- **`/run/systemd/system` stays out**, which was already the code's position and is now
+  checked rather than assumed. Debian 13 holds 3 entries, all netplan and networkd
+  generator output owned by nothing, and Manjaro and AlmaLinux hold none. It is real
+  persistence surface and belongs in an inventory, not under a test whose answer is known
+  before it runs.
+- **The symlink exclusion carries over.** `pacman` does not own
+  `/etc/systemd/system/nix-daemon.socket`, and it is correctly not a finding, because the
+  Nix installer wrote it as a symlink into `/nix/store`.
+- **Packages ship drop-ins into `/etc/systemd/system`.** All 8 on the reference desktop
+  are package-owned, `httpd.service.d/hardening.conf` among them, which belongs to
+  `apache`. Treating everything under `/etc` as admin-authored would have been wrong.
+
+One limit is stated in the finding itself rather than hidden. No host measured has had
+`systemctl edit` run on it, and that command writes drop-ins to the same path, so an
+override made by hand is indistinguishable from a hijack and the check says so.
+
 ### `compromise-check` blamed root for something root could not have fixed
 
 Reported from a run that was already elevated:
