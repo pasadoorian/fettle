@@ -83,7 +83,7 @@ import re
 from pathlib import Path
 
 from . import HIGH, LOW, MEDIUM, CheckResult, Finding, is_regular_file
-from . import cron
+from . import baseline, cron
 from .users import real_users
 
 # Searched in this order. All three are *system* scope; user units are M1.3.
@@ -268,6 +268,10 @@ def run(backend, ctx) -> CheckResult:
     _system_cron(backend, ctx, res)
     _user_cron(ctx, res)
     _at_jobs(ctx, res)
+    # Last, and deliberately so: it enriches findings that are already in `res` and adds
+    # one of its own. Running it first would invite a design where the baseline decides
+    # what the ownership checks report, which is the thing baseline.py exists not to do.
+    _inventory(backend, ctx, res)
 
     if res.findings:
         res.notes.append(
@@ -307,6 +311,61 @@ def _system_units(backend, ctx, res: CheckResult) -> None:
         raw = [ln.strip() for ln in bodies[path].splitlines()
                if ln.strip().startswith("ExecStart")]
         res.detail_rows.append(f"{path}: {'; '.join(raw) or '(no ExecStart)'}")
+def _inventory_subjects(root: Path) -> list[tuple[Path, str]]:
+    """Every startup file on the machine, with the class it belongs to.
+
+    Wider than what the ownership checks report on, by one directory.
+    ``/run/systemd/system`` is generator output that nothing owns by construction, so it
+    is excluded from the ownership test above and included here: it is real persistence
+    surface, and "list it and let the reader judge" is exactly the right treatment for
+    something whose ownership answer is known in advance.
+    """
+    subjects = [(p, "unit") for p in _unit_files(root)]
+    subjects += [(p, "drop-in") for p in _dropin_files(root)]
+    for rel, _ in SCRIPT_DIRS:
+        try:
+            entries = sorted((root / rel).iterdir())
+        except OSError:
+            continue
+        subjects += [(p, "script") for p in entries if is_regular_file(p)]
+    rc = root / "etc/rc.local"
+    if is_regular_file(rc):
+        subjects.append((rc, "script"))
+    try:
+        entries = sorted((root / "run/systemd/system").iterdir())
+    except OSError:
+        entries = []
+    subjects += [(p, "generated") for p in entries if is_regular_file(p)]
+    return subjects
+
+
+def _inventory(backend, ctx, res: CheckResult) -> None:
+    """The saved inventory and the comparison against the last run.
+
+    The ownership findings are already in ``res`` by the time this runs and none of them
+    is touched. What this adds is a sentence on the ones that are new since the baseline,
+    plus the one finding no ownership test can produce: a package-owned file whose
+    contents were edited in place.
+    """
+    subjects = _inventory_subjects(ctx.root)
+    if not subjects:
+        return
+    owners = backend.map_files_to_packages([str(p) for p, _ in subjects])
+    appeared = baseline.apply(ctx, res, subjects, owners)
+    if not appeared:
+        return
+    for finding in res.findings:
+        # Match on the subject the ownership checks actually printed, which is a bare
+        # unit name for units and a rooted path for scripts, so both spellings are tried.
+        if any(p.endswith(finding.subject) or p == finding.subject for p in appeared):
+            # rstrip first: the detail strings do not all end in punctuation, and
+            # concatenating produced "…orders others It was not here…" on the first
+            # live run.
+            finding.detail = (finding.detail.rstrip(". ") +
+                              ". It was not here when the startup baseline was taken, "
+                              "so it arrived since.")
+
+
 def _startup_scripts(backend, ctx, res: CheckResult) -> None:
     """Boot and login execution that no systemd unit describes.
 

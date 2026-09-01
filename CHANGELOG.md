@@ -11,6 +11,54 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### A startup inventory, and what changed since the last time you looked
+
+`compromise-check` now records every startup file on the machine and compares against the
+last run. The full inventory goes to the saved report with the class, owner and mtime of
+each file; the terminal gets one summary line, which on the reference desktop reads
+`startup inventory: 8 drop-in, 76 script, 613 unit`.
+
+**The one new finding is the one nothing else in fettle can see: a package-owned file
+edited in place.** `sshd.service` still belongs to its package after somebody rewrites its
+`ExecStart`, so no ownership test will ever mention it. Verified on the Debian lab VM by
+appending `Environment=LD_PRELOAD=/tmp/.x/evil.so` to a package-owned unit, which the
+ownership checks correctly ignored and the baseline reported, then restoring it.
+
+**The baseline enriches, it never gates.** This is the decision the whole design turns on.
+The ownership checks run identically whether or not a baseline exists; all the baseline
+adds is a sentence on a finding that would have been reported anyway. The reason is the
+poisoned baseline: if the first run happens on a machine that is already compromised, the
+implant is recorded as normal, and a design where the baseline decided what got reported
+would then go permanently quiet about it. Built this way, an implant present at baseline
+time is still unowned and still reported, just without the timing. There is a test named
+after this and a version that gates fails it.
+
+Details that follow from measurement rather than preference:
+
+- **Content is hashed, not compared by mtime.** `touch -r` backdates an mtime in one
+  command and cannot forge a sha256. Hashing 697 files on the reference desktop is
+  imperceptible.
+- **A first run says "baseline recorded, 697 entries"**, never "nothing changed". The date
+  the baseline was taken prints on every run that uses one.
+- **The file is created 0600 from the start**, with `O_CREAT` carrying the mode, for the
+  same reason as the run-log fix: create-then-chmod leaves a window, and an interrupted
+  run leaves it readable permanently.
+- **`/run/systemd/system` is inventoried but not ownership-checked.** It is generator
+  output that nothing owns by construction, so listing it and letting the reader judge is
+  the right treatment for a directory whose ownership answer is known in advance.
+- **Removed files go to the report, not the terminal.** A package removal produces them
+  in bulk and none is a risk.
+- **A corrupt or future-versioned baseline is discarded and re-taken**, and the run says
+  so rather than half-comparing.
+
+One limit, stated because it is real. The baseline is rewritten at the end of every run,
+so a change is reported once and the new contents become the next comparison point. That
+is necessary for the common case, a package upgrade rewriting a unit, which would
+otherwise be reported forever. The cost is that a change nobody reads is absorbed. What
+limits it is the same enrich-not-gate rule: an implanted file that no package owns keeps
+being reported every run regardless, so what is lost after the first report is the timing,
+not the finding.
+
 ### A tenth axis: will a change to the startup locations leave any record?
 
 Every other check in fettle answers what is on the machine now. `hardening-audit` gained
