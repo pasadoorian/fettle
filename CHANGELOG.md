@@ -11,6 +11,43 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+### Content that does not belong in a file that runs at boot
+
+The persistence checks graded a unit on *where* its binary lives. They now also read what
+the file says. Five signals, each of which measured **zero** across **2,104 startup files
+on six hosts** (Manjaro, Arch, Debian 13, Ubuntu 26.04, AlmaLinux 9, Fedora 44):
+
+- `LD_PRELOAD`, which injects a library into everything the unit starts
+- a `curl` or `wget` piped straight into a shell, so what runs is decided elsewhere
+- a `base64 -d` piped into a shell, which is encoded for no reason but to be unreadable
+- `/dev/tcp` or `/dev/udp`, which is bash opening a socket
+- `nc` or `ncat` with `-e`, which hands a program to whoever connects
+
+**These are checked on every startup file, not just the unowned ones.** The location rule
+only ever looks at files no package owns, so a line added to a unit a package owns is
+invisible to it. That is the same gap the baseline covers, approached from the other side:
+the baseline knows the file changed, this knows what the change says.
+
+**Three rules were rejected on the same measurement**, and each has a test that fails if
+it is added back:
+
+| rejected rule | hits | what they were |
+|---|---|---|
+| `eval` | **12** | every one a distro-shipped `/etc/profile.d` script. `colorls.sh`, `lang.sh` and `which2.sh` all use it, six on AlmaLinux and five on Fedora |
+| mentions `curl` or `wget` | **1** | Ubuntu's `/etc/update-motd.d/50-motd-news`, which legitimately fetches news on every login. Downloading is ordinary; executing what came back is not |
+| `chmod +x` | **1** | AlmaLinux's own shipped `/etc/rc.local`, and every installer does it |
+
+Two more scored zero and were dropped anyway, because a floor of zero is not on its own a
+reason to ship a rule. `python -c` and `perl -e` appear in ordinary `ExecStartPre` lines,
+and `bash -i` means little with nothing to connect it to. What is left is five signals
+whose meaning is unambiguous rather than merely rare.
+
+Comment lines are skipped before matching. A script that documents `curl … | sh` in its
+header is not doing it, and there is a test for that too.
+
+Live-verified: zero content findings on all five lab hosts that run fettle. Fedora was in
+the file measurement but has no fettle backend, so it cannot be a live target.
+
 ### A startup inventory, and what changed since the last time you looked
 
 `compromise-check` now records every startup file on the machine and compares against the

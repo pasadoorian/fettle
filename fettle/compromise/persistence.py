@@ -157,6 +157,49 @@ SCRIPT_DIRS = (
 #     measured, on a file that exists on every Linux system. Their content is P3's
 #     question, not this one's.
 
+# Content that has no business in a file that runs at boot or at login, whatever package
+# owns it. Measured 2026-09-01 over **2,104 startup files on six hosts** (Manjaro, Arch,
+# Debian 13, Ubuntu 26.04, AlmaLinux 9, Fedora 44). Every rule below scored **0**.
+#
+# Three candidates were rejected on the same measurement, and they are the reason this
+# list is short:
+#
+#   eval                  12 hits, every one a distro-shipped /etc/profile.d script.
+#                         It is how colorls.sh, lang.sh and which2.sh do their work on
+#                         the RHEL family. Six of AlmaLinux's, five of Fedora's.
+#   curl or wget at all   1 hit, /etc/update-motd.d/50-motd-news on Ubuntu, which
+#                         legitimately fetches news over HTTP. Downloading is ordinary;
+#                         piping the download into a shell is not, and that is the rule
+#                         that survived.
+#   chmod +x              1 hit, AlmaLinux's shipped /etc/rc.local. Weak on its own
+#                         anyway: every installer does it.
+#
+# Two more scored 0 and were still dropped, because a floor of zero is not on its own a
+# reason to ship a rule. `python -c` and `perl -e` appear in perfectly ordinary
+# ExecStartPre lines, and `bash -i` means little without something to connect it to. What
+# is left is five signals whose *meaning* is unambiguous, not merely rare.
+CONTENT_SIGNALS = (
+    ("LD_PRELOAD", re.compile(r"LD_PRELOAD"),
+     "a library is injected into everything this starts, which lets it intercept calls "
+     "the program makes without changing the program"),
+    ("a download piped straight into a shell",
+     re.compile(r"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|k|da)?sh\b", re.I),
+     "whatever the server returns is executed, so what this runs is decided somewhere "
+     "else and can change between one boot and the next"),
+    ("a base64 payload piped into a shell",
+     re.compile(r"base64\s+(-d|--decode)[^|]*\|\s*(ba)?sh\b", re.I),
+     "the command is encoded rather than written out, which has no purpose here except "
+     "to keep it from being read"),
+    ("a bash network redirection",
+     re.compile(r"/dev/(tcp|udp)/", re.I),
+     "/dev/tcp is bash opening a socket, and a startup file has no legitimate reason to "
+     "do it"),
+    ("netcat executing a program on connect",
+     re.compile(r"\bn(c|cat)\b[^#\n]*\s-e\s", re.I),
+     "netcat's -e hands a program to whoever connects, which is the shape of a reverse "
+     "shell"),
+)
+
 #: What starts the service, for unit types that carry no ExecStart of their own.
 _NO_EXEC = {
     ".timer": "no ExecStart, it starts its service on a schedule",
@@ -268,6 +311,7 @@ def run(backend, ctx) -> CheckResult:
     _system_cron(backend, ctx, res)
     _user_cron(ctx, res)
     _at_jobs(ctx, res)
+    _content_signals(backend, ctx, res)
     # Last, and deliberately so: it enriches findings that are already in `res` and adds
     # one of its own. Running it first would invite a design where the baseline decides
     # what the ownership checks report, which is the thing baseline.py exists not to do.
@@ -311,6 +355,56 @@ def _system_units(backend, ctx, res: CheckResult) -> None:
         raw = [ln.strip() for ln in bodies[path].splitlines()
                if ln.strip().startswith("ExecStart")]
         res.detail_rows.append(f"{path}: {'; '.join(raw) or '(no ExecStart)'}")
+def scan_content(text: str) -> list[tuple[str, str]]:
+    """``[(signal name, the line that matched)]`` for one file's contents.
+
+    Comment lines are skipped before matching. A unit or shell script that *documents*
+    `curl … | sh` in a comment is not doing it, and a check that cannot tell those apart
+    would report the README-ish header at the top of half the scripts on a machine.
+    """
+    hits: list[tuple[str, str]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        for name, pattern, _ in CONTENT_SIGNALS:
+            if pattern.search(line):
+                hits.append((name, line[:160]))
+    return hits
+
+
+def _content_signals(backend, ctx, res: CheckResult) -> None:
+    """Content that does not belong in a startup file, whoever owns the file.
+
+    Deliberately **not** limited to unowned files, unlike the location rule in
+    :func:`_finding`. The floor measured 0 across 2,104 files on six hosts including every
+    package-owned one, so there is no cost to reading them all, and the case worth
+    catching is precisely a unit a package owns with a line added to it. That is the same
+    gap :mod:`fettle.compromise.baseline` exists for, approached from the other side: the
+    baseline knows the file changed, this knows what the change says.
+    """
+    seen: set[str] = set()
+    for path, _ in _inventory_subjects(ctx.root):
+        text = _read(path)
+        if not text:
+            continue
+        for name, line in scan_content(text):
+            why = next(w for n, _, w in CONTENT_SIGNALS if n == name)
+            key = f"{path}:{name}"
+            if key in seen:
+                continue           # one finding per file per signal, not per line
+            seen.add(key)
+            shown = "/" + str(path.relative_to(ctx.root)) \
+                if path.is_relative_to(ctx.root) else str(path)
+            res.findings.append(Finding(
+                check="startup-content-signal", subject=shown, severity=HIGH,
+                summary=f"contains {name}",
+                detail=(f"{shown} runs at boot or at login and contains {name}, which "
+                        f"scored zero across 2,104 startup files on six clean hosts. "
+                        f"{why[0].upper() + why[1:]}. The line is: {line}"),
+                fix=f"read the whole file before changing anything: cat {shown}"))
+
+
 def _inventory_subjects(root: Path) -> list[tuple[Path, str]]:
     """Every startup file on the machine, with the class it belongs to.
 
