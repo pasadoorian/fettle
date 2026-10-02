@@ -2,6 +2,7 @@
 import os
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -142,12 +143,13 @@ def test_build_only_never_queries_metadata(capsys):
 
 
 def test_missing_cache_is_unverifiable_and_cached_findings_are_shared(tmp_path):
-    from tests.test_aur_source import FakeIOC
+    ioc = SimpleNamespace(bad_packages=lambda: set(), bad_accounts=lambda: set(),
+                          bad_npm=lambda: set(), unavailable=[], stale=[])
     ctx = Context(output=Output(color=False), config=Config(), user_home=tmp_path, sudo_user='fixture')
     records = [{'Name': 'sample', 'PackageBase': 'sample', 'Maintainer': 'alice', 'LastModified': 9_999_999_999}]
     with patch.object(aur_source.aur_common, 'foreign_packages', return_value=['sample']), \
          patch.object(aur_source.aur_meta, 'query_info', return_value=records), \
-         patch.object(aur_source.aur_common, 'ioc_feed', return_value=FakeIOC()):
+         patch.object(aur_source.aur_common, 'ioc_feed', return_value=ioc):
         findings = aur_source.AURSource().findings(ctx)
         assert any(f.question == UNVERIFIABLE and 'no cached build tree' in f.detail for f in findings)
         shutil.copytree(FIXTURES / 'suspicious', tmp_path / '.cache/yay/sample')

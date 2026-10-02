@@ -48,3 +48,15 @@ The web UI and static build scanner remain experimental. Existing multi-range OS
 fixed-version interpretation and custom remote report-directory discovery remain open;
 the issue index gives follow-up acceptance criteria. Separate wiki edits, merge, tags
 and release publication are outside this delivery.
+
+## Follow-up: merge readiness
+
+The first GitHub core jobs on Python 3.11–3.14 exposed a test-only import failure:
+`tests.test_aur_source` was available under `python -m pytest` but absent from the
+import path under the workflow's `pytest` entry point. All jobs failed on that same
+fixture, while optional-web and distro-package jobs passed. Reproduced locally with
+`env -u PYTHONPATH .../bin/pytest`; the scanner integration fixture is now self-contained.
+All 46 scanner/provider tests pass with that entry point, and Ruff passes. Current
+remote check outcomes are available on [PR #1](https://github.com/pasadoorian/fettle/pull/1).
+The unreleased version remains 1.21.0, consistent in project/package metadata and
+the changelog; this fixture correction does not require another version increment.
