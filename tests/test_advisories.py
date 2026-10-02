@@ -924,6 +924,12 @@ def test_advisory_check_prints_its_summary_and_sets_the_exit_code(tmp_path, monk
 
     monkeypatch.setattr(chk, "_providers", lambda: [P()])
     monkeypatch.setenv("HOME", str(tmp_path))
+    # _run_advisory resolves SUDO_USER/USER through pwd rather than HOME. If USER is
+    # the real account, its passwd entry overrides the temporary HOME above and SQLite
+    # tries to create the real user's cache. Use an intentionally unmapped identity so
+    # Path.home() (and therefore the test's temporary directory) is used.
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("USER", "fettle-test-no-such-user")
     rc = cli._run_advisory("advisory-check", ["--no-config", "--dry-run"])
     assert "▸ Summary" in capsys.readouterr().out
     assert rc == 1                      # Critical, fix available
