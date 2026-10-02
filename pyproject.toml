@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,17 +7,18 @@ name = "fettle"
 version = "1.20.0"
 description = "Cross-distribution Linux system-maintenance and supply-chain tool"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Paul Asadoorian", email = "paul@rihackers.com" }]
 dependencies = []  # runtime: pure standard library, on purpose
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8,<10", "ruff>=0.6,<0.17"]
 # The web UI (`fettle web`) — the ONLY runtime dependency, and strictly opt-in.
 # The core CLI stays pure-stdlib (`dependencies = []`) so the remote zipapp keeps
 # working under any bare python3; nothing outside fettle/web/ may import nicegui.
-web = ["nicegui>=2"]
+web = ["nicegui>=3.17.1,<4"]
 
 [project.urls]
 # The README is the front page; the manual is the wiki. Keep both reachable from

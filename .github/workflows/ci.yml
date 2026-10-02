@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,15 +17,30 @@ jobs:
       # was a claim rather than a fact. It is also the version RHEL 9 users install to
       # run fettle at all, which makes it the one most worth proving.
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - run: python -m pip install -c constraints/build.txt --upgrade pip
+      - run: pip install --build-constraint constraints/build.txt -c constraints/dev.txt -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -c constraints/build.txt --upgrade pip
+      - run: pip install --build-constraint constraints/build.txt -c constraints/dev.txt -c constraints/web.txt -e ".[dev,web]"
+      - run: pytest -q tests/test_web.py tests/test_maintenance_related.py
 
   packages:
     # Build each distro package and INSTALL it in a clean container of that distro.

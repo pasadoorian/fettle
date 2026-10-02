@@ -1,4 +1,5 @@
 # stale-flag-ok: these tests describe renames, so they name the old spellings.
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -970,20 +971,26 @@ def test_no_lock_is_silent(tmp_path):
     assert any(c[:1] == ["paccache"] for c, _ in calls)
 
 
-def test_when_the_holder_cannot_be_determined_the_clean_stops(tmp_path, capsys):
+def test_when_the_holder_cannot_be_determined_the_clean_stops(tmp_path, capsys, monkeypatch):
     """"I could not tell" is not "it is safe" — the invariant, applied to a
     destructive action rather than to a report."""
     _lock(tmp_path)
     proc = tmp_path / "proc/999"
     (proc / "fd").mkdir(parents=True)
-    (proc / "fd").chmod(0o000)
-    try:
-        calls, fake = _recorder()
-        with patch("fettle.command.run", side_effect=fake), \
-             patch("fettle.command.which", return_value=True):
-            result = ArchBackend().clean_caches(_ctx(root=tmp_path))
-        assert result.ok is False
-        assert calls == []
-        assert "could not" in capsys.readouterr().err.lower()
-    finally:
-        (proc / "fd").chmod(0o755)
+    # Root can read chmod(000) directories. Simulate the kernel's refusal so this
+    # invariant is exercised by both unprivileged runners and root containers.
+    listdir = os.listdir
+
+    def denied(path):
+        if Path(path) == proc / "fd":
+            raise PermissionError("fixture: proc fd access denied")
+        return listdir(path)
+
+    monkeypatch.setattr(os, "listdir", denied)
+    calls, fake = _recorder()
+    with patch("fettle.command.run", side_effect=fake), \
+         patch("fettle.command.which", return_value=True):
+        result = ArchBackend().clean_caches(_ctx(root=tmp_path))
+    assert result.ok is False
+    assert calls == []
+    assert "could not" in capsys.readouterr().err.lower()

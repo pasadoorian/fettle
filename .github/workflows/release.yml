@@ -13,7 +13,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write        # creating a release and uploading assets
+  contents: read
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -45,13 +45,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - run: python -m pip install -c constraints/build.txt --upgrade pip
+      - run: pip install --build-constraint constraints/build.txt -c constraints/dev.txt -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
 
@@ -112,7 +113,8 @@ jobs:
               # the project's rule that nothing is installed into a shared interpreter.
               sudo apt-get -qq install -y zip >/dev/null
               python3 -m venv venv-nuitka-build
-              venv-nuitka-build/bin/pip -q install nuitka
+              venv-nuitka-build/bin/python -m pip install -c constraints/build.txt --upgrade pip
+              venv-nuitka-build/bin/pip -q install --build-constraint constraints/build.txt -c constraints/build.txt Nuitka
               # build.sh smoke-tests its own output and fails the job if the binary is
               # wrong — the failures that matter here are silent, so this is the gate.
               packaging/binary/build.sh
@@ -179,6 +181,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   publish:
+    permissions:
+      contents: write  # only this job creates the draft and uploads release assets
     name: draft the release
     needs: [guard, packages]
     runs-on: ubuntu-latest
