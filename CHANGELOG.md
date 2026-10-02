@@ -23,6 +23,19 @@ All notable changes to fettle are recorded here. Newest first.
 - Ignore malformed JSON envelopes without breaking dashboard collection; historical text
   reports remain readable.
 - Isolate the advisory test cache from the invoking user's real home directory.
+- Guard both HTTP and WebSocket origins in the experimental web UI. Serialize web
+  runs, terminate subprocess groups on cancellation, clear submitted sudo passwords,
+  and require a loopback bind. Metadata refresh is correctly grouped with sudo actions.
+- Record actual noninteractive exit codes; older logs with no status display as unknown.
+- Follow OSV pagination, reject incomplete batches and missing records, invalidate
+  language results when installed versions change, and save explicit coverage state.
+  Resolve language environment paths for the invoking user; match installed Debian
+  source versions and ignore removed packages.
+- Select Python 3.11+ on remote hosts even when `python3` is older. Atomically replace
+  startup baselines, preserve invoking ownership, validate stored entries, and report
+  failed baseline refreshes.
+- Build RPMs using portable shell syntax and refuse release repair uploads unless the
+  existing release is a confirmed draft.
 
 ## [1.20.0] — startup persistence, end to end
 

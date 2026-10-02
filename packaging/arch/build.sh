@@ -26,6 +26,7 @@ stage="$work/fettle-$version"
 mkdir -p "$stage"
 tar -c -C "$here" \
     --exclude='.git' --exclude='dist' --exclude='venv-*' --exclude='__pycache__' \
+    --exclude='CLAUDE.md' --exclude='PLAN.md' --exclude='lab.conf' --exclude='matrix-logs' \
     --exclude='*.py[co]' . | tar -x -C "$stage"
 tar -czf "$work/fettle-$version.tar.gz" -C "$work" "fettle-$version"
 

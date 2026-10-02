@@ -53,11 +53,17 @@ audit=$("$bin" -H --dry-run 2>&1) || fail "hardening-audit did not run"
 # are the most stable token fettle has. The prose titles were used here until v1.7.0,
 # when the renderer switched to names and every one of these greps silently stopped
 # matching. The failure was invisible to the unit suite because it lives here.
-axes=$(printf '%s' "$audit" | grep -cE \
-    "^ *(filesystem|services|kernel|ssh|firewall|certs):") \
-    || axes=0
-[ "$axes" -ge 6 ] || fail "only $axes of 6 axes reported — they were not compiled in"
-ok "all 6 axes reported"
+# The build passes its registry-derived list. Standalone smoke runs can read the
+# checkout's registry; neither path maintains another hand-written axis list.
+if [ -z "${FETTLE_EXPECTED_AXES:-}" ]; then
+    here=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+    FETTLE_EXPECTED_AXES=$(cd "$here" && python3 -c 'from fettle.hardening.axes import AXIS_NAMES; print(" ".join(AXIS_NAMES))')
+fi
+for axis in $FETTLE_EXPECTED_AXES; do
+    printf '%s' "$audit" | grep -qE "^ *$axis:" \
+        || fail "axis $axis did not report — it may not have been compiled in"
+done
+ok "all registry axes reported"
 
 # The load-bearing assertion. Every axis reporting "did not complete" is what a build
 # missing them looks like: no crash, no error, just a uniformly cautious audit.

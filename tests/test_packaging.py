@@ -300,7 +300,12 @@ def _gh_stub(tmp_path: Path, script: str) -> dict:
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     gh = bindir / "gh"
-    gh.write_text("#!/bin/sh\n" + script)
+    gh.write_text("#!/bin/sh\n" + '''
+if [ "$1 $2 $4 $5" = "release view --json isDraft" ]; then
+    printf '%s\\n' "${GH_DRAFT:-true}"
+    exit 0
+fi
+''' + script)
     gh.chmod(0o755)
     env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}",
                GH_LOG=str(tmp_path / "gh.log"))
@@ -416,6 +421,14 @@ def test_publish_refuses_an_empty_staged_directory():
         env = _gh_stub(tmp, "exit 0")
         out = _publish(tmp, env, files=())
     assert out.returncode == 1 and "empty" in out.stderr
+
+
+def test_publish_refuses_to_replace_assets_on_a_published_release(tmp_path):
+    env = _gh_stub(tmp_path, 'echo "$@" >> "$GH_LOG"\nexit 0\n')
+    env["GH_DRAFT"] = "false"
+    out = _publish(tmp_path, env)
+    assert out.returncode == 1 and "not a confirmed draft" in out.stderr
+    assert "release upload" not in (tmp_path / "gh.log").read_text()
 
 
 def test_publish_keeps_a_multiword_title_as_one_argument():

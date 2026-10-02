@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import sys
+import threading
 from collections.abc import Callable
+
+# Shared by every page/session: package managers must not overlap across clients.
+_RUN_LOCK = threading.Lock()
 
 
 def _cmd(args: list[str], *, sudo: bool = False) -> list[str]:
@@ -39,18 +44,39 @@ async def run_action(args: list[str], on_line: Callable[[str], None], *,
     """Run ``fettle <args>``; call ``on_line(line)`` for each output line; return
     the exit code. ``sudo=True`` wraps in ``sudo -S`` and ``password`` (if given) is
     written to stdin then the pipe is closed. ``cmd`` overrides the argv (tests)."""
+    if not _RUN_LOCK.acquire(blocking=False):
+        raise RuntimeError("another web action is already running")
+    try:
+        return await _run_action(args, on_line, cmd=cmd, sudo=sudo, password=password)
+    finally:
+        _RUN_LOCK.release()
+
+
+async def _run_action(args, on_line, *, cmd, sudo, password):
     argv = cmd or _cmd(args, sudo=sudo)
     proc = await asyncio.create_subprocess_exec(
         *argv,
-        stdin=asyncio.subprocess.PIPE if password is not None else None,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-    if password is not None and proc.stdin is not None:
-        proc.stdin.write((password + "\n").encode())
-        try:
-            await proc.stdin.drain()
-        finally:
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True)
+    try:
+        if proc.stdin is not None:
+            if password is not None:
+                proc.stdin.write((password + "\n").encode())
+                await proc.stdin.drain()
             proc.stdin.close()
-    assert proc.stdout is not None
-    async for raw in proc.stdout:
-        on_line(raw.decode("utf-8", "replace").rstrip("\n"))
-    return await proc.wait()
+        password = None
+        assert proc.stdout is not None
+        async for raw in proc.stdout:
+            on_line(raw.decode("utf-8", "replace").rstrip("\n"))
+        return await proc.wait()
+    finally:
+        if proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except ProcessLookupError:
+                pass
+            except TimeoutError:
+                os.killpg(proc.pid, signal.SIGKILL)
+                await proc.wait()

@@ -37,7 +37,7 @@ def test_run_scp_then_ssh_with_args():
     assert scp[-1].startswith("server1:.fettle-remote.") and scp[-1].endswith(".pyz")
     assert "/tmp/" not in scp[-1]
     assert ssh[1] == "-t" and ssh[-2] == "server1"
-    assert 'python3 "$HOME/.fettle-remote.' in ssh[-1]
+    assert '"$py" "$HOME/.fettle-remote.' in ssh[-1]
     assert "clean update" in ssh[-1]
     assert 'rm -f "$HOME/.fettle-remote.' in ssh[-1]   # cleanup preserved
     assert "sudo " not in ssh[-1]
@@ -56,7 +56,7 @@ def test_run_sudo_prefix():
     rec = _Rec()
     remote.run("h", ["sys-audit", "--all"], sudo=True, runner=rec)
     ssh = next(c for c in rec.calls if c[0] == "ssh")
-    assert 'sudo python3 "$HOME/.fettle-remote.' in ssh[-1]
+    assert 'sudo "$py" "$HOME/.fettle-remote.' in ssh[-1]
     assert "sys-audit --all" in ssh[-1]
 
 

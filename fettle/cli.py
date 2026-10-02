@@ -932,8 +932,8 @@ def web_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle web",
         description="[EXPERIMENTAL] Serve the fettle web UI (a browser dashboard over your stored "
-                    "reports; drives fettle actions in later phases). Localhost-only "
-                    "by default. Needs the web extra: pip install 'fettle[web]'.")
+                    "reports and runs actions). Requires a loopback bind and "
+                    "same-origin browser requests. Needs the web extra: pip install 'fettle[web]'.")
     p.add_argument("--host", default="127.0.0.1",
                    help="bind address (default 127.0.0.1 — localhost only)")
     p.add_argument("--port", type=int, default=8080, help="bind port (default 8080)")
@@ -952,7 +952,7 @@ def _run_web(argv: list[str]) -> int:
     # and it is the only feature the QA pass has not reached.
     print("fettle web is EXPERIMENTAL — unlike the rest of fettle it has not been "
           "through the QA sweep in docs/qa/.\n  It serves reports AND runs actions "
-          "(some under sudo). Localhost-only by default; keep it that way.",
+          "(some under sudo). Loopback binding and same-origin requests are required.",
           file=sys.stderr)
     try:
         run_web = _web_runner()
@@ -1305,11 +1305,19 @@ def main(argv: list[str] | None = None) -> int:
     if recorded is not None:
         return recorded
     _nontty_log = runlog.start_nontty_log(argv)  # non-tty runs still get a log
+    code = 1
     try:
-        return _main(argv)
+        code = _main(argv)
+        return code
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+        raise
+    except KeyboardInterrupt:
+        code = 130
+        raise
     finally:
         if _nontty_log is not None:
-            _nontty_log.close()
+            _nontty_log.close(exit_code=code)
 
 
 # Retired spellings -> what replaced them. argparse would say "unrecognized

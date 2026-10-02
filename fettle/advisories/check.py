@@ -73,7 +73,9 @@ def _ensure_fresh(conn, provider, ttl, out, ctx=None, *, force=False) -> str:
     and then contribute a clean-looking summary anyway.
     """
     last = db.last_updated(conn, provider.source)
-    if not force and last is not None and (time.time() - last) <= ttl:
+    inventory_changed = (provider.needs_refresh(conn, ctx)
+                         if hasattr(provider, "needs_refresh") else False)
+    if not force and not inventory_changed and last is not None and (time.time() - last) <= ttl:
         return ""
     if out:
         out.note(f"refreshing {provider.source} advisory data…")
@@ -281,7 +283,10 @@ def run(ctx) -> None:
             stale = _ensure_fresh(conn, p, cfg["cache_ttl"], out, ctx)
             if stale:
                 degraded.append(stale)
-            findings += p.findings(ctx, conn)
+            try:
+                findings += p.findings(ctx, conn)
+            except (OSError, ValueError):
+                degraded.append(f"{p.source} (installed-package matching failed)")
             uncovered[p.source] = p.uncovered(ctx)
     finally:
         conn.close()
@@ -290,6 +295,9 @@ def run(ctx) -> None:
     scopes = [(p.source, p.scope(ctx)) for p in provs]
     lines, data = _render(findings, uncovered, _is_manjaro(ctx),
                           [p.source for p in provs], scopes)
+    data["coverage"] = {"current": not degraded, "degraded": degraded}
+    if degraded:
+        lines += ["", "Advisory coverage is NOT current: " + ", ".join(degraded)]
     for ln in lines:
         print(ln)
 

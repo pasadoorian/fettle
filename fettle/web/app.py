@@ -19,24 +19,17 @@ import datetime as _dt
 import html as _html
 from functools import partial
 
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse
 from nicegui import app, ui
 
 from . import data, runner
+from .guard import LOCAL_HOSTS, LocalOriginGuard
 
 # fettle web is a PRIVILEGED local tool — keep it strictly localhost. This blocks
 # a malicious page / DNS-rebinding from driving the server via a spoofed Host
 # header (the requests still hit 127.0.0.1, but the browser sends the attacker's
 # host). Non-browser clients (curl/tests) that send a localhost Host pass through.
-_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-
-
-@app.middleware("http")
-async def _localhost_only(request, call_next):
-    host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
-    if host and host not in _LOCAL_HOSTS:
-        return PlainTextResponse("fettle web is localhost-only", status_code=403)
-    return await call_next(request)
+app.add_middleware(LocalOriginGuard)
 
 
 def _audit(header: str, code) -> None:
@@ -47,7 +40,9 @@ def _audit(header: str, code) -> None:
         base.mkdir(parents=True, exist_ok=True)
         path = base / "web-actions.log"
         ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(path, "a") as fh:
+        import os
+        fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as fh:
             fh.write(f"{ts}  {header}  -> exit {code}\n")
         path.chmod(0o600)
     except Exception:
@@ -57,14 +52,14 @@ def _audit(header: str, code) -> None:
 _READONLY_ACTIONS = [
     ("-P", "Supply-chain audit (pkg-audit)"),
     ("-A", "AUR health (aur-audit)"),
-    ("-H", "Binary hardening (hardening-audit)"),
+    ("-H", "System hardening (hardening-audit; unprivileged coverage)"),
     ("-d", "Config drift (config-drift)"),
     ("-x", "Auto-updates posture (auto-updates)"),
-    ("-O", "Check upgrades (only-update)"),
 ]
 
 # System-modifying actions (need root). Each gets a dry-run Preview + a Run (sudo).
 _SUDO_ACTIONS = [
+    ("-O", "Refresh package metadata (only-update)"),
     ("-u", "Update packages (update)"),
     ("-c", "Clean caches (clean)"),
     ("-o", "Remove orphans (orphans)"),
@@ -168,8 +163,10 @@ def _run_page() -> None:
         if not await _confirm(f"Run  sudo fettle {flag} --yes  ({label})? "
                               "This will modify the system."):
             return
+        password = pw.value
+        pw.value = ""
         await _stream([flag, "--yes"], f"sudo fettle {flag} --yes   # {label}",
-                      sudo=True, password=pw.value,
+                      sudo=True, password=password,
                       footer="done. Reload the dashboard to see the changes.")
 
     # -- controls (top) ------------------------------------------------------
@@ -177,7 +174,7 @@ def _run_page() -> None:
     with ui.row().style("flex-wrap:wrap;gap:8px;padding:0 .9rem"):
         for flag, label in _READONLY_ACTIONS:
             ui.button(label, on_click=partial(
-                _stream, [flag], f"fettle {flag}   # {label}",
+                _stream, [flag, "--user"], f"fettle {flag} --user   # {label}",
                 footer="done. Reload the dashboard to see the report.")) \
                 .props("flat dense no-caps color=cyan")
 
@@ -301,7 +298,7 @@ def _hist_label(row: dict) -> str:
     when = _fmt_ts(row.get("timestamp", "")) or "?"
     cmd = _run_label(row) or "fettle (run)"
     code = row.get("exit_code")
-    badge = "ok" if code in (0, None) else f"exit {code}"
+    badge = "status unknown" if code is None else "ok" if code == 0 else f"exit {code}"
     return f"{when}  ·  {row.get('host', '?')}  ·  {cmd}  ·  {badge}"
 
 
@@ -328,4 +325,6 @@ def _history_page() -> None:
 def run(*, host: str = "127.0.0.1", port: int = 8080,
         reload: bool = False, show: bool = False) -> None:
     """Start the NiceGUI/uvicorn server (blocks). Bound to localhost by default."""
+    if host not in LOCAL_HOSTS:
+        raise ValueError("fettle web must bind to localhost (127.0.0.1, ::1 or localhost)")
     ui.run(host=host, port=port, reload=reload, show=show, title="fettle")

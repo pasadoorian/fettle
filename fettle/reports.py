@@ -70,6 +70,8 @@ def _dir(ctx, kind: str, host: str) -> Path:
     base, _ = _settings(ctx)
     target = base / kind / host_tag(host)
     sudo_user = getattr(ctx, "sudo_user", None)
+    if any(level.is_symlink() for level in (base, base / kind, target)):
+        raise OSError("refusing a symlink in the report storage directory")
     base.mkdir(parents=True, exist_ok=True)
     for level in (base, base / kind, target):
         try:
@@ -129,11 +131,16 @@ def writer_lock(directory: Path, ctx):
 
 def atomic_text(path: Path, text: str, ctx) -> None:
     """Publish complete UTF-8 content from a private file in the same directory."""
+    atomic_bytes(path, text.encode("utf-8"), ctx)
+
+
+def atomic_bytes(path: Path, content: bytes, ctx) -> None:
+    """Private atomic publication, also used for reports fetched from a remote."""
     fd, raw = tempfile.mkstemp(prefix=".fettle-", dir=path.parent)
     temporary = Path(raw)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(text)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
         _secure(temporary, ctx)
         os.replace(temporary, path)
     finally:

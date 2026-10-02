@@ -101,7 +101,7 @@ def test_refresh_then_findings(tmp_path):
 
     def fake_run(cmd, **kw):
         if cmd[:2] == ["pacman", "-Q"] and len(cmd) == 2:
-            return SimpleNamespace(stdout="\n".join(f"{k} {v}" for k, v in installed.items()))
+            return SimpleNamespace(stdout="\n".join(f"{k} {v} installed" for k, v in installed.items()))
         if cmd[0] == "vercmp":
             a, b = cmd[1], cmd[2]
             return SimpleNamespace(stdout="-1" if a < b else ("0" if a == b else "1"))
@@ -251,7 +251,7 @@ def test_debian_findings_uses_dpkg_compare(tmp_path):
 
     def fake_run(cmd, **kw):
         if cmd[:2] == ["dpkg-query", "-W"]:
-            return SimpleNamespace(stdout="\n".join(f"{k} {v}" for k, v in installed.items()))
+            return SimpleNamespace(stdout="\n".join(f"{k} {v} installed" for k, v in installed.items()))
         if cmd[:2] == ["dpkg", "--compare-versions"]:   # 3.0.9-1 lt 3.0.11-1 -> true
             return SimpleNamespace(returncode=0)
         return SimpleNamespace(stdout="", returncode=0)
@@ -330,7 +330,7 @@ def test_ubuntu_findings_flags_critical(tmp_path):
 
     def fake_run(cmd, **kw):
         if cmd[:2] == ["dpkg-query", "-W"]:
-            return SimpleNamespace(stdout="openssl 3.0.10-1")     # behind both fixes
+            return SimpleNamespace(stdout="openssl 3.0.10-1 installed")  # behind both fixes
         if cmd[:2] == ["dpkg", "--compare-versions"]:
             return SimpleNamespace(returncode=0)                  # installed < fixed
         return SimpleNamespace(stdout="", returncode=0)

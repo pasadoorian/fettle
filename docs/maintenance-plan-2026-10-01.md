@@ -61,8 +61,8 @@ be recorded explicitly during planning.
 | --- | --- | --- |
 | Test isolation | Complete, 2026-10-02 | Reproduced the real-home SQLite failure; isolated the test's invoking identity. All 64 advisory tests and Ruff for the changed test pass. |
 | Six confirmed bugs | Complete, 2026-10-02 | All six reproduced before correction. 343 focused backend/config/remote/report tests pass; new regression cases cover missing tools, invalid settings, and same-second retention. |
-| Related investigations and targeted improvements | Pending | Follow the initial correctness fixes. |
-| Dependency constraints and compatible upgrades | Pending | Recheck upstream candidates and verify chosen pins. |
+| Related investigations and targeted improvements | Implemented, 2026-10-02 | HTTP/WS guard, web-run cancellation/serialization, accurate logs, advisory coverage/identity matching, remote interpreter, atomic baselines/fetches, draft guard and portable packaging. 271 focused tests pass with web dependencies; remaining limitations will be indexed. |
+| Dependency constraints and compatible upgrades | In progress | Fresh environment resolved; pip check passes; OSV queried all 60 pins and reported no advisories. Constraints and CI changes are being verified. |
 | AUR build-script scanning | Pending | Follows maintenance work. |
 | Documentation reconciliation and wiki handoff | Pending | Update related documentation throughout implementation. |
 | Final verification and draft PR | Pending | Commit and push verified milestones on the implementation branch. |

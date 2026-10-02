@@ -163,16 +163,16 @@ def _host_entries(directory: Path) -> list[dict]:
     for p in sorted(directory.glob("*.json")):
         e = _load_entry(p)
         if e:
-            entries.append(e)
+            entries.append((_reports.entry_key(p)[1], e))
             seen.add(p.stem)
     for p in sorted(directory.glob("*.txt")):
         if p.stem in seen:
             continue
         e = _load_entry(p)
         if e:
-            entries.append(e)
-    entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-    return entries
+            entries.append((_reports.entry_key(p)[1], e))
+    entries.sort(key=lambda pair: (pair[1].get("timestamp", ""), pair[0]), reverse=True)
+    return [entry for _, entry in entries]
 
 
 def collect(base: Path) -> dict[str, dict]:
@@ -767,13 +767,16 @@ def _is_empty(entry: dict) -> bool:
         # The uncovered list is not decoration: it is the tracker saying which
         # packages it cannot see at all. A host with no tracked CVEs and 77 untracked
         # packages was rendering as nothing to report.
-        return not (data.get("findings") or any((data.get("uncovered") or {}).values()))
+        return not (data.get("findings") or any((data.get("uncovered") or {}).values())
+                    or (data.get("coverage") or {}).get("degraded"))
     return False                                    # upgrade-check / unknown: keep
 
 
 def _entry_badge(entry: dict) -> str:
     """A small severity/verdict badge on the entry's summary line, when relevant."""
     data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+    if (data.get("coverage") or {}).get("degraded"):
+        return '<span class="badge b-bad">coverage incomplete</span>'
     tally = data.get("band_tally") or {}
     for b in _BANDS:
         if tally.get(b):
@@ -1223,9 +1226,10 @@ def render(hostmap: dict, *, generated_at: str, version: str, user: str = "you",
         rows = []
         for e in sorted(logs, key=lambda e: e.get("timestamp", ""), reverse=True):
             code = e.get("exit_code")
-            ok = code in (0, None)
+            ok = code == 0
             label = _esc(_run_label(e)) or "fettle remote"
-            badge = ("<span class=\"badge b-ok\">ok</span>" if ok
+            badge = ('<span class="badge b-bad">status unknown</span>' if code is None else
+                     "<span class=\"badge b-ok\">ok</span>" if ok
                      else f'<span class="badge b-bad">exit {_esc(str(code))}</span>')
             rows.append(
                 f'<div class="grow" data-host="{_esc(g)}" data-type="group-run">'

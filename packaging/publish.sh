@@ -40,6 +40,11 @@ prerelease="${5:-}"
 # Idempotent on purpose: re-running this job after a flaky upload must repair the
 # release, not refuse to touch it.
 if gh release view "$tag" >/dev/null 2>&1; then
+    draft=$(gh release view "$tag" --json isDraft --jq '.isDraft')
+    [ "$draft" = "true" ] || {
+        echo "publish: $tag is not a confirmed draft — refusing to replace assets" >&2
+        exit 1
+    }
     echo "publish: $tag already exists — attaching to it (repair run)"
 else
     # `set --` rather than a flags string, because the title contains a space. Built as

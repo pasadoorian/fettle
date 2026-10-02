@@ -108,6 +108,6 @@ install -m 755 "$work/fettle" "$outdir/fettle"
 # A binary that fails the smoke test never becomes an artifact. The failures that matter
 # here are silent — a build missing the axes runs, exits 0, and audits nothing — so this
 # is not optional polish.
-sh "$here/packaging/binary/smoke.sh" "$outdir/fettle"
+FETTLE_EXPECTED_AXES="$axes" sh "$here/packaging/binary/smoke.sh" "$outdir/fettle"
 
 echo "$outdir/fettle"

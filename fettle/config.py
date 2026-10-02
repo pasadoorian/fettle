@@ -8,6 +8,7 @@ that is world-writable or owned by someone other than root or the invoking user
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -216,6 +217,10 @@ def _count(value) -> bool:
     return type(value) is int and value >= 0
 
 
+def _weight(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
 def _choice(*choices):
     return lambda value: isinstance(value, str) and value.strip().lower() in choices
 
@@ -227,8 +232,9 @@ _TABLES = {
     "reports": {"keep": lambda v: _count(v) and v >= 1, "dir": str,
                 "json": bool, "log": bool, "stale_days": _count},
     "hardening": {**dict.fromkeys(("exclude_checks", "exclude_packages", "exclude_paths",
-                                  "disable_axes", "filesystem_paths", "certificate_paths"), _strings),
-                  "certificate_warn_days": _count},
+                                  "disable_axes", "filesystem_paths", "certificate_paths",
+                                  "sensitive_packages"), _strings),
+                  "certificate_warn_days": _count, "priv_multiplier": _weight, "weights": dict},
     "compromise": {"disable_checks": _strings},
     "advisories": {"cache_ttl": _count, "severity_threshold": _choice("", "critical", "high", "medium", "low"),
                    "exclude_packages": _strings, "exclude_classes": _strings,
@@ -256,9 +262,15 @@ def _table(value: dict, schema: dict, prefix: str, warnings: list[str]) -> dict:
 
 def _validated_table(name: str, value: dict, warnings: list[str]) -> dict:
     result = _table(value, _TABLES.get(name, {}), name, warnings)
+    if name == "hardening" and "weights" in result:
+        result["weights"] = _table(result["weights"],
+                                    dict.fromkeys(result["weights"], _weight),
+                                    "hardening.weights", warnings)
     # Dynamic table names (distro, host and remote group) need the same safeguards.
     if name == "updaters":
-        return _dynamic_tables(value, name, {"aur_updater": str, "updater": str}, warnings)
+        return _dynamic_tables(value, name, {"aur_updater": str, "system_updater": str,
+                                             "flatpak_updater": str, "snap_updater": str,
+                                             "refresh_mirrors": bool}, warnings)
     if name == "supplychain" and "hosts" in value:
         if isinstance(value["hosts"], dict):
             result["hosts"] = _dynamic_tables(value["hosts"], "supplychain.hosts",

@@ -20,6 +20,7 @@ and no ownership query to run.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -106,6 +107,20 @@ def _find_venvs(root: Path, max_depth: int) -> list[Path]:
 class OsvLanguageSource(base.AdvisoryProvider):
     source = "osv"
 
+    def needs_refresh(self, conn, ctx) -> bool:
+        self._inventory = self._installed(ctx)
+        row = conn.execute("SELECT value FROM meta WHERE key='osv_inventory'").fetchone()
+        return not row or row[0] != self._fingerprint(self._inventory)
+
+    @staticmethod
+    def _fingerprint(inventory):
+        return hashlib.sha256(json.dumps(sorted(inventory)).encode()).hexdigest()
+
+    def _stamp_inventory(self, conn, inventory):
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO meta VALUES('osv_inventory', ?)",
+                         (self._fingerprint(inventory),))
+
     def scope(self, ctx) -> str:
         roots, depth = self._cfg(ctx)
         envs = {e for e, _sp in self._environments(ctx)}
@@ -120,21 +135,29 @@ class OsvLanguageSource(base.AdvisoryProvider):
     # -- fetch/classify (querybatch installed pkgs -> classified rows) --------
     def refresh(self, conn, ctx=None) -> int:
         meta, queries = [], []                   # meta[i] = (eco, name, version, env)
-        for eco, name, ver, env in self._installed(ctx):
+        inventory = getattr(self, "_inventory", None)
+        if inventory is None:
+            inventory = self._installed(ctx)
+        for eco, name, ver, env in inventory:
             meta.append((eco, name, ver, env))
             queries.append({"package": {"ecosystem": eco, "name": name}, "version": ver})
         if not queries:
             db.replace_source(conn, self.source, [])
+            self._stamp_inventory(conn, inventory)
             return 0
         try:
             batches = osv.querybatch(queries)
         except (OSError, ValueError):
             return -1
+        if len(batches) != len(meta):
+            return -1
         rows = []
         for (eco, name, ver, env), vulns in zip(meta, batches):
             for v in vulns:
                 rec = osv.record(conn, v.get("id"), v.get("modified"))
-                cl = osv.classify(rec, eco, ver) if rec else None
+                if rec is None:
+                    return -1  # leave the old rows and freshness stamp intact
+                cl = osv.classify(rec, eco, ver, name)
                 if cl is None:
                     continue
                 status, fixed = cl
@@ -151,11 +174,13 @@ class OsvLanguageSource(base.AdvisoryProvider):
                              f"https://osv.dev/vulnerability/{v.get('id')}", "", cvss,
                              eco))
         db.replace_source(conn, self.source, osv.dedup_rows(rows))
+        self._stamp_inventory(conn, inventory)
         conn.commit()                            # persist osv_vulns cached during record()
         return len(rows)
 
     def findings(self, ctx, conn) -> list[base.AdvisoryFinding]:
         out = []
+        current = set(getattr(self, "_inventory", None) or self._installed(ctx))
         for (gid, pkg, status, sev, installed, fixed, cves_json, _adv, url,
              dclass, cvss, eco) in db.all_rows(conn, self.source):
             # Stored env-qualified ("SploitScan:requests") so the row stays unique
@@ -164,6 +189,8 @@ class OsvLanguageSource(base.AdvisoryProvider):
             env, _, name = pkg.partition(":")
             if not name:                         # defensive: unqualified legacy row
                 env, name = "", pkg
+            if (eco, name, installed, env) not in current:
+                continue
             out.append(base.AdvisoryFinding(
                 source=self.source, package=name, environment=env,
                 installed_version=installed,
@@ -208,9 +235,13 @@ class OsvLanguageSource(base.AdvisoryProvider):
         # a system path, e.g. running as root with a /usr user-base).
         try:
             import site
+            users = list((home / ".local/lib").glob("python*/site-packages"))
             user = Path(site.getusersitepackages())
-            if user.is_dir() and not _under_system_prefix(user):
-                out.append((str(user), user))
+            if user.is_relative_to(home):
+                users.append(user)
+            for user in sorted(set(users)):
+                if user.is_dir() and not _under_system_prefix(user):
+                    out.append((str(user), user))
         except Exception:                        # site is absent in some embeddings
             pass
 
@@ -225,7 +256,8 @@ class OsvLanguageSource(base.AdvisoryProvider):
                 envs += sorted(p for p in tools_dir.iterdir() if p.is_dir())
         roots, depth = self._cfg(ctx)
         for root in roots:
-            envs += _find_venvs(Path(root).expanduser(), depth)
+            path = home / root[2:] if root.startswith("~/") else home if root == "~" else Path(root).expanduser()
+            envs += _find_venvs(path, depth)
 
         for env in envs:
             out += [(str(env), sp) for sp in _site_packages(env)]

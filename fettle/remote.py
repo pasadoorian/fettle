@@ -240,9 +240,14 @@ def _remote_cmd(remote_name: str, fettle_args, *, sudo: bool) -> str:
     remote_file = f'"$HOME/{remote_name}"'
     argv = " ".join(shlex.quote(a) for a in fettle_args)
     prefix = "sudo " if sudo else ""
-    return (f"chmod 600 {remote_file} 2>/dev/null; "
-            f"{prefix}python3 {remote_file} {argv}; "
-            f"rc=$?; rm -f {remote_file}; exit $rc")
+    select = ("py=''; for candidate in python3.14 python3.13 python3.12 python3.11 python3; do "
+              "if command -v \"$candidate\" >/dev/null 2>&1 && "
+              "\"$candidate\" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; "
+              "then py=$candidate; break; fi; done; ")
+    return (f"chmod 600 {remote_file} 2>/dev/null; " + select +
+            "if [ -z \"$py\" ]; then echo 'fettle: needs Python 3.11 or newer on this host' >&2; rc=1; else "
+            f"{prefix}\"$py\" {remote_file} {argv}; rc=$?; fi; "
+            f"rm -f {remote_file}; exit $rc")
 
 
 def run(host: str, fettle_args, *, sudo: bool = False, ssh_args=(),
@@ -297,7 +302,6 @@ def _fetch_remote_dir(host: str, remote_dir: str, dest_dir, *,
     path traversal) and each file is written ``0600``.
     """
     import io
-    import os
     import tarfile
     from pathlib import Path
 
@@ -326,11 +330,8 @@ def _fetch_remote_dir(host: str, remote_dir: str, dest_dir, *,
                 if src is None:
                     continue
                 out = dest / name
-                out.write_bytes(src.read())
-                try:
-                    os.chmod(out, 0o600)
-                except OSError:
-                    pass
+                from .reports import atomic_bytes
+                atomic_bytes(out, src.read(), None)
                 fetched.append(name)
     except (tarfile.TarError, OSError):
         pass
@@ -341,6 +342,8 @@ def collect(host: str, fettle_args, *, ssh_args=(), runner=subprocess.run) -> st
     """Run ``fettle_args`` on ``host`` and return its captured stdout, or ``None``
     on failure. Rootless, no PTY — for ``upgrade-check --collect``, where the
     remote prints a snapshot we analyse locally. Remote stderr passes through."""
+    if not _valid_host(host):
+        return None
     print(f"Remote target: {host}  (collect; no sudo)")
     remote_name = _upload_zipapp(host, runner, ssh_args)
     if remote_name is None:

@@ -131,7 +131,7 @@ class Context:
     full_preview: bool = False
     root: Path = Path("/")  # injected so filesystem reads are testable
     sudo_user: str | None = None  # the invoking (non-root) user, for as_user drops
-    user_home: Path = Path.home()
+    user_home: Path = field(default_factory=Path.home)
     # Names of commands run through `execute` that exited non-zero. Actions compare
     # its length before and after their own work to tell "there was nothing to do"
     # from "it could not be done" — a distinction the summary has to make.

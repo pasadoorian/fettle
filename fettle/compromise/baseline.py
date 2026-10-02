@@ -127,10 +127,19 @@ def load(path: Path) -> dict | None:
         return None
     if not isinstance(data.get("entries"), dict):
         return None
+    if type(data.get("taken")) is not int:
+        return None
+    for key, entry in data["entries"].items():
+        if not isinstance(key, str) or not isinstance(entry, dict):
+            return None
+        if any(not isinstance(entry.get(k), str) for k in ("class", "sha256", "package")):
+            return None
+        if type(entry.get("mtime")) is not int:
+            return None
     return data
 
 
-def save(path: Path, entries: dict, *, now=None) -> bool:
+def save(path: Path, entries: dict, *, now=None, ctx=None) -> bool:
     """Write the baseline owner-only from the start. True when it was written.
 
     ``O_CREAT`` with the mode rather than create-then-chmod, for the reason recorded in
@@ -142,9 +151,10 @@ def save(path: Path, entries: dict, *, now=None) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(path.parent, 0o700)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            json.dump(payload, fh)
+        from ..reports import atomic_text
+        from ..util import chown_to_user
+        chown_to_user(path.parent, getattr(ctx, "sudo_user", None))
+        atomic_text(path, json.dumps(payload), ctx)
     except OSError:
         return False
     return True
@@ -210,7 +220,7 @@ def apply(ctx, res: CheckResult, subjects: list[tuple[Path, str]],
             res.notes.append(
                 "no startup baseline yet, and --dry-run does not write one, so nothing "
                 "here is a comparison against a previous run")
-        elif save(store, new):
+        elif save(store, new, ctx=ctx):
             res.notes.append(
                 f"startup baseline recorded, {len(new)} entries. This run had nothing to "
                 f"compare against; the next one will report what changed since today")
@@ -249,6 +259,7 @@ def apply(ctx, res: CheckResult, subjects: list[tuple[Path, str]],
             f"owned by nothing now, which usually means the package was removed and the "
             f"file was left behind")
 
-    if not getattr(ctx, "dry_run", False):
-        save(store, new)
+    if not getattr(ctx, "dry_run", False) and not save(store, new, ctx=ctx):
+        res.blind.append(("startup baseline was NOT refreshed",
+                          f"could not write {store}; the next comparison uses older data", ""))
     return set(diff["appeared"])
