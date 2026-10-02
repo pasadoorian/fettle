@@ -3,7 +3,7 @@
 Date: 2026-10-01  
 Last updated: 2026-10-02  
 Baseline: fettle 1.20.0  
-Status: **Implementation and verification complete on `codex/fettle-maintenance`; draft PR delivery pending. All phase decisions are recorded.**
+Status: **Completed and delivered as [draft PR #1](https://github.com/pasadoorian/fettle/pull/1) on `codex/fettle-maintenance`. All phase decisions are recorded.**
 
 ## Purpose and working agreement
 
@@ -65,7 +65,7 @@ be recorded explicitly during planning.
 | Dependency constraints and compatible upgrades | Implemented | Reviewed dev/web/build pins including transitives; fresh resolver and pip check pass; OSV queried 60 pins with no reported advisories. CI covers 3.11–3.14 and optional web. |
 | AUR build-script scanning | Implemented | Shared static engine in three callers; positive, benign, no-execution, unreadable-input and Lua bridge checks pass. A small real cached corpus was inspected with explicit gaps. |
 | Documentation reconciliation and wiki handoff | Implemented | Current architecture, issue index, dependency/scanner docs and wiki handoff; README/config/packaging/lab updates; dated QA reconciliation and local-only memory updates. |
-| Final verification and draft PR | Verification complete; draft PR pending | Python 3.14 full suite, Python 3.11 core/web, package containers, native target, browser fixture and available guest matrix recorded in maintenance-verification.md. Verified milestones committed and pushed; draft PR is the remaining delivery step. |
+| Final verification and draft PR | Complete, 2026-10-02 | Python 3.14 full suite, Python 3.11 core/web, package containers, native target, browser fixture and available guest matrix recorded in maintenance-verification.md. Milestones committed and pushed; [draft PR #1](https://github.com/pasadoorian/fettle/pull/1) opened for review. No merge, tag, release publication or separate wiki edit. |
 
 ## Phase 1 — Identify and fix bugs
 
@@ -410,8 +410,9 @@ A stale version constant found by packaging tests was aligned before final verif
 Native portability checks disproved the old hard-coded glibc floor: a locally built
 Python 3.14 artifact requires GLIBC_2.44 and cannot run on Debian 13. Build tooling now
 measures all bundled ELF requirements, archives require that metadata, and release
-artifact runners are pinned to Ubuntu 24.04. A Debian 12/Python 3.11 container build measured glibc 2.36 across its bundled
-payload and passed smoke after extraction on clean Debian 13; this does not change the CLI's Python 3.11 floor.
+artifact runners are pinned to Ubuntu 24.04. A Debian 12/Python 3.11 container build
+measured glibc 2.36 across its bundled payload and passed smoke after extraction on
+clean Debian 13; this does not change the CLI's Python 3.11 floor.
 
 Existing Arch/Debian/Rocky guests were exercised, without building new VMs. Rocky's
 missing supported interpreter and Debian's non-applicable AUR action remain explicit
