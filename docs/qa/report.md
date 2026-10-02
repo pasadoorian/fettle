@@ -167,3 +167,10 @@ outstanding-issues list:
 The **historical** directories on disk are untouched: twelve fragments of four lab
 machines, plus `clean`. Nothing merges them retroactively, and `~/.fettle/` is the user's
 data.
+
+## Reconciliation — 2026-10-02
+
+Malformed envelopes/nested known containers and numeric collision selection are corrected. D1/D2 presentation and historical host-tree migrations remain deferred; log-only hosts still cannot earn an audit all-clear.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

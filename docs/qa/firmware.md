@@ -168,3 +168,10 @@ Now decided by exit code, so the language is irrelevant.
 updates-available branch still rests on unit tests, exactly as recorded for v0.43.3. The
 container fleet cannot close it either — those images have neither fwupd nor dbus. What
 changed is that the *other three* branches are now measured rather than assumed.
+
+## Reconciliation — 2026-10-02
+
+Missing fwupdmgr now retains BLIND status through the dispatcher. QA-FW-03 still needs updatable physical hardware and QA-FW-07 an appropriate unprivileged daemon run; guest checks do not close them.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

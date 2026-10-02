@@ -3,7 +3,7 @@
 Date: 2026-10-01  
 Last updated: 2026-10-02  
 Baseline: fettle 1.20.0  
-Status: **Implementation in progress on `codex/fettle-maintenance`. All phase decisions are recorded.**
+Status: **Implementation and verification complete on `codex/fettle-maintenance`; draft PR delivery pending. All phase decisions are recorded.**
 
 ## Purpose and working agreement
 
@@ -61,15 +61,15 @@ be recorded explicitly during planning.
 | --- | --- | --- |
 | Test isolation | Complete, 2026-10-02 | Reproduced the real-home SQLite failure; isolated the test's invoking identity. All 64 advisory tests and Ruff for the changed test pass. |
 | Six confirmed bugs | Complete, 2026-10-02 | All six reproduced before correction. 343 focused backend/config/remote/report tests pass; new regression cases cover missing tools, invalid settings, and same-second retention. |
-| Related investigations and targeted improvements | Implemented, 2026-10-02 | HTTP/WS guard, web-run cancellation/serialization, accurate logs, advisory coverage/identity matching, remote interpreter, atomic baselines/fetches, draft guard and portable packaging. 271 focused tests pass with web dependencies; remaining limitations will be indexed. |
-| Dependency constraints and compatible upgrades | In progress | Fresh environment resolved; pip check passes; OSV queried all 60 pins and reported no advisories. Constraints and CI changes are being verified. |
-| AUR build-script scanning | Pending | Follows maintenance work. |
-| Documentation reconciliation and wiki handoff | Pending | Update related documentation throughout implementation. |
-| Final verification and draft PR | Pending | Commit and push verified milestones on the implementation branch. |
+| Related investigations and targeted improvements | Implemented, 2026-10-02 | HTTP/WS guard, web-run cancellation/serialization, accurate logs, advisory coverage/identity matching, remote interpreter, atomic baselines/fetches, draft guard and portable packaging. 271 focused tests pass with web dependencies; remaining limitations indexed in docs/issues.md. |
+| Dependency constraints and compatible upgrades | Implemented | Reviewed dev/web/build pins including transitives; fresh resolver and pip check pass; OSV queried 60 pins with no reported advisories. CI covers 3.11–3.14 and optional web. |
+| AUR build-script scanning | Implemented | Shared static engine in three callers; positive, benign, no-execution, unreadable-input and Lua bridge checks pass. A small real cached corpus was inspected with explicit gaps. |
+| Documentation reconciliation and wiki handoff | Implemented | Current architecture, issue index, dependency/scanner docs and wiki handoff; README/config/packaging/lab updates; dated QA reconciliation and local-only memory updates. |
+| Final verification and draft PR | Verification complete; draft PR pending | Python 3.14 full suite, Python 3.11 core/web, package containers, native target, browser fixture and available guest matrix recorded in maintenance-verification.md. Verified milestones committed and pushed; draft PR is the remaining delivery step. |
 
 ## Phase 1 — Identify and fix bugs
 
-Decision status: **Planning decisions complete — implementation in progress.**
+Decision status: **Planning decisions complete — implementation and verification complete.**
 
 ### Accepted direction
 
@@ -138,7 +138,7 @@ These are review targets, not all confirmed defects:
 
 ## Phase 2 — General improvements
 
-Decision status: **Planning decisions complete — implementation has not started.**
+Decision status: **Planning decisions complete — implementation and verification complete.**
 
 ### Accepted direction
 
@@ -210,7 +210,7 @@ shipped in other components; do not rebuild those features from outdated plan en
 
 ## Phase 3 — Documentation
 
-Decision status: **Planning decisions complete — implementation has not started.**
+Decision status: **Planning decisions complete — implementation and verification complete.**
 
 ### Accepted direction
 
@@ -274,7 +274,7 @@ machine-specific information out of public documentation.
 
 ## Phase 4 — Code, libraries, dependencies, and delivery
 
-Decision status: **Planning decisions complete — implementation has not started.**
+Decision status: **Planning decisions complete — implementation and verification complete.**
 
 Correctness changes are described in phase 1; shared code improvements are in phase 2.
 This phase governs dependency upgrades, compatibility, build reproducibility, and delivery.
@@ -401,3 +401,19 @@ at handoff.
 | D-018 | Phase 4 | Use pinned constraints for tested development, optional-web, and build environments; update them deliberately in reviewed changes. | Accepted — user answer, 2026-10-02 |
 | D-019 | Phase 4 | Run local tests, package-container checks, and available VM/browser checks; document genuine coverage gaps and keep mutating QA off the real workstation. | Accepted — user answer, 2026-10-02 |
 | D-020 | Phase 4 | Commit and push verified milestones on a codex/ branch, then open a draft pull request. | Accepted — user answer, 2026-10-02 |
+
+## Additional execution evidence and decisions — 2026-10-02
+
+Nested malformed report containers and same-second dashboard verdict selection were
+confirmed during documentation reconciliation and fixed with behavior regressions.
+A stale version constant found by packaging tests was aligned before final verification.
+Native portability checks disproved the old hard-coded glibc floor: a locally built
+Python 3.14 artifact requires GLIBC_2.44 and cannot run on Debian 13. Build tooling now
+measures all bundled ELF requirements, archives require that metadata, and release
+artifact runners are pinned to Ubuntu 24.04. A Debian 12/Python 3.11 container build measured glibc 2.36 across its bundled
+payload and passed smoke after extraction on clean Debian 13; this does not change the CLI's Python 3.11 floor.
+
+Existing Arch/Debian/Rocky guests were exercised, without building new VMs. Rocky's
+missing supported interpreter and Debian's non-applicable AUR action remain explicit
+coverage limits. Current counts, package installation and browser outcomes are recorded
+in maintenance-verification.md; historical QA measurements were not overwritten.

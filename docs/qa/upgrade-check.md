@@ -97,3 +97,10 @@ improvement, not a defect — the current code handles its own failure correctly
 - **The `ALLOWED_DOMAINS` comment earns its place** — it records that reddit and
   askubuntu block Anthropic's crawler and 400 the *whole request*, which is exactly the
   measured fact that stops someone helpfully adding them back later.
+
+## Reconciliation — 2026-10-02
+
+Remote collection/authentication/analysis failures now report BLIND and return nonzero. UC-03 structured-output improvement remains deferred; no live paid-model call is claimed.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

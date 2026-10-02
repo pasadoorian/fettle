@@ -155,15 +155,14 @@ the at-a-glance "will it run on my box" view.
 | Firmware updates | `-f` | ● | ● | ● | ✔︎ |
 | Kernel management | `-k` | ● | ● | ●¹ | |
 | Supply-chain audit | `-P` | ● | ● | ● | ✔︎ |
-| Binary hardening audit | `-H` | ● | ● | ●² | |
+| System hardening audit | `-H` | ● | ● | ●² | |
 | Compromise indicators | `-M` | ● | ● | ● | ³ |
 | Container image updates | `-C` | ● | ● | ● | |
 | Python rebuild check | `-y` | ● | — | — | ✔︎ |
 | AUR health census | `-A` | ● | — | — | |
-| AUR compromise (IoC) scan | `-P` | ● | — | — | ✔︎ |
-| | | **16/16** | **13/16** | **13/16** | |
+| | | **15/15** | **13/15** | **13/15** | |
 
-The three gaps are the same on Debian and RHEL and are Arch-only by nature — there is no
+The two gaps in this table are the same on Debian and RHEL and are Arch-only by nature — there is no
 AUR elsewhere, and both apt and dnf handle Python interpreter transitions themselves. So
 Debian and RHEL are *complete*, not partial.
 
@@ -172,8 +171,8 @@ Arch and Debian do offer removal, because pacman and apt do not.
 ³ Not in the default set — it needs root, and a compromise finding is not something
 to meet in a routine maintenance run. It **is** swept by `--everything`, where it runs
 last: an update removes a vulnerable package and does not remove an implant.
-² Needs `checksec`, which is **not packaged for RHEL 10 — EPEL included** — so in practice
-this cannot run there yet. The code and tests are in place for when it is. Both checksec
+² The binary axis needs `checksec`; its absence does not prevent the other nine axes
+from running. Availability varies by distro and enabled repositories. Both checksec
 generations are handled: 3.x (Arch) and 2.x (Fedora, Debian, Ubuntu), which share no
 command line.
 
@@ -216,7 +215,8 @@ derivatives resolve to their parent family with no extra code. Override with
 
 ## Requirements
 
-Only **Python 3.11+** and **git** are mandatory. Everything else is optional:
+The core CLI requires **Python 3.11+**. Git is needed to clone the source and for
+features that inspect git-managed state. Everything else is optional:
 fettle never installs tools — it detects what's present and **skips what's missing
 with a note**, so you install only what the commands you actually use need.
 
@@ -284,8 +284,9 @@ Which check uses what: `secureboot` → `mokutil`/`efitools` (+ systemd's `bootc
 `smartmontools`; `packages` → `pacutils` (`paccheck`) on Arch / `debsums` on Ubuntu.
 
 **Manual tools** (not in standard repos — the checks degrade to advice without
-them). fettle looks for each under `/opt/<name>/`, `/usr/share/<name>/`, and
-`~/<name>/`:
+them). CSME and TPM tools are searched under `/opt/<name>/`,
+`/usr/share/<name>/`, and `~/<name>/`. Chipsec uses the explicit
+`[secure].chipsec_cmd` argv in the configuration; it is not auto-detected:
 
 | Check | Tool | Get it |
 |---|---|---|
@@ -366,11 +367,10 @@ tar -xzf fettle-*-linux-x86_64.tar.gz && cd fettle-*/
 sudo install -m 755 fettle /usr/local/bin/fettle
 ```
 
-It needs **glibc 2.38 or newer**, so it runs on Ubuntu 24.04, Debian 13, Fedora 40+ and
-Arch, but **not** on Ubuntu 22.04, Debian 12 or RHEL/Rocky/AlmaLinux 9. On those, use
-the distro package or the zipapp — both are on the same release page and both work
-everywhere. The limit comes from the python runtime compiled into the binary, not from
-fettle.
+Check the archive's `RUNNING.md` and `glibc-min.txt` for its measured minimum glibc
+version. The executable and bundled Python libraries determine this requirement;
+changing the build environment can change it. If your system is older than that
+minimum, use the distro package or zipapp with Python 3.11 or newer.
 
 `fettle --version` prints `(binary)` for this build, so a bug report says which artifact
 it came from.
@@ -434,8 +434,7 @@ fettle remote host -u      # any action on another box over ssh (nothing to inst
 
 ## Documentation
 
-Everything else — every action, every flag, every config key, and the reasoning
-behind the defaults — is in the
+The full manual is in the
 **[wiki](https://github.com/pasadoorian/fettle/wiki)**.
 
 | Page | What's in it |
@@ -444,11 +443,26 @@ behind the defaults — is in the
 | [Package supply-chain](https://github.com/pasadoorian/fettle/wiki/Package-supply-chain) | `pkg-audit`, `pkg-integrity`, `aur-audit`, `aur-precheck` — provenance, IoC feeds, and the pre-upgrade gate |
 | [System hardening audit](https://github.com/pasadoorian/fettle/wiki/System-hardening-audit) | `-H` and its ten axes, what each one can and can't see, and how to tune or disable them |
 | [System supply-chain](https://github.com/pasadoorian/fettle/wiki/System-supply-chain) | `sys-audit` — Secure Boot, TPM, microcode, SPI/BIOS, storage firmware; local and remote |
-| [Security advisories](https://github.com/pasadoorian/fettle/wiki/Security-advisories) | `advisory-check` — distro CVE feeds, OSV for language dependencies, and the warn-gate |
+| [Security advisories](https://github.com/pasadoorian/fettle/wiki/Security-advisories) | `advisory-check` — distro CVE feeds, OSV for language dependencies, cache coverage and the pre-update gate |
 | [Remote maintenance](https://github.com/pasadoorian/fettle/wiki/Remote-maintenance) | `fettle remote`, host groups, and how fettle gets itself onto a host that doesn't have it |
 | [Configuration & reporting](https://github.com/pasadoorian/fettle/wiki/Configuration-and-reporting) | The full `config.toml`, reports and run logs, `fettle report`, and the experimental web UI |
 | [AI upgrade check](https://github.com/pasadoorian/fettle/wiki/AI-upgrade-check) | `upgrade-check` — what it sends, what it costs, and why it's experimental |
 | [Reference](https://github.com/pasadoorian/fettle/wiki/Reference) | Common options, exit codes, how elevation works, architecture, and development |
+
+Current repository guidance supplements the wiki: [architecture](docs/architecture.md),
+[configuration example](fettle.toml.example), [dependency setup](docs/dependencies.md),
+[issue index and recommendations](docs/issues.md), and [verification](docs/maintenance-verification.md).
+The [wiki handoff](docs/wiki-change-list.md) lists changes prepared for separate application.
+
+Experimental AUR build review uses one static engine for a local tree,
+`aur-precheck --build-dir`, and cached `pkg-audit` inputs. It never executes scripts;
+missing or dynamic inputs are coverage gaps. See [AUR build review](docs/aur-build-review.md)
+for commands, severity and limits.
+
+The experimental web UI requires a loopback bind and same-origin HTTP/WebSocket
+requests. WebSocket Origin is required, overlapping actions are rejected, and submitted
+sudo passwords clear after confirmation. Read-only buttons run with unprivileged
+coverage; previews and browser QA are not proof that privileged hardware checks ran.
 
 ## fettle vs. topgrade
 

@@ -27,8 +27,8 @@ publishes one, including Arch.
 **Snapshot-pinned.** A cloud image is dated the day it was built, so a VM reverted to its
 `pristine` snapshot always presents the *same* set of pending updates — and that set grows
 as the archive moves on. That is what keeps the lab reliably out-of-date without running
-any repo infrastructure. cloud-init is told **not** to update on first boot for the same
-reason: it would consume the very updates the tests need.
+any repo infrastructure. cloud-init refreshes package metadata (`package_update: true`) but does not upgrade
+installed packages (`package_upgrade: false`); upgrading would consume the pending set.
 
 **Bridged, not NAT.** Guests get ordinary LAN addresses, so `fettle remote <ip>` needs no
 jump host. Addresses come from `qemu-guest-agent`, because libvirt only knows DHCP leases
@@ -51,7 +51,7 @@ for networks it manages.
 `lab.py matrix` runs each action against each built target through **`fettle remote`** —
 the path fettle is actually used by — and prints a grid.
 
-**Every cell is PASS, FAIL, or SKIP-with-a-reason.** There is no fourth, quieter state: an
+**Cells distinguish PASS, ISSUE, FAIL, SKIP and N/A, with non-PASS reasons.** An
 action that could not run must never look like one that ran and found nothing. That failure
 mode is why this lab exists, so the runner refuses to reproduce it, and every non-PASS cell
 prints why.
@@ -138,11 +138,11 @@ explicit `HostName` below.
 
 ```sshconfig
 Host fettle-fedora
-    HostName 192.168.1.252      # only while its DNS registration is missing
+    HostName <guest-address>   # only while its DNS registration is missing
 
 Host fettle-*
-    User paulda                 # whatever you set as ADMIN_USER
-    IdentityFile ~/.ssh/paulda-ecdsa
+    User youruser               # whatever you set as ADMIN_USER
+    IdentityFile ~/.ssh/id_ed25519
     IdentitiesOnly yes
     UserKnownHostsFile ~/.ssh/known_hosts.fettle-lab
     StrictHostKeyChecking accept-new
@@ -199,3 +199,18 @@ SKIP-with-a-reason rather than silently passing:
   `fettle -H` then reports 147 real deviations across 35 packages including a Critical on
   `grub2-tools-minimal`. The rocky9/alma9 targets now install it, so this is real coverage
   rather than a permanent SKIP. The EL10 statement stands on its own.
+
+## Maintenance prerequisites and evidence
+
+The remote CLI requires Python 3.11+. A guest with only Python 3.9 is refused before
+execution even if SSH succeeds; the present Rocky 9 snapshot illustrates that gap.
+For future lab builds, provision a supported versioned interpreter before creating the
+pristine snapshot. This maintenance pass does not rebuild guests to fill gaps.
+
+`-O` refreshes metadata on some backends, so the historical READ_ONLY_ACTIONS name
+is not a guarantee that every listed action is side-effect-free. Its placement and
+any desired revert-policy change need explicit review. Matrix markers are heuristics:
+a summary-level PASS can include warnings or unrecognized missing-tool text. Review
+full output as well as the grid, and distinguish unsupported AUR actions from failures.
+Current results and limitations are in [verification](../../docs/maintenance-verification.md).
+Local logs remain ignored because they contain host addresses and network details.

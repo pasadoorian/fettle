@@ -199,3 +199,10 @@ Arch's `checkrebuild` does not. Same root cause as **Q7** (`-O` on Arch); tracke
 - The sweep's "native says" cross-check ran `sudo needs-restarting -r` and read exit 1 as
   *"reboot required"*. On Alma, where the binary does not exist, exit 1 was
   **command-not-found**. The finding was real, but that particular evidence was not.
+
+## Reconciliation — 2026-10-02
+
+R-06/Q7 is already corrected by Arch extra_no_root. Missing rebuild tools now retain BLIND summary/exit behavior through backend Results.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

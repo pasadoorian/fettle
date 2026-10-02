@@ -39,7 +39,7 @@ line-length = 100
 target-version = "py311"
 
 # Say which rules we lint against rather than inheriting whatever the tool decided this
-# week. `dev` pins only `ruff>=0.6`, so CI installs the newest — and ruff 0.16 CHANGED
+# week. Historically dev used an unbounded Ruff requirement, and ruff 0.16 CHANGED
 # ITS DEFAULT SELECTION, turning a clean tree into 267 errors with no code change. That
 # broke the release pipeline's first real run, on a tag, without a commit to blame.
 #

@@ -452,3 +452,10 @@ machine fettle never touched. Should be non-zero; see **QA-CLEAN-28**.
   `paccache -rk2` (pacman-contrib, already a dependency of the Arch lab target) would
   reclaim most of the same space while keeping the last two versions of everything — the
   conventional Arch answer, and much closer in spirit to what the RHEL backend already does.
+
+## Reconciliation — 2026-10-02
+
+F-05/F-07/F-08/F-09/F-11 were already corrected by later code. This pass strengthens private writes and collision handling; abandoned empty logs remain a retention concern. Old permission deferrals are superseded, while hardware/service cases not rerun keep their historical status.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

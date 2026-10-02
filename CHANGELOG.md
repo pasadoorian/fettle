@@ -25,7 +25,8 @@ only with Python 3.11 as its floor. The web UI and new AUR build review remain e
 - Keep the newest same-second report, including numeric suffixes above nine. Serialize
   report writers and publish private files atomically; rotate all discovered report types.
 - Ignore malformed JSON envelopes without breaking dashboard collection; historical text
-  reports remain readable.
+  reports remain readable. Malformed known payload containers show unknown coverage;
+  dashboard verdicts and deltas respect numeric same-second ordering.
 - Isolate the advisory test cache from the invoking user's real home directory.
 - Guard both HTTP and WebSocket origins in the experimental web UI. Serialize web
   runs, terminate subprocess groups on cancellation, clear submitted sudo passwords,
@@ -50,6 +51,9 @@ only with Python 3.11 as its floor. The web UI and new AUR build review remain e
   permissions to release upload. Adopt SPDX metadata for the reviewed setuptools range.
 - Exclude local memories and lab-specific data from source-package staging. Add current
   architecture, issue, dependency and verification documents plus a separate wiki handoff.
+- Include development constraints and regression fixtures in source distributions.
+  Measure all bundled native ELF glibc requirements and include them in archives;
+  pin the release artifact runner rather than claiming a fixed floor for every build.
 
 ## [1.20.0] — startup persistence, end to end
 

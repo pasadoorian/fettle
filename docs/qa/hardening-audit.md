@@ -182,3 +182,10 @@ A permanent SKIP is a claim, and this one was wrong twice: first that checksec c
 installed on EL at all, then that installing it had closed the gap. Both times the SKIP was
 believed rather than retested. **A skip needs re-earning, not inheriting** — the reason it
 was taken can expire, and nothing announces when it has.
+
+## Reconciliation — 2026-10-02
+
+H-06 was corrected by later privilege work. Current hardening has ten axes, including experimental auditing; checksec absence affects the binary axis only. Hardware/tool gaps retain their historical status.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

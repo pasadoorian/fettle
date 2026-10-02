@@ -172,3 +172,10 @@ today's providers and silently wrong against any that spells it differently. Now
   parsing was verified during Phase 19 and by the lab matrix.
 - **The `-u`/`-a` Critical warn-gate** (`security_gate`) is untouched here and still
   unswept — it is the one path where advisory data can *block* a mutating action.
+
+## Reconciliation — 2026-10-02
+
+OSV paging, incomplete responses, inventory freshness, invoking-user environments and Debian source-version matching now have regression coverage. Branch-specific fixed-version interpretation remains open (ADV-01); past unswept gate/hardware cases are not retroactively marked passed.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

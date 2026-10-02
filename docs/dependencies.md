@@ -44,3 +44,12 @@ long-lived environment or automate unreviewed dependency PRs.
 Starlette 1.7 emits a deprecation warning for its HTTPX-based test client; the
 current client still passes. A future test-client migration should be reviewed
 with Starlette's release notes rather than added as an untested transitive package.
+
+Native artifact builds additionally measure required GLIBC symbol versions across
+bundled ELF objects. They require a C toolchain, Python development headers, patchelf,
+and binutils (`readelf`); archive creation also requires zip. On Debian, install
+`python3-dev gcc g++ make patchelf binutils zip` in the disposable build environment.
+A rolling-host Python 3.14 build required glibc 2.44; a smoke pass
+on that host did not make it portable to Debian 13. Release artifact jobs pin Ubuntu
+24.04 to control that input, and generated RUNNING.md records each artifact's measured
+requirement. See the portability results in [verification](maintenance-verification.md).

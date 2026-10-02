@@ -179,3 +179,10 @@ A rename is a breaking change, so an alias plus a doc change is the cheap versio
 right: the extra entry was marked `[ignored]` (an `IgnorePkg` package), which `pacman -Sup`
 honours and a naive `-Qu` count does not. Cross-checking against a "simpler" command is not
 automatically cross-checking against the truth.
+
+## Reconciliation — 2026-10-02
+
+O-05 is already corrected by Arch extra_no_root. O-06 naming stays deferred for compatibility. Failed apt/pacman transaction queries are fixed in 1.21.0 and covered by regressions.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

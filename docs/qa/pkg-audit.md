@@ -251,3 +251,10 @@ a decision.
 **Documented in the meantime**: the sideload finding describes *the copy currently
 installed*, not the extension's history, and the finding now tells you how to clear it —
 `re-install it from the registry to clear this (codium --update-extensions, …)`.
+
+## Reconciliation — 2026-10-02
+
+P-02 remains deferred pending a coverage-aware resolution ledger. P-03/P-05 podman/flatpak identity gaps were corrected in 1.15.0. Experimental cached build-script review now records BUILD_LOGIC findings and UNVERIFIABLE missing inputs.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

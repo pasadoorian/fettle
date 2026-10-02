@@ -55,3 +55,10 @@ The local machine writes to a host directory called `local` while remote runs us
 hostnames, so this workstation appears as both `local` and (from remote runs) `wopr`.
 Renaming it would need a migration for every existing tree, which is not a fix and not
 minimal. Recorded here rather than done.
+
+## Reconciliation — 2026-10-02
+
+Private atomic file replacement and serialized numeric collision allocation are strengthened; noninteractive logs now record actual exit codes. Old absent codes mean unknown. Host-alias migration remains deferred.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

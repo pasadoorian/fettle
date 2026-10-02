@@ -222,3 +222,10 @@ Three consequences:
   still counts every row as a discrepancy line. Out of scope for H-08, which was about
   false cleans, and the fallback only runs when `debsums` is absent — but it means an
   edited `/etc` file inflates that count.
+
+## Reconciliation — 2026-10-02
+
+The dpkg fallback config-drift distinction remains open (PI-01). MD5 manifests and the declined expected-list suppression knob remain documented limitations.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

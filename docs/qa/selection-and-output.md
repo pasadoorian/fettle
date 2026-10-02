@@ -60,3 +60,10 @@ of a stable release to do it on.
 
 The help text describes the current behaviour accurately, so nobody is misled — they are
 just not well served. Worth doing properly once 1.0 is out.
+
+## Reconciliation — 2026-10-02
+
+S-03 quiet behavior stays deferred as CLI-02. Action Results now preserve failure categories without duplicate digests; the existing action registry structure remains.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

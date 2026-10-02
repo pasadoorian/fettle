@@ -61,3 +61,10 @@ The entry point's missing `print_summary()` and hardcoded `return 0` were fixed 
 release earlier, under [advisory-check](advisory-check.md) AC-05 — `advisory-update`
 shares `_run_advisory` with it, so it inherited the plumbing. This sweep is what the
 plumbing then had to carry.
+
+## Reconciliation — 2026-10-02
+
+Failed language inventory/batch/record refreshes preserve prior source data and do not stamp it successfully refreshed. Stored coverage distinguishes degradation; intentional warning policy remains.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

@@ -45,7 +45,7 @@ packaging/check-tag.sh "v$(packaging/version.sh)"   # pre-flight, always passes
 git tag v1.0.0 && git push --tags
 ```
 
-The workflow runs the guard first, then the suite on 3.11/3.12/3.13, then builds each
+The workflow runs the guard first, then the suite on 3.11/3.12/3.13/3.14, then builds each
 package **and installs it in a clean container of its own distro**, and finally creates
 a **draft** release. Publishing is a human step, so a bad build can be deleted before
 anyone sees it.
@@ -67,8 +67,8 @@ explaining what each artifact is gets appended, since that part is identical eve
 
 **Attaching the assets is `packaging/publish.sh`,** for the same reason the guard is a
 script: `tests/test_packaging.py` can exercise it. It creates the release with **no
-assets**, attaches each file separately with three attempts, adopts an existing release
-on a re-run rather than refusing, and then asks the release what it actually has and
+assets**, attaches each file separately with three attempts, adopts an existing confirmed draft
+on a re-run; published releases are refused, and then asks the release what it actually has and
 fails if anything is missing.
 
 That last check exists because of how v1.16.0 shipped. The step was a single
@@ -79,13 +79,14 @@ Had it hit the ninth, `gh` would have exited 0 with a package missing from the r
 
 Two things worth knowing when it goes wrong:
 
-* **If `gh release create` itself fails, no release object exists**, so deleting and
-  re-pointing the tag is safe. That is also the only way to get a packaging fix into the
-  build, because the workflow checks out the tag.
-* **To repair a partial release by hand**, pull the artifacts from the run
+* **If release creation fails, inspect the remote release before retrying.** A
+  network failure can have an unknown outcome. Never delete or repoint a public tag
+  as an automatic repair; the workflow checks out the tagged commit.
+* **To repair a partial draft release by hand**, pull the artifacts from the run
   (`gh run download <id> -n <artifact>`), verify them against the already-published
   `SHA256SUMS` so you know you are uploading exactly what CI built, then
-  `gh release upload <tag> <file> --clobber`.
+  verify `gh release view <tag> --json isDraft --jq .isDraft` is true, then use
+  `packaging/publish.sh`. Published assets are outside the repair workflow.
 
 **The guard is `packaging/check-tag.sh`,** and it exists because a release tagged
 `v1.0.0` whose packages call themselves `0.120.0` installs, runs, and lies about what it
@@ -168,8 +169,8 @@ points at a temp directory and not at the mistake.
 **The axes get a Nuitka include flag each, and a smoke test.** They are loaded by a
 computed module name that no compiler can see. Measured rather than assumed:
 `--include-package=fettle` already pulls them in, so those flags are *redundant* — a
-build made without them was compiled and all six axes were present. They stay as
-belt-and-braces, derived from `AXIS_NAMES` so a seventh cannot be forgotten, but they
+earlier build made without them contained the then-current axes. Explicit includes
+and smoke expectations now derive from `AXIS_NAMES` so registry additions are covered, but they
 are not what makes it work.
 
 The check that matters is `packaging/binary/smoke.sh`, which every build runs before its
@@ -197,15 +198,16 @@ python:  sudo env PYTHONPATH=/tmp/src /usr/sbin/python3 -m fettle -V --config �
 Both correct for their case, the config pin preserved in both — and the python path
 byte-identical to what it always was, which is what says the change is additive.
 
-### What it runs on — measured, not inferred
+### Historical binary portability measurements
 
 `packaging/binary/archive.sh` packs it as `fettle-<version>-linux-x86_64.tar.gz` and
 `.zip`, with the example config, the completion script and a `RUNNING.md`. No launcher:
 the binary carries its own interpreter.
 
-The glibc floor does **not** come from the build host's glibc, which is the natural
-guess and wrong. The outer binary needs only `GLIBC_2.34`; the **libpython Nuitka
-bundles** needs `GLIBC_2.38`, and that is the real limit. Verified by running it:
+The earlier artifact below needed `GLIBC_2.34` for its outer executable and
+`GLIBC_2.38` for its bundled libpython. These measurements describe that artifact,
+not every future build. Current builds measure the executable and all bundled shared
+libraries and include the result in `RUNNING.md` and `glibc-min.txt`.
 
 | works | does not work |
 |---|---|
@@ -214,10 +216,9 @@ bundles** needs `GLIBC_2.38`, and that is the real limit. Verified by running it
 | Fedora 40+ (2.40) | RHEL / Rocky / AlmaLinux 9 (2.34) |
 | Arch, Manjaro (2.44) | |
 
-Three of fettle's supported platforms are in the right-hand column. They are covered by
-their own distro package and by the zipapp, both on the same release page, so nobody is
-left without an artifact — but it is worth knowing that **building in an older container
-would remove the limitation entirely**, since the floor follows the bundled python.
+The distro packages and zipapp use a supported system interpreter. Building the native
+artifact on an older base can lower its glibc requirement; verify the resulting payload
+and run it on the intended targets before claiming compatibility.
 
 ### The locale bug, which only a bare container finds
 
@@ -290,7 +291,7 @@ The Arch container needs `pacman -Sy` first or the `python` dependency cannot be
 resolved — again, an empty local database rather than a missing interpreter.
 
 `fettle -H --dry-run` is the check worth running rather than `--version`: it exercises
-the six hardening axes, which are loaded by a **computed** module name. If they were not
+the current hardening axes, which are loaded by a **computed** module name. If they were not
 packaged, the axis framework catches the import error and reports each one as *blind*
 rather than crashing — so a broken package would look like a cautious one. Seeing the
 axes report real results is what proves the tree is complete.
@@ -307,3 +308,21 @@ container.
 Every `%` in a comment in that file is doubled for this reason. It is also the clearest
 argument for building each package in its own distro rather than trusting one host:
 nothing about the local build hinted at it.
+
+## Reviewed maintenance builds
+
+Use [dependency constraints and setup](../docs/dependencies.md) for dev/web/Nuitka
+environments. The CLI remains standard-library only; optional-web tests run separately.
+Source staging excludes local memories and private lab config/logs. Native smoke checks
+use the current hardening registry, not a historical axis count. Build-host interpreter
+and glibc versions remain external inputs; rerun artifact checks after changing them.
+[Verification](../docs/maintenance-verification.md) records what actually ran for 1.21.0.
+
+Native builds require `readelf` (binutils) to measure the GLIBC needs of the executable
+and bundled shared libraries. `fettle-glibc-min.txt` stays beside the local binary;
+archive creation refuses missing/invalid metadata and includes the measured floor in
+RUNNING.md and glibc-min.txt. The old fixed 2.38 claim described an earlier build and
+is superseded: the rolling-host Python 3.14 build required 2.44. Release artifact jobs
+pin Ubuntu 24.04; verify portability against a clean older target after toolchain changes.
+Python sdists include reviewed constraints, documentation, packaging and test fixtures
+via MANIFEST.in while excluding local memories and private lab data.
