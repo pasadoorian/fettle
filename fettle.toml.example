@@ -150,4 +150,6 @@
 #snap_updater = "snap"       # snap | none
 #[updaters.rhel]
 #system_updater = "dnf"      # dnf | none
-
+# Validation preserves valid settings and valid sibling keys in tables. Invalid
+# types/ranges use the built-in default with a warning naming the key. Malformed
+# TOML falls back to the whole default configuration. Warnings omit setting values.

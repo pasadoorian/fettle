@@ -137,6 +137,13 @@ def _load_entry(path: Path) -> dict | None:
             env = json.loads(path.read_text())
         except (OSError, ValueError):
             return None
+        if not isinstance(env, dict):
+            return None
+        if any(key in env and not isinstance(env[key], str)
+               for key in ("tool", "timestamp", "host", "schema", "command")):
+            return None
+        if "data" in env and not isinstance(env["data"], dict):
+            return None
         env.setdefault("tool", tool)
         env.setdefault("timestamp", ts)
         return env

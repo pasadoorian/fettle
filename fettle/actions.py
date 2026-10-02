@@ -6,6 +6,8 @@ in the ABC) so a half-built backend degrades gracefully.
 """
 
 from __future__ import annotations
+
+from .backends.base import Result
 from .output import BLIND, FAILED, FOUND
 
 from typing import TYPE_CHECKING
@@ -525,8 +527,15 @@ def run(actions: list[str], backend: "PackageBackend", ctx: "Context") -> None:
             out.current_action = ""
             continue
         before = out.summary_size()
+        failures_before = len(out.failures_of(FAILED, BLIND, FOUND))
         try:
-            handler(backend, ctx)
+            result = handler(backend, ctx)
+            if isinstance(result, Result):
+                if not result.ok and len(out.failures_of(FAILED, BLIND, FOUND)) == failures_before:
+                    out.summary_fail(result.summary or "did NOT complete — see the warnings above",
+                                     kind=result.failure_kind)
+                elif result.ok and result.summary and out.summary_size() == before:
+                    out.summary_add(result.summary)
         except NotImplementedError:
             out.note(f"'{name}' not yet implemented for the {backend.name} backend")
             out.summary_warn(f"did NOT run — the {backend.name} backend does not "

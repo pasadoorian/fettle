@@ -611,12 +611,22 @@ class ArchBackend(PackageBackend):
                 notes.append(f"could not refresh repos — {why}. The preview below "
                              "reflects the last sync and MAY BE STALE.")
 
-        upgrades = {n: (old, new)
-                    for n, old, new in _parse_arrow_upgrades(
-                        self._query(["pacman", "-Qu", *dbargs]))}
+        qu = command.run(["pacman", "-Qu", *dbargs], capture=True)
+        # pacman -Qu uses exit 1 with no output when there are no upgrades. An
+        # error diagnostic or another exit code is a failed query, not an empty list.
+        if not qu.ok and not (qu.returncode == 1 and not qu.stdout and not qu.stderr):
+            return Transaction(ok=False, notes=[*notes,
+                f"pacman upgrade inventory failed (exit {qu.returncode})",
+                *(qu.stderr or "").strip().splitlines()[:3]])
+        upgrades = {n: (old, new) for n, old, new in _parse_arrow_upgrades(qu.stdout)}
+        resolved = command.run(
+            ["pacman", "-Sup", "--print-format", "%r/%n %v", *dbargs], capture=True)
+        if not resolved.ok:
+            return Transaction(ok=False, notes=[*notes,
+                f"pacman transaction resolution failed (exit {resolved.returncode})",
+                *(resolved.stderr or "").strip().splitlines()[:3]])
         items: list[TxItem] = []
-        for name, ver in _parse_sup_lines(
-                self._query(["pacman", "-Sup", "--print-format", "%r/%n %v", *dbargs])):
+        for name, ver in _parse_sup_lines(resolved.stdout):
             if name in upgrades:
                 old, new = upgrades[name]
                 items.append(TxItem(name=name, new=new, old=old, kind="upgrade"))
@@ -846,12 +856,14 @@ class ArchBackend(PackageBackend):
             # exactly like "nothing needs rebuilding" to anyone not watching closely.
             out.warn("checkrebuild not found (install rebuild-detector) — whether any "
                      "package needs rebuilding was NOT checked.")
-            return Result(ok=False)
+            return Result(ok=False, summary="rebuild needs were NOT checked — checkrebuild not found",
+                          failure_kind="blind")
         proc = command.run(["checkrebuild"], capture=True)
         if not proc.ok and not (proc.stdout or "").strip():
             out.warn(f"checkrebuild failed (exit {proc.returncode}) — whether any "
                      "package needs rebuilding was NOT determined.")
-            return Result(ok=False)
+            return Result(ok=False, summary="rebuild needs could NOT be determined",
+                          failure_kind="blind")
         lines = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
         if not lines:
             out.ok("no packages need rebuilding.")
@@ -888,7 +900,8 @@ class ArchBackend(PackageBackend):
             # beats inventing a sentinel version that matches nothing.
             out.warn("could not determine the running Python version — packages "
                      "stranded on an old Python were NOT checked.")
-            return Result(ok=False)
+            return Result(ok=False, summary="Python rebuild needs were NOT checked",
+                          failure_kind="blind")
         out.note(f"current Python version: {current}")
         libdir = ctx.root / "usr/lib"
         old_dirs = sorted(

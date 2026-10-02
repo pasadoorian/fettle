@@ -244,8 +244,9 @@ def test_remote_upgrade_check_no_local_key_lists_packages(capsys, monkeypatch):
     with patch("fettle.remote.collect", return_value=snap.to_json()):
         rc = cli_main(["remote", "ec3", "-U", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0 and "no local API key" in cap.err
+    assert rc == 1 and "no local API key" in cap.err
     assert "bash  5.1 -> 5.2" in cap.out
+    assert "▸ Summary" in cap.out and "NOT run" in cap.out
 
 
 def test_remote_upgrade_check_collect_failure(capsys):
@@ -279,8 +280,9 @@ def test_remote_upgrade_check_analysis_unavailable_lists_packages(capsys, monkey
          patch("fettle.ai.upgrade_check.analyze", return_value=None):
         rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0 and "AI analysis unavailable" in cap.err
+    assert rc == 1 and "AI analysis unavailable" in cap.err
     assert "bash  5.1 -> 5.2" in cap.out
+    assert "▸ Summary" in cap.out and "NOT assessed" in cap.out
 
 
 def test_remote_upgrade_check_notes_missing_inxi(capsys, monkeypatch, tmp_path):

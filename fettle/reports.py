@@ -13,9 +13,12 @@ swaps what goes in the body without touching any of this.
 from __future__ import annotations
 
 import datetime as _dt
+import fcntl
 import json
 import os
 import re
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from .util import chown_to_user
@@ -98,12 +101,43 @@ def _stem(directory: Path, name: str, ts: str) -> Path:
     if two writes land in the same second. The `.txt` and `.json` share this stem
     so rotation treats them as one unit."""
     base = directory / f"{name}-{ts}"
-    if not base.with_suffix(".txt").exists():
+    entries = [p for p in directory.glob(f"{name}-{ts}*")
+               if p.suffix in (".txt", ".json") and entry_key(p)[0] == ts]
+    if not entries:
         return base
-    i = 1
-    while (directory / f"{name}-{ts}-{i}.txt").exists():
-        i += 1
-    return directory / f"{name}-{ts}-{i}"
+    return directory / f"{name}-{ts}-{max(entry_key(p)[1] for p in entries) + 1}"
+
+
+def entry_key(path: Path) -> tuple[str, int]:
+    """Timestamp and numeric collision suffix; old unsuffixed entries are first."""
+    match = re.search(r"-(\d{8}-\d{6})(?:-(\d+))?$", path.stem)
+    return (match[1], int(match[2] or 0)) if match else (path.stem, 0)
+
+
+@contextmanager
+def writer_lock(directory: Path, ctx):
+    """Serialize stem allocation and rotation for writers in this host directory."""
+    lock = directory / ".writer.lock"
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        _secure(lock, ctx)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def atomic_text(path: Path, text: str, ctx) -> None:
+    """Publish complete UTF-8 content from a private file in the same directory."""
+    fd, raw = tempfile.mkstemp(prefix=".fettle-", dir=path.parent)
+    temporary = Path(raw)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        _secure(temporary, ctx)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _json_enabled(ctx) -> bool:
@@ -202,24 +236,28 @@ def write_report(name: str, body: str, ctx, *, host: str = "local", now=None,
     maybe_legacy_note(ctx)
     directory = reports_dir(ctx, host)
     ts = _timestamp(now)
-    stem = _stem(directory, name, ts)
-    txt = stem.with_suffix(".txt")
-    txt.write_text(body if body.endswith("\n") else body + "\n")
-    _secure(txt, ctx)
-    if _json_enabled(ctx):
-        js = stem.with_suffix(".json")
-        js.write_text(json.dumps(envelope(name, host, ts, data=data, body=body),
-                                 indent=2) + "\n")
-        _secure(js, ctx)
-    _, keep = _settings(ctx)
-    prune(directory, name, keep)
+    with writer_lock(directory, ctx):
+        stem = _stem(directory, name, ts)
+        txt = stem.with_suffix(".txt")
+        atomic_text(txt, body if body.endswith("\n") else body + "\n", ctx)
+        if _json_enabled(ctx):
+            js = stem.with_suffix(".json")
+            atomic_text(js, json.dumps(envelope(name, host, ts, data=data, body=body),
+                                      indent=2) + "\n", ctx)
+        _, keep = _settings(ctx)
+        prune(directory, name, keep)
     return txt
 
 
 def prune_known(directory: Path, keep: int) -> None:
     """Rotate every known report type in ``directory`` to the newest ``keep``.
     Used after pulling a batch of reports back from a remote host."""
-    for name in _LEGACY_NAMES:
+    names = set(_LEGACY_NAMES)
+    for path in directory.glob("*.txt"):
+        match = re.fullmatch(r"(.+)-\d{8}-\d{6}(?:-\d+)?", path.stem)
+        if match:
+            names.add(match[1])
+    for name in names:
         prune(directory, name, keep)
 
 
@@ -227,10 +265,9 @@ def prune(directory: Path, name: str, keep: int) -> list[Path]:
     """Keep only the newest ``keep`` ``<name>-<ts>`` entries, removing each older
     entry's ``.txt`` **and** its ``.json`` sibling together.
 
-    Names sort chronologically (the timestamp is fixed-width), so the oldest are
-    the lexicographically-first. Returns the ``.txt`` paths removed.
+    Timestamp and numeric collision suffix determine age. Returns removed paths.
     """
-    files = sorted(directory.glob(f"{name}-[0-9]*.txt"))
+    files = sorted(directory.glob(f"{name}-[0-9]*.txt"), key=entry_key)
     doomed = files[:-keep] if keep > 0 else files
     removed = []
     for old in doomed:

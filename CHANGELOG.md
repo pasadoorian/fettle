@@ -11,6 +11,19 @@ All notable changes to fettle are recorded here. Newest first.
 
 ## [Unreleased]
 
+- Preserve unsuccessful backend checks in action summaries and exit status; missing
+  rebuild and firmware tools are recorded as blindness rather than a clean result.
+- Reject failed apt/pacman transaction queries instead of reporting an empty upgrade set.
+- Validate configuration types, ranges, and nested settings independently. Valid siblings
+  survive; invalid settings use defaults with key-specific warnings that omit values.
+- Remote upgrade analysis now records unsuccessful collection, authentication, or analysis
+  in its summary and exits nonzero when it could not run.
+- Keep the newest same-second report, including numeric suffixes above nine. Serialize
+  report writers and publish private files atomically; rotate all discovered report types.
+- Ignore malformed JSON envelopes without breaking dashboard collection; historical text
+  reports remain readable.
+- Isolate the advisory test cache from the invoking user's real home directory.
+
 ## [1.20.0] — startup persistence, end to end
 
 > **These features are experimental.** Every threshold below was measured across six real

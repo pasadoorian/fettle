@@ -1223,26 +1223,36 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         set_debug(True)
 
     out.section(f"Upgrade check (remote: {host})")
+    out.current_action = "upgrade-check"
+
+    def _finish() -> int:
+        out.print_summary()
+        return int(out.had_failures)
+
     out.warn("experimental feature — verify its advice before acting on it.")
     out.note(f"collecting a system snapshot from {host} (read-only, no sudo)...")
     payload = remote.collect(host, ["upgrade-check", "--collect"], ssh_args=ssh_args)
     if payload is None:
         out.err(f"could not collect a snapshot from {host}.")
-        return 1
+        out.summary_fail("upgrade check did NOT run — snapshot collection failed", kind=BLIND)
+        return _finish()
     try:
         snap = Snapshot.from_json(payload)
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         out.err(f"{host} returned an unreadable snapshot (fettle version mismatch?).")
-        return 1
+        out.summary_fail("upgrade check did NOT run — unreadable snapshot", kind=BLIND)
+        return _finish()
 
     if not snap.pending:
         out.ok(f"{host} is up to date — nothing to upgrade.")
-        return 0
+        out.summary_add("upgrade check: nothing pending")
+        return _finish()
     if resolve_auth(cfg) is None:
         out.warn("no local API key (ANTHROPIC_API_KEY or config ai_api_key) — "
                  f"showing {host}'s pending packages only:")
         _print_pending(snap.pending)
-        return 0
+        out.summary_fail("upgrade check did NOT run — no local API key", kind=BLIND)
+        return _finish()
 
     if not snap.inxi:  # inxi absent on the remote — analysis still runs, less context
         out.note(f"(inxi wasn't available on {host}; analysis has less hardware context)")
@@ -1254,10 +1264,12 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         if not args.verbose:
             out.note("re-run with -v to see why the AI step failed.")
         _print_pending(snap.pending)
-        return 0
+        out.summary_fail(f"{len(snap.pending)} pending package(s) were NOT assessed", kind=BLIND)
+        return _finish()
 
-    _render_upgrade_check(out, result, user_home=Path.home(), host=host, config=cfg)
-    return 0
+    _render_upgrade_check(out, result, user_home=invoking_user_home(), host=host, config=cfg)
+    _summarize_verdict(out, result, len(snap.pending))
+    return _finish()
 
 
 # Single-flag aliases -> subcommand runner. Handled before the pipeline parser.

@@ -705,7 +705,8 @@ class RhelBackend(PackageBackend):
                      "yum-utils`). dnf4's own `dnf needs-restarting` lists processes, "
                      "not the reboot state, and exits 0 either way.")
             self._restartable_services(ctx, standalone=False)
-            return Result(ok=False)
+            return Result(ok=False, summary="reboot state could NOT be determined",
+                          failure_kind="blind")
         proc = command.run(hint, capture=True)
         body = _strip_dnf_notices(proc.stdout or "")
         if proc.returncode == 0:

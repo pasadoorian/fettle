@@ -60,7 +60,7 @@ be recorded explicitly during planning.
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | Test isolation | Complete, 2026-10-02 | Reproduced the real-home SQLite failure; isolated the test's invoking identity. All 64 advisory tests and Ruff for the changed test pass. |
-| Six confirmed bugs | In progress | Regression coverage and corrections are being implemented. |
+| Six confirmed bugs | Complete, 2026-10-02 | All six reproduced before correction. 343 focused backend/config/remote/report tests pass; new regression cases cover missing tools, invalid settings, and same-second retention. |
 | Related investigations and targeted improvements | Pending | Follow the initial correctness fixes. |
 | Dependency constraints and compatible upgrades | Pending | Recheck upstream candidates and verify chosen pins. |
 | AUR build-script scanning | Pending | Follows maintenance work. |

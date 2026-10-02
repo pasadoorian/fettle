@@ -216,6 +216,7 @@ class Context:
 class Result:
     ok: bool = True
     summary: str = ""
+    failure_kind: str = "failed"
 
 
 @dataclass
@@ -468,7 +469,8 @@ class PackageBackend(abc.ABC):
         out = ctx.output
         if not command.which("fwupdmgr"):
             out.warn("fwupdmgr not installed (fwupd) — firmware was NOT checked.")
-            return Result(ok=False)
+            return Result(ok=False, summary="firmware was NOT checked — fwupdmgr not installed",
+                          failure_kind="blind")
 
         # 2 = "no actions but successfully executed" — the metadata was already
         # current, which is the normal case on a machine that ran recently.
@@ -494,7 +496,8 @@ class PackageBackend(abc.ABC):
                      f"{proc.returncode}) — firmware was NOT assessed."
                      + (f" {detail[0]}" if detail else ""))
             out.summary_warn("firmware status UNKNOWN — the check could not run")
-            return Result(ok=False)
+            return Result(ok=False, summary="firmware status UNKNOWN — the check could not run",
+                          failure_kind="blind")
         if stale:
             # An answer from metadata that could not be refreshed is an answer about
             # whatever was last downloaded, which may predate the update being looked for.
