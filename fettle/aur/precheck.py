@@ -28,6 +28,7 @@ with ``pkg-audit`` (``~/.cache/fettle/ioc``).
 
 from __future__ import annotations
 
+import argparse
 import os
 import time
 from pathlib import Path
@@ -184,7 +185,7 @@ def scan(pkgs, *, home: Path | None = None,
     return crit, warn
 
 
-def _emit_and_count(pkgs) -> int:
+def _emit_and_count(pkgs, *, build_dir: Path | None = None, metadata: bool = True) -> int:
     """Print the findings and return how many were CRIT."""
     crit = 0
 
@@ -194,7 +195,18 @@ def _emit_and_count(pkgs) -> int:
             crit += 1
         print(line)
 
-    check(pkgs, emit=_emit)
+    if metadata:
+        check(pkgs, emit=_emit)
+    if build_dir is not None:
+        from .buildscan import scan_directory
+        from ..supplychain.base import Severity
+
+        result = scan_directory(build_dir, package=pkgs[0] if len(pkgs) == 1 else "")
+        for hit in result.hits:
+            prefix = "CRIT" if hit.severity == Severity.CRITICAL else "WARN"
+            _emit(f"{prefix} [{hit.severity.label}] {hit.file}:{hit.line} {hit.rule}: {hit.detail}")
+        for gap in result.unavailable:
+            _emit(f"WARN build-script review NOT complete: {gap}")
     return crit
 
 
@@ -208,8 +220,17 @@ def _installed_foreign() -> list[str]:
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
 
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="fettle aur-precheck",
+                                description="AUR metadata/IOC gate with optional static build-tree review.")
+    p.add_argument("--build-dir", type=Path, help="inspect this already-fetched local build tree without executing it")
+    p.add_argument("--build-only", action="store_true", help="skip network metadata/IOC checks; requires --build-dir")
+    p.add_argument("packages", nargs="*", help="AUR package names; omitted means installed foreign packages")
+    return p
+
+
 def main(argv) -> int:
-    """``fettle aur-precheck [<pkg> ...]`` — always returns 0 (advisory).
+    """``fettle aur-precheck [<pkg> ...]`` — exits 1 for CRITICAL findings.
 
     With package names (the yay hook path) it checks exactly those and stays
     silent when clean, byte-for-byte as before. With NO arguments it scans every
@@ -224,11 +245,17 @@ def main(argv) -> int:
     # literal `--` is taken as a package name verbatim (standard convention),
     # so a name is never silently dropped for looking like a flag.
     argv = list(argv)
+    # Retain the historical tolerance for forwarded flags, but parse our explicit
+    # build-tree option so its path can never become an AUR package name.
+    args, unknown = parser().parse_known_args(argv)
+    if args.build_only and args.build_dir is None:
+        parser().error("--build-only requires --build-dir")
     if "--" in argv:
-        sep = argv.index("--")
-        pkgs = [a for a in argv[:sep] if not a.startswith("-")] + argv[sep + 1:]
+        pkgs = args.packages
     else:
-        pkgs = [a for a in argv if not a.startswith("-")]
+        pkgs = args.packages + [a for a in unknown if not a.startswith("-")]
+    if args.build_dir is not None:
+        return int(bool(_emit_and_count(pkgs, build_dir=args.build_dir, metadata=not args.build_only)))
     if not _env_bool("AUR_PRECHECK", True):
         # The hook path stays silent — the env var is an explicit opt-out and the hook
         # fires per package. A human who typed the command deserves to know it did

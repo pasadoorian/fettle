@@ -16,7 +16,9 @@ import time
 
 from ..aur import common as aur_common
 from ..aur import meta as aur_meta
+from ..aur import buildscan
 from .base import (
+    BUILD_LOGIC,
     Examined,
     KNOWN_BAD,
     STALE_OR_ABANDONED,
@@ -31,8 +33,8 @@ from .base import (
 class AURSource(SourceProvider):
     source = "aur"
     coverage = ("orphan / out-of-date / stale / known-bad via AUR RPC + lenucksi IOC "
-                "feeds; reports when a feed could not be read, so a quiet result is "
-                "never mistaken for a clean one")
+                "feeds; experimental static review of cached PKGBUILD/install scripts "
+                "(possibly stale); missing feeds or build inputs are explicit gaps")
 
     def is_present(self, ctx) -> bool:
         return bool(aur_common.foreign_packages(ctx))
@@ -105,7 +107,29 @@ class AURSource(SourceProvider):
 
         # Maintainer-change / re-adoption tell (state diff across runs).
         out.extend(self._maintainer_changes(by_name, ctx))
-        self.examined = Examined(len(foreign), "AUR packages")
+        inspected, gaps = 0, []
+        seen = set()
+        for name in foreign:
+            base = (by_name.get(name) or {}).get("PackageBase") or name
+            if not isinstance(base, str) or base in seen:
+                continue
+            seen.add(base)
+            directories = buildscan.cached_directories(ctx.user_home, base, user=ctx.sudo_user or "")
+            if not directories:
+                gaps.append(f"{base}: no cached build tree")
+            for directory in directories:
+                review = buildscan.scan_directory(directory, package=base)
+                inspected += len(review.inspected)
+                for hit in review.hits:
+                    out.append(Finding(hit.severity, self.source, base, BUILD_LOGIC,
+                                       f"cached {directory.name}/{hit.file}:{hit.line} {hit.rule}: {hit.detail} (cache may be stale)"))
+                gaps.extend(f"{base}: {gap}" for gap in review.unavailable)
+        if gaps:
+            out.append(Finding(Severity.MEDIUM, self.source, "build-inputs", UNVERIFIABLE,
+                               f"{len(gaps)} static-review coverage gap(s): " + "; ".join(gaps[:5])
+                               + ("; …" if len(gaps) > 5 else "")))
+        self.examined = Examined(len(foreign), "AUR packages",
+                                 f"static build review inspected {inspected} cached file(s); heuristics cannot certify safety")
         return out
 
     def _maintainer_changes(self, by_name, ctx) -> list[Finding]:

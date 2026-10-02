@@ -222,10 +222,9 @@ def test_remote_flags_match_what_the_runner_actually_parses():
     assert parsed <= set(cli.REMOTE_FLAGS), f"parsed but not listed: {parsed - set(cli.REMOTE_FLAGS)}"
 
 
-def test_aur_precheck_offers_nothing():
-    """It takes AUR package names and no flags of its own. Package names are out of
-    scope, and an empty list is honest where offering flags it ignores would not be."""
-    assert _top("aur-precheck") == []
+def test_aur_build_options_are_discoverable():
+    assert "--build-dir" in _top("aur-precheck")
+    assert "--previous" in _top("aur-build-scan")
 
 
 def test_a_repeatable_option_keeps_being_offered():

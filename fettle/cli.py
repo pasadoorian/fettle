@@ -159,7 +159,7 @@ WORD_ALIASES = {"upgrade": "update"}
 # than only inside the routing so shell completion has one list to read instead of a
 # second copy to keep in step; `tests/test_completion.py` reads this module's source
 # and fails if a routed name is missing from it.
-SUBCOMMANDS = ("aur-precheck", "sys-audit", "remote", "upgrade-check", "report", "web",
+SUBCOMMANDS = ("aur-precheck", "aur-build-scan", "sys-audit", "remote", "upgrade-check", "report", "web",
                "advisory-check", "advisory-update")
 
 # Real flags that `_main` intercepts before argparse and that are deliberately absent
@@ -268,6 +268,7 @@ _LONGFORM_TITLE = "the same audits as commands, where some take further argument
 _LONGFORM_HELP = """\
   fettle sys-audit [CATS] [--all|--list]  == -S, but lets you pick categories
   fettle aur-precheck [PKG ...]           == -p, for named packages [arch]
+  fettle aur-build-scan DIR              [experimental] static local build-tree review
   fettle upgrade-check [--effort ...]     == -U, with model/effort options
   fettle advisory-check                   == -D (takes no further options)
   fettle advisory-update                  refresh the advisory cache — the only
@@ -1355,6 +1356,10 @@ def _main(argv: list[str]) -> int:
     if argv and argv[0] == "aur-precheck":
         from .aur import precheck
         return precheck.main(argv[1:])
+
+    if argv and argv[0] == "aur-build-scan":
+        from .aur import buildscan
+        return buildscan.main(argv[1:])
 
     # sys-audit is the System Supply Chain scanner — its own subcommand with a
     # separate category/--all/--list surface, routed before the maintenance parser.

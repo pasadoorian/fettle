@@ -9,7 +9,11 @@
 
 All notable changes to fettle are recorded here. Newest first.
 
-## [Unreleased]
+## [1.21.0] — maintenance correctness and experimental build review
+
+The six confirmed maintenance bugs now have regression coverage. Valid configuration
+settings and older supported reports remain usable; the CLI stays standard-library
+only with Python 3.11 as its floor. The web UI and new AUR build review remain experimental.
 
 - Preserve unsuccessful backend checks in action summaries and exit status; missing
   rebuild and firmware tools are recorded as blindness rather than a clean result.
@@ -36,6 +40,16 @@ All notable changes to fettle are recorded here. Newest first.
   failed baseline refreshes.
 - Build RPMs using portable shell syntax and refuse release repair uploads unless the
   existing release is a confirmed draft.
+- Share static AUR build review between the standalone `aur-build-scan`, explicit
+  precheck build-directory option, and cached `pkg-audit` inputs. Review scripts and
+  local ELF sources without executing them; report findings with severity and locations,
+  and distinguish unavailable input from a complete scan. The yay hook delegates to
+  this engine and retains its advisory behavior.
+- Review and constrain development, optional-web and build dependencies, including
+  transitive pins. CI covers Python 3.11–3.14, adds optional-web jobs and limits write
+  permissions to release upload. Adopt SPDX metadata for the reviewed setuptools range.
+- Exclude local memories and lab-specific data from source-package staging. Add current
+  architecture, issue, dependency and verification documents plus a separate wiki handoff.
 
 ## [1.20.0] — startup persistence, end to end
 
