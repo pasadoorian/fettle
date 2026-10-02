@@ -166,3 +166,10 @@ cgroups, and unprivileged where `/sys/fs/bpf` cannot be read.
 - **No `--root` sweep against the six lab VMs.** This action reads `/proc`, `/sys` and
   the cgroup hierarchy, none of which a `--root` scratch tree can simulate honestly, so
   the live verification is the workstation plus containers rather than the usual matrix.
+
+## Reconciliation — 2026-10-02
+
+Persistence/eBPF/startup inventory work is already shipped and was not reimplemented. Startup baselines now validate, replace atomically, preserve ownership and warn on refresh failure. bpftool/API visibility and scratch-root limitations remain.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

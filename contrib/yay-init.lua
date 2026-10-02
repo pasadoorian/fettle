@@ -13,27 +13,7 @@
 -- Loud findings go through yay.log.error with a banner; lesser ones through
 -- yay.log.warn. yay's normal clean/diff/edit menus still run afterward.
 
--- =============================================================================
--- Build-logic scan (no network) — kept from the original tripwire
--- =============================================================================
-
--- Case-insensitive plain substrings (matched literally, no Lua-pattern magic):
-local SUSPICIOUS = {
-  "npm install", "bun install", "bun add", "pnpm install", "yarn add",
-  "| sh", "|sh", "| bash", "|bash",
-  "atomic-lockfile", "js-digest", "lockfile-js", "nextfile-js",  -- known IOCs
-}
-
--- Return the list of needles found in `text`.
-local function scan(text)
-  local hits, hay = {}, (text or ""):lower()
-  for _, needle in ipairs(SUSPICIOUS) do
-    if hay:find(needle, 1, true) then        -- plain find, literal match
-      hits[#hits + 1] = needle
-    end
-  end
-  return hits
-end
+-- Static build review is implemented once in fettle/aur/buildscan.py.
 
 -- =============================================================================
 -- Allowlist (synced from update.sh's LUA_ALLOWLIST -> ~/.config/yay/allowlist.txt)
@@ -108,13 +88,17 @@ end
 local function precheck_cmd()
   local env = os.getenv("AUR_PRECHECK_BIN")
   if file_exists(env) then return env end
-  if os.execute("command -v fettle >/dev/null 2>&1") == 0 then
+  local function succeeded(command)
+    local ok = os.execute(command)
+    return ok == 0 or ok == true  -- Lua 5.1 / newer Lua return shapes
+  end
+  if succeeded("command -v fettle >/dev/null 2>&1") then
     return "fettle aur-precheck"
   end
-  if os.execute("python -c 'import fettle' >/dev/null 2>&1") == 0 then
+  if succeeded("python -c 'import fettle' >/dev/null 2>&1") then
     return "python -m fettle aur-precheck"
   end
-  if os.execute("command -v aur-precheck.sh >/dev/null 2>&1") == 0 then
+  if succeeded("command -v aur-precheck.sh >/dev/null 2>&1") then
     return "aur-precheck.sh"
   end
   local home = os.getenv("HOME")
@@ -124,11 +108,26 @@ local function precheck_cmd()
 end
 
 -- Run the helper for one package; return its stdout (or nil if unavailable).
-local function run_precheck(pkg)
+local function run_precheck(pkg, dir)
   local cmd = precheck_cmd()
   if not cmd then return nil end
   local safe = pkg:gsub("'", "'\\''")               -- single-quote escape
-  local p = io.popen(cmd .. " '" .. safe .. "' 2>/dev/null")
+  local args = " '" .. safe .. "'"
+  local modern = cmd:find("aur-precheck", 1, true) and not cmd:find(".sh", 1, true)
+  if dir then
+    if modern then
+      args = args .. " --build-dir '" .. dir:gsub("'", "'\\''") .. "'"
+    else
+      warn_normal("Static build review unavailable with this legacy/override helper; use fettle aur-precheck --build-dir.")
+    end
+  else
+    warn_normal("Static build review unavailable: yay did not provide a local build directory.")
+  end
+  if os.getenv("YAY_AUR_PRECHECK") == "0" then
+    if modern and dir then args = args .. " --build-only"
+    else return "WARN Static build review unavailable; network precheck disabled.\n" end
+  end
+  local p = io.popen(cmd .. args .. " 2>/dev/null")
   if not p then return nil end
   local out = p:read("*a") or ""
   p:close()
@@ -186,32 +185,11 @@ end
 yay.create_autocmd("AURPreInstall", {
   desc = "build-logic scan + live RPC/IOC supply-chain precheck",
   callback = function(event)
-    if is_allowed(event.match) then return end
-
-    -- 1) Build-logic scan of PKGBUILD + (best-effort) the .install hook.
-    local files = { PKGBUILD = event.data.pkgbuild }
-    local dir = event.data.dir
-    if dir then
-      local declared = (event.data.pkgbuild or ""):match("install=[\"']?([%w%._%-]+)")
-      for _, name in ipairs({ declared, event.match .. ".install" }) do
-        if name then
-          local f = io.open(dir .. "/" .. name, "r")
-          if f then files[name] = f:read("*a"); f:close() end
-        end
-      end
-    end
-    for fname, text in pairs(files) do
-      local hits = scan(text)
-      if #hits > 0 then
-        warn_normal(string.format("%s: %s contains %s — review before installing.",
-          event.match, fname, table.concat(hits, ", ")))
-      end
-    end
-
-    -- 2) Live RPC/IOC precheck (orphan / OOD / stale / compromised / bad maintainer).
-    if os.getenv("YAY_AUR_PRECHECK") ~= "0" then
-      parse_precheck(run_precheck(event.match))
-    end
+    -- Python validates the allowlist before metadata suppression. The local
+    -- scan still runs when AUR_PRECHECK=0, matching the historical toggle.
+    local output = run_precheck(event.match, event.data.dir)
+    if output then parse_precheck(output)
+    else warn_normal("AUR checks unavailable: install fettle with the shared static scanner.") end
   end,
 })
 
@@ -241,7 +219,6 @@ yay.create_autocmd("UpgradeSelect", {
 -- Test hook: expose file-local helpers when loaded by the suite. No effect under yay.
 if rawget(_G, "__YAY_TEST") then
   return {
-    scan = scan,
     is_allowed = is_allowed,
     glob_to_pat = glob_to_pat,
     load_allow = load_allow,

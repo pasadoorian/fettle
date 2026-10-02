@@ -144,9 +144,10 @@ def _subcommand_candidates(sub: str, before: list[str]) -> set[str]:
         return _sys_audit_candidates(before)
     if sub == "remote":
         return _remote_candidates(before)
-    # aur-precheck takes AUR package names and no flags of its own. Completing package
-    # names is deliberately out of scope, and an empty list is the honest answer rather
-    # than offering flags it would ignore.
+    if sub in ("aur-precheck", "aur-build-scan"):
+        from .aur import precheck, buildscan
+        return options(precheck.parser() if sub == "aur-precheck" else buildscan.parser())
+    # Completing package names and paths is deliberately outside this helper's scope.
     return set()
 
 

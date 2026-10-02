@@ -8,14 +8,13 @@ that is world-writable or owned by someone other than root or the invoking user
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-# tomllib is stdlib only on Python 3.11+. fettle is otherwise pure-stdlib, so on
-# an older interpreter — notably the remote scanner landing on Ubuntu 22.04
-# (Python 3.10) — we fall back to the `tomli` backport if present, else run with
-# built-in defaults (no config parsing). Everything except the TOML config file
-# works regardless.
+# Python 3.11+ is the supported floor and provides tomllib. Retain the legacy
+# import fallback for historical embedders; it does not imply support for older
+# interpreters. Remote execution explicitly requires a supported interpreter.
 try:
     import tomllib
 except ModuleNotFoundError:  # < 3.11
@@ -185,11 +184,15 @@ def _normalize_default_actions(actions) -> tuple[list[str], list[str]]:
     """Accept hyphen or underscore action names; drop + explain retired ones."""
     out: list[str] = []
     warnings: list[str] = []
+    from .actions import HANDLERS
     for a in actions:
         key = str(a).replace("-", "_")
         if key in _RETIRED_ACTIONS:
             warnings.append(f"config default_actions: '{a}' -> "
                             f"{_RETIRED_ACTIONS[key]}; ignoring the old name")
+            continue
+        if key not in HANDLERS:
+            warnings.append("config default_actions: unknown action; ignoring it")
             continue
         out.append(key)
     return out, warnings
@@ -204,6 +207,104 @@ def _is_safe(path: Path, allowed: set[int]) -> tuple[bool, str]:
     return True, ""
 
 
+def _strings(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _count(value) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _weight(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def _choice(*choices):
+    return lambda value: isinstance(value, str) and value.strip().lower() in choices
+
+
+# Unknown nested keys remain available to consumers for forwards compatibility.
+# Known keys are validated independently so a typo does not discard valid siblings.
+_TABLES = {
+    "clean": {"keep_versions": _count},
+    "reports": {"keep": lambda v: _count(v) and v >= 1, "dir": str,
+                "json": bool, "log": bool, "stale_days": _count},
+    "hardening": {**dict.fromkeys(("exclude_checks", "exclude_packages", "exclude_paths",
+                                  "disable_axes", "filesystem_paths", "certificate_paths",
+                                  "sensitive_packages"), _strings),
+                  "certificate_warn_days": _count, "priv_multiplier": _weight, "weights": dict},
+    "compromise": {"disable_checks": _strings},
+    "advisories": {"cache_ttl": _count, "severity_threshold": _choice("", "critical", "high", "medium", "low"),
+                   "exclude_packages": _strings, "exclude_classes": _strings,
+                   "ubuntu_pending": bool, "ubuntu_pending_severity": _choice("low", "medium", "high", "critical"),
+                   "venv_roots": _strings, "venv_depth": _count},
+    "containers": {"max_age_days": _count, "ignore": _strings, "never_update": _strings,
+                   "always_update": _strings, "auto_update": _choice("ask", "always", "never")},
+    "secure": {"chipsec_cmd": _strings},
+    "supplychain": {"skip_sources": _strings},
+}
+
+
+def _valid(value, rule) -> bool:
+    return type(value) is rule if isinstance(rule, type) else rule(value)
+
+
+def _table(value: dict, schema: dict, prefix: str, warnings: list[str]) -> dict:
+    result = dict(value)
+    for key, rule in schema.items():
+        if key in value and not _valid(value[key], rule):
+            result.pop(key)
+            warnings.append(f"config {prefix}.{key}: invalid setting; using default")
+    return result
+
+
+def _validated_table(name: str, value: dict, warnings: list[str]) -> dict:
+    result = _table(value, _TABLES.get(name, {}), name, warnings)
+    if name == "hardening" and "weights" in result:
+        result["weights"] = _table(result["weights"],
+                                    dict.fromkeys(result["weights"], _weight),
+                                    "hardening.weights", warnings)
+    # Dynamic table names (distro, host and remote group) need the same safeguards.
+    if name == "updaters":
+        return _dynamic_tables(value, name, {"aur_updater": str, "system_updater": str,
+                                             "flatpak_updater": str, "snap_updater": str,
+                                             "refresh_mirrors": bool}, warnings)
+    if name == "supplychain" and "hosts" in value:
+        if isinstance(value["hosts"], dict):
+            result["hosts"] = _dynamic_tables(value["hosts"], "supplychain.hosts",
+                                               {"skip_sources": _strings}, warnings)
+        else:
+            result.pop("hosts", None)
+            warnings.append("config supplychain.hosts: invalid table; using default")
+    if name == "remote" and "groups" in value:
+        groups = value["groups"]
+        if not isinstance(groups, dict):
+            result.pop("groups", None)
+            warnings.append("config remote.groups: invalid table; using default")
+        else:
+            result["groups"] = {}
+            for key, spec in groups.items():
+                if _strings(spec):
+                    result["groups"][key] = spec
+                elif isinstance(spec, dict):
+                    result["groups"][key] = _table(spec, {
+                        "hosts": _strings, "ssh_args": _strings, "actions": _strings,
+                        "yes": bool}, f"remote.groups.{key}", warnings)
+                else:
+                    warnings.append(f"config remote.groups.{key}: invalid group; using default")
+    return result
+
+
+def _dynamic_tables(value: dict, prefix: str, schema: dict, warnings: list[str]) -> dict:
+    result = {}
+    for key, spec in value.items():
+        if isinstance(spec, dict):
+            result[key] = _table(spec, schema, f"{prefix}.{key}", warnings)
+        else:
+            warnings.append(f"config {prefix}.{key}: invalid table; using default")
+    return result
+
+
 def load(path: Path, *, allowed_uids: set[int] | None = None) -> tuple[Config, list[str]]:
     """Return ``(config, warnings)``.
 
@@ -215,7 +316,11 @@ def load(path: Path, *, allowed_uids: set[int] | None = None) -> tuple[Config, l
     if not path.is_file():
         return cfg, warnings
 
-    safe, why = _is_safe(path, allowed_uids or _allowed_uids())
+    try:
+        safe, why = _is_safe(path, allowed_uids or _allowed_uids())
+    except OSError:
+        warnings.append(f"{path}: could not read config; using defaults.")
+        return cfg, warnings
     if not safe:
         warnings.append(why)
         return cfg, warnings
@@ -231,10 +336,23 @@ def load(path: Path, *, allowed_uids: set[int] | None = None) -> tuple[Config, l
     except tomllib.TOMLDecodeError as exc:
         warnings.append(f"{path}: invalid TOML ({exc}); using defaults.")
         return Config(), warnings
+    except OSError:
+        warnings.append(f"{path}: could not read config; using defaults.")
+        return cfg, warnings
 
     known = {f.name for f in fields(Config)}
     for key, value in data.items():
         if key in known:
+            default = getattr(cfg, key)
+            rule = (_strings if isinstance(default, list) else
+                    _count if type(default) is int else type(default))
+            if key == "ai_effort":
+                rule = _choice("low", "medium", "high")
+            if not _valid(value, rule):
+                warnings.append(f"config {key}: invalid setting; using default")
+                continue
+            if isinstance(value, dict):
+                value = _validated_table(key, value, warnings)
             setattr(cfg, key, value)
         else:
             warnings.append(f"config: ignoring unknown key '{key}'")

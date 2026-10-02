@@ -206,3 +206,13 @@ Status of each feature's QA pass. `—` = not started.
 
 At the close of the effort, this matrix is the answer to *"did we miss anything?"* — any row
 without a QA file is a gap by definition.
+
+## Current maintenance reconciliation — 2026-10-02
+
+The tables above preserve the original sweeps. Later source corrections and remaining
+open items are reconciled in the [issue index](../issues.md); [verification](../maintenance-verification.md)
+records the current automated, container, browser and guest checks. A PASS from a
+summary-level matrix does not certify every subcheck: inspect missing prerequisites,
+not-applicable actions and coverage output. Hardware, paid-API and interactive cases
+not rerun retain their original status. The web UI remains experimental after focused
+HTTP/WS, lifecycle and harmless-browser checks; it has no full manual QA sweep.

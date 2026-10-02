@@ -96,3 +96,10 @@ run. Caught by writing the test for RM-03 and watching it raise instead of print
   it forwarded verbatim) makes adding one a deliberate choice rather than a one-liner.
 - **`fettle sys-audit remote` has no `--ssh-arg`** — recorded during the sys-audit sweep and
   still true.
+
+## Reconciliation — 2026-10-02
+
+Python 3.11+ interpreter selection and atomic fetch writes are verified by regressions. Controller --config, sys-audit --ssh-arg and custom remote reports.dir discovery remain open. The existing Rocky snapshot lacks a supported interpreter.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

@@ -1,14 +1,19 @@
 # fettle configuration (TOML).  Live location: ~/.config/fettle/config.toml
 #
+# Validation preserves valid settings and valid sibling keys in tables. Invalid
+# types/ranges use the built-in default with a warning naming the key. Malformed
+# TOML falls back to the whole default configuration. Warnings omit setting values.
+#
 # Precedence (low to high):  built-in defaults  <  this file  <  command-line flags
-# Every setting is optional; commented values are the built-in defaults.
+# Every setting is optional. Scalar defaults are shown; nonempty exclusion lists and
+# paths below are examples unless explicitly labeled a built-in default.
 # fettle refuses to read this file if it is world-writable or not owned by you/root.
 # It does NOT reject a world-readable file, so if you put a secret (ai_api_key)
 # below, `chmod 600` this file yourself — or better, use the ANTHROPIC_API_KEY env
 # var and leave the key out of the file entirely.
 
 # Actions to run when you invoke `fettle` with no action flags / words.
-#default_actions = ["clean", "orphans", "update", "rebuild-check", "python-rebuild-check", "config-drift", "auto-updates", "firmware-check", "pkg-audit"]
+#default_actions = ["clean", "update", "rebuild-check", "python-rebuild-check", "orphans", "config-drift", "auto-updates", "firmware-check", "pkg-audit"]
 
 # Offer to rebuild packages with outdated deps (instead of only listing them).
 #auto_rebuild = false
@@ -35,11 +40,17 @@
 #ai_max_web_searches = 5       # cap forum searches per run (bounds tokens/cost)
 #ai_api_key = "sk-ant-..."     # optional; never printed in full by --print-config
 
-# Binary hardening audit (`fettle -H` / `hardening-audit`). Results are scored and
+# System hardening audit (`fettle -H` / `hardening-audit`). Results are scored and
 # ranked; the screen shows Critical/High packages, the full matrix goes to
-# ~/hardening-audit.txt. The always-on accuracy corrections (non-ELF/static-binary
+# ~/.fettle/reports/<host>/hardening-audit-<timestamp>.txt with a JSON sibling. The always-on accuracy corrections (non-ELF/static-binary
 # skips, etc.) are NOT tunable — only the pruning and scoring below are.
 #[hardening]
+# Ten axes: binary, filesystem, services, kernel, ssh, firewall, certs, apparmor,
+# selinux, auditing. All enabled by default; auditing remains experimental.
+#disable_axes = []
+#filesystem_paths = []        # extra directories, added to built-in paths
+#certificate_paths = []       # extra cert directories; CA trust stores are refused
+#certificate_warn_days = 30   # nonnegative integer; expired always reported
 # -- prune the report (fnmatch globs; all ship empty) --
 #exclude_checks   = ["runpath", "cfi"]                   # criterion names to ignore
 #exclude_packages = ["mingw-w64-*", "*-linux-gnu-gcc"]   # package name globs
@@ -67,24 +78,26 @@
 # to ~/.fettle/logs/<host>/ — timestamped, 0600, and rotated to the newest `keep`
 # per host + type. <host> is `local` locally or the target of `fettle remote <host>`.
 #[reports]
-#keep = 10               # how many of each report/log to keep per host -- also the
+#keep = 10               # positive integer (minimum 1); how many of each report/log to keep per host -- also the
                          # depth of the dashboard's "what changed" history
 #stale_days = 7          # a host whose newest report is older than this is flagged
                          # on the dashboard: at fleet scale, no data is not good news
 #dir = "~/.fettle"       # base dir override (reports/ and logs/ live under it)
+# Remote fetch-back still assumes ~/.fettle on the remote; custom remote dirs are
+# a documented limitation. Local overrides work for writing and dashboard reading.
 #log = true              # record a per-run transcript (false disables the run-log)
 #json = true             # write a .json sibling per report/log (feeds `fettle report`)
 
 # Remote host groups. `fettle remote <group>` runs on each host in order (confirms
 # first, continues past failures, prints a summary). `hosts` is required; the rest
 # are optional. A bare list is shorthand for {hosts = [...]}.
-#[remote.groups.bifrost-lab]
-#hosts    = ["bifrost", "ec1", "ec2", "ec3"]   # ssh aliases, hostnames, or IPs
+#[remote.groups.example-lab]
+#hosts    = ["server-a", "server-b"]   # ssh aliases, hostnames, or IPs
 #actions  = ["-a"]                             # default action(s) if none on the CLI
 #ssh_args = ["-o", "ConnectTimeout=5"]         # merged with any CLI --ssh-arg
 #yes      = true                               # always unattended (needs NOPASSWD sudo)
 #[remote.groups]
-#arch-boxes = ["mjolnir", "wopr"]              # shorthand form
+#arch-boxes = ["arch-a", "arch-b"]              # shorthand form
 
 # Cache cleaning (`fettle -c`). Cached packages that are no longer installed are
 # always removed -- they have no rollback value. This is about the ones still installed.
@@ -150,4 +163,3 @@
 #snap_updater = "snap"       # snap | none
 #[updaters.rhel]
 #system_updater = "dnf"      # dnf | none
-

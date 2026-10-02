@@ -413,7 +413,12 @@ class DebianBackend(PackageBackend):
                else "apt" if command.which("apt") else None)
         if apt is None:
             return Transaction(ok=False, notes=["apt-get not found"])
-        items = _parse_apt_sim(self._query([apt, "-s", "dist-upgrade"]))
+        proc = command.run([apt, "-s", "dist-upgrade"], capture=True)
+        if not proc.ok:
+            return Transaction(ok=False, notes=[
+                f"{apt} transaction simulation failed (exit {proc.returncode})",
+                *(proc.stderr or "").strip().splitlines()[:3]])
+        items = _parse_apt_sim(proc.stdout)
         notes: list[str] = []
         # Security updates that exist but are invisible to apt on an unattached host.
         # Reporting the smaller number without saying so understates the exposure.
@@ -712,7 +717,8 @@ class DebianBackend(PackageBackend):
                 # clean result out of a check that did not run.
                 out.warn("needrestart produced no output — whether anything needs "
                          "restarting was NOT determined.")
-                return Result(ok=False)
+                return Result(ok=False, summary="restart needs could NOT be determined",
+                              failure_kind="blind")
             fields = {}
             for ln in text.splitlines():
                 key, _, val = ln.partition(":")

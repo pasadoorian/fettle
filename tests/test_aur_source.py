@@ -32,6 +32,12 @@ def _ctx(tmp_path, cfg=None):
 
 def _run(tmp_path, *, foreign, results, ioc=None, cfg=None):
     ioc = ioc or FakeIOC()
+    # These metadata fixtures also represent packages with readable benign caches.
+    # Missing/unreadable-cache coverage is exercised by the build scanner tests.
+    for name in foreign:
+        tree = tmp_path / ".cache/yay" / name
+        tree.mkdir(parents=True, exist_ok=True)
+        (tree / "PKGBUILD").write_text(f"pkgname={name}\npackage() {{\n  install -Dm755 app /usr/bin/app\n}}\n")
     with patch("fettle.command.run") as run, \
          patch.object(aur_source.aur_meta, "query_info", return_value=results), \
          patch("fettle.aur.common.ioc_feed", return_value=ioc):

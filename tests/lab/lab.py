@@ -7,7 +7,7 @@ for the rest, and is the only way `fettle remote` — the way fettle is actually
 tested at all.
 
 **Stdlib only, on purpose.** fettle ships `dependencies = []` so the remote zipapp runs
-under any bare python3; nothing in this repo may quietly add a dependency. Everything here
+under a supported Python 3.11+ interpreter; nothing in this repo may quietly add a dependency. Everything here
 shells out to ssh/virsh/qemu-img on the lab host.
 
 Design notes worth knowing before changing anything:

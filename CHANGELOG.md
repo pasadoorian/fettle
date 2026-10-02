@@ -9,7 +9,51 @@
 
 All notable changes to fettle are recorded here. Newest first.
 
-## [Unreleased]
+## [1.21.0] — maintenance correctness and experimental build review
+
+The six confirmed maintenance bugs now have regression coverage. Valid configuration
+settings and older supported reports remain usable; the CLI stays standard-library
+only with Python 3.11 as its floor. The web UI and new AUR build review remain experimental.
+
+- Preserve unsuccessful backend checks in action summaries and exit status; missing
+  rebuild and firmware tools are recorded as blindness rather than a clean result.
+- Reject failed apt/pacman transaction queries instead of reporting an empty upgrade set.
+- Validate configuration types, ranges, and nested settings independently. Valid siblings
+  survive; invalid settings use defaults with key-specific warnings that omit values.
+- Remote upgrade analysis now records unsuccessful collection, authentication, or analysis
+  in its summary and exits nonzero when it could not run.
+- Keep the newest same-second report, including numeric suffixes above nine. Serialize
+  report writers and publish private files atomically; rotate all discovered report types.
+- Ignore malformed JSON envelopes without breaking dashboard collection; historical text
+  reports remain readable. Malformed known payload containers show unknown coverage;
+  dashboard verdicts and deltas respect numeric same-second ordering.
+- Isolate the advisory test cache from the invoking user's real home directory.
+- Guard both HTTP and WebSocket origins in the experimental web UI. Serialize web
+  runs, terminate subprocess groups on cancellation, clear submitted sudo passwords,
+  and require a loopback bind. Metadata refresh is correctly grouped with sudo actions.
+- Record actual noninteractive exit codes; older logs with no status display as unknown.
+- Follow OSV pagination, reject incomplete batches and missing records, invalidate
+  language results when installed versions change, and save explicit coverage state.
+  Resolve language environment paths for the invoking user; match installed Debian
+  source versions and ignore removed packages.
+- Select Python 3.11+ on remote hosts even when `python3` is older. Atomically replace
+  startup baselines, preserve invoking ownership, validate stored entries, and report
+  failed baseline refreshes.
+- Build RPMs using portable shell syntax and refuse release repair uploads unless the
+  existing release is a confirmed draft.
+- Share static AUR build review between the standalone `aur-build-scan`, explicit
+  precheck build-directory option, and cached `pkg-audit` inputs. Review scripts and
+  local ELF sources without executing them; report findings with severity and locations,
+  and distinguish unavailable input from a complete scan. The yay hook delegates to
+  this engine and retains its advisory behavior.
+- Review and constrain development, optional-web and build dependencies, including
+  transitive pins. CI covers Python 3.11–3.14, adds optional-web jobs and limits write
+  permissions to release upload. Adopt SPDX metadata for the reviewed setuptools range.
+- Exclude local memories and lab-specific data from source-package staging. Add current
+  architecture, issue, dependency and verification documents plus a separate wiki handoff.
+- Include development constraints and regression fixtures in source distributions.
+  Measure all bundled native ELF glibc requirements and include them in archives;
+  pin the release artifact runner rather than claiming a fixed floor for every build.
 
 ## [1.20.0] — startup persistence, end to end
 

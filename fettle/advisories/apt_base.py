@@ -27,19 +27,26 @@ class AptAdvisorySource(base.AdvisoryProvider):
         return self._osrel(ctx).get("VERSION_CODENAME", "") or ""
 
     def _installed(self) -> dict[str, str]:
-        proc = command.run(["dpkg-query", "-W", "-f=${source:Package} ${Version}\n"],
+        proc = command.run(["dpkg-query", "-W",
+                            "-f=${source:Package} ${source:Version} ${db:Status-Status}\n"],
                            capture=True)
+        if getattr(proc, "returncode", 0) != 0:
+            raise OSError("installed source-package inventory failed")
         out: dict[str, str] = {}
         for line in proc.stdout.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[0] not in out:
-                out[parts[0]] = parts[1]
+            if len(parts) >= 3 and parts[2] == "installed":
+                if parts[0] not in out or self._behind(parts[1], out[parts[0]]):
+                    out[parts[0]] = parts[1]
         return out
 
     def _behind(self, installed: str, fixed: str) -> bool:
         """True if ``installed`` < ``fixed`` per ``dpkg --compare-versions``."""
-        return command.run(
-            ["dpkg", "--compare-versions", installed, "lt", fixed]).returncode == 0
+        code = command.run(
+            ["dpkg", "--compare-versions", installed, "lt", fixed]).returncode
+        if code not in (0, 1):
+            raise OSError("source-package version comparison failed")
+        return code == 0
 
     def findings(self, ctx, conn) -> list[base.AdvisoryFinding]:
         installed = self._installed()

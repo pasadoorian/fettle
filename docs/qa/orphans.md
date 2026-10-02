@@ -212,3 +212,10 @@ could still see. That same exercise found a real defect: a package that **Provid
 virtual name was being offered for removal, because the code marked the *virtual name* as
 referenced instead of the package supplying it. Virtual names are not packages. "Found
 nothing" and "could not look" are the same shape unless you check.
+
+## Reconciliation — 2026-10-02
+
+O-04 is already corrected: Arch dry-run announces the report it would save, with a dedicated regression. Historical live counts remain unchanged.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

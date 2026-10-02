@@ -13,7 +13,7 @@ version=$("$here/packaging/version.sh")
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work"/{SOURCES,SPECS,BUILD,RPMS,SRPMS}
+mkdir -p "$work/SOURCES" "$work/SPECS" "$work/BUILD" "$work/RPMS" "$work/SRPMS"
 
 # The tarball has to unpack to fettle-<version>/ for %setup to find it. Copy rather than
 # archive-in-place so build droppings and the dist/ directory stay out of the source.
@@ -21,6 +21,7 @@ stage="$work/fettle-$version"
 mkdir -p "$stage"
 tar -c -C "$here" \
     --exclude='.git' --exclude='dist' --exclude='venv-*' --exclude='__pycache__' \
+    --exclude='CLAUDE.md' --exclude='PLAN.md' --exclude='lab.conf' --exclude='matrix-logs' \
     --exclude='*.py[co]' . | tar -x -C "$stage"
 tar -czf "$work/SOURCES/fettle-$version.tar.gz" -C "$work" "fettle-$version"
 

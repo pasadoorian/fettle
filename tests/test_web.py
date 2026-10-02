@@ -54,8 +54,14 @@ def test_web_missing_extra_reraises_unrelated_importerror(monkeypatch):
 def test_web_command_invokes_runner_with_args(monkeypatch):
     calls = {}
     monkeypatch.setattr(cli, "_web_runner", lambda: (lambda **kw: calls.update(kw)))
-    assert cli._run_web(["--host", "0.0.0.0", "--port", "9001", "--reload"]) == 0
-    assert calls == {"host": "0.0.0.0", "port": 9001, "reload": True, "show": False}
+    assert cli._run_web(["--host", "localhost", "--port", "9001", "--reload"]) == 0
+    assert calls == {"host": "localhost", "port": 9001, "reload": True, "show": False}
+
+
+def test_web_rejects_public_bind_before_loading_optional_extra(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_web_runner", lambda: pytest.fail("server must not load"))
+    assert cli._run_web(["--host", "0.0.0.0"]) == 2
+    assert 'must be a loopback' in capsys.readouterr().err
 
 
 def test_web_command_defaults_to_localhost(monkeypatch):

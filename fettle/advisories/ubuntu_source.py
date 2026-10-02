@@ -69,7 +69,10 @@ class UbuntuAdvisorySource(AptAdvisorySource):
         adv = getattr(getattr(ctx, "config", None), "advisories", None) or {}
         if adv.get("ubuntu_pending"):
             floor = base.severity_rank(str(adv.get("ubuntu_pending_severity", "high")).capitalize())
-            rows += self._osv_pending(conn, floor)
+            try:
+                rows += self._osv_pending(conn, floor)
+            except (OSError, ValueError):
+                return -1
         db.replace_source(conn, self.source, osv.dedup_rows(rows))
         return len(rows)
 
@@ -93,13 +96,15 @@ class UbuntuAdvisorySource(AptAdvisorySource):
                    for n, v in installed.items()]
         try:
             batches = osv.querybatch(queries)
-        except (OSError, ValueError):
-            return []
+        except (OSError, ValueError) as exc:
+            raise ValueError("Ubuntu pending advisory query failed") from exc
         rows = []
         for name, vulns in zip(list(installed), batches):
             for vln in vulns:
                 rec = osv.record(conn, vln.get("id"), vln.get("modified"))
-                cl = osv.classify(rec, eco, installed[name]) if rec else None
+                if rec is None:
+                    raise ValueError("Ubuntu pending advisory record unavailable")
+                cl = osv.classify(rec, eco, installed[name], name)
                 if cl is None or cl[0] != "pending":     # OVAL owns the fixed ones
                     continue
                 band, cvss = osv.severity(rec)

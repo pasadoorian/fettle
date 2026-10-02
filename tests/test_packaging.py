@@ -12,6 +12,7 @@ lines buried in YAML.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -300,7 +301,12 @@ def _gh_stub(tmp_path: Path, script: str) -> dict:
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     gh = bindir / "gh"
-    gh.write_text("#!/bin/sh\n" + script)
+    gh.write_text("#!/bin/sh\n" + '''
+if [ "$1 $2 $4 $5" = "release view --json isDraft" ]; then
+    printf '%s\\n' "${GH_DRAFT:-true}"
+    exit 0
+fi
+''' + script)
     gh.chmod(0o755)
     env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}",
                GH_LOG=str(tmp_path / "gh.log"))
@@ -418,6 +424,14 @@ def test_publish_refuses_an_empty_staged_directory():
     assert out.returncode == 1 and "empty" in out.stderr
 
 
+def test_publish_refuses_to_replace_assets_on_a_published_release(tmp_path):
+    env = _gh_stub(tmp_path, 'echo "$@" >> "$GH_LOG"\nexit 0\n')
+    env["GH_DRAFT"] = "false"
+    out = _publish(tmp_path, env)
+    assert out.returncode == 1 and "not a confirmed draft" in out.stderr
+    assert "release upload" not in (tmp_path / "gh.log").read_text()
+
+
 def test_publish_keeps_a_multiword_title_as_one_argument():
     """Caught in production on v1.19.0. The title is built from `fettle $VERSION`, so it
     contains a space; expanded from an unquoted string it split into `--title fettle`
@@ -450,3 +464,71 @@ exit 0
         f"the title was split into separate arguments: {log}"
     assert "9.9.9" not in log, "a bare version leaked in as a positional argument"
     assert env  # the first stub is unused; kept to document the shape
+
+
+def test_native_glibc_floor_reads_requirements_not_definitions(tmp_path):
+    tool = tmp_path / 'bin/readelf'
+    tool.parent.mkdir()
+    tool.write_text('''#!/bin/sh
+cat <<'VERSIONS'
+Version definition section '.gnu.version_d':
+  Name: GLIBC_9.99
+Version needs section '.gnu.version_r':
+  Name: GLIBC_2.34
+  Name: GLIBC_2.44
+Version symbols section '.gnu.version':
+  Name: GLIBC_8.88
+VERSIONS
+''')
+    tool.chmod(0o755)
+    payload = tmp_path / 'payload'
+    payload.mkdir()
+    (payload / 'math.so').touch()
+    env = {**os.environ, 'PATH': str(tool.parent) + os.pathsep + os.environ['PATH']}
+    run = subprocess.run(['sh', str(ROOT / 'packaging/binary/glibc-floor.sh'), str(payload)],
+                         env=env, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == '2.44'
+
+
+@pytest.mark.skipif(shutil.which("zip") is None, reason="zip not available")
+def test_native_archive_refuses_unknown_floor_and_records_measured_floor(tmp_path):
+    binary = tmp_path / 'fettle'
+    binary.write_text('#!/bin/sh\nexit 0\n')
+    binary.chmod(0o755)
+    first = _run('binary/archive.sh', str(tmp_path))
+    assert first.returncode != 0 and 'measured glibc floor' in first.stderr
+    (tmp_path / 'fettle-glibc-min.txt').write_text('2.44\n')
+    run = _run('binary/archive.sh', str(tmp_path))
+    assert run.returncode == 0, run.stderr
+    import tarfile
+    archive = next(tmp_path.glob('*linux-x86_64.tar.gz'))
+    with tarfile.open(archive) as tar:
+        name = next(n for n in tar.getnames() if n.endswith('/RUNNING.md'))
+        text = tar.extractfile(name).read().decode()
+    assert 'glibc 2.44 or newer' in text
+    assert '2.38' not in text
+
+
+def test_native_smoke_accepts_missing_scp_after_zipapp_creation(tmp_path):
+    binary = tmp_path / 'fettle'
+    binary.write_text('''#!/bin/sh
+case "$1" in
+  --version) echo 'fettle test (binary)' ;;
+  -H) echo '  filesystem: nothing to report (7 checked)' ;;
+  remote) echo 'Uploading fettle to smoke-test-host.invalid:~/.fettle.pyz ...'
+          echo "FileNotFoundError: no such file: scp"; exit 1 ;;
+  --print-config) exit 0 ;;
+esac
+''')
+    binary.chmod(0o755)
+    env = {**os.environ, 'FETTLE_EXPECTED_AXES': 'filesystem'}
+    run = subprocess.run([str(ROOT / 'packaging/binary/smoke.sh'), str(binary)],
+                         env=env, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert 'smoke: PASS' in run.stdout
+    binary.write_text(binary.read_text().replace('Uploading fettle to', 'no bundled zipapp for'))
+    failed = subprocess.run([str(ROOT / 'packaging/binary/smoke.sh'), str(binary)],
+                            env=env, capture_output=True, text=True)
+    assert failed.returncode != 0
+    assert 'none embedded' in failed.stderr

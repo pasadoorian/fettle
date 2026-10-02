@@ -159,7 +159,7 @@ WORD_ALIASES = {"upgrade": "update"}
 # than only inside the routing so shell completion has one list to read instead of a
 # second copy to keep in step; `tests/test_completion.py` reads this module's source
 # and fails if a routed name is missing from it.
-SUBCOMMANDS = ("aur-precheck", "sys-audit", "remote", "upgrade-check", "report", "web",
+SUBCOMMANDS = ("aur-precheck", "aur-build-scan", "sys-audit", "remote", "upgrade-check", "report", "web",
                "advisory-check", "advisory-update")
 
 # Real flags that `_main` intercepts before argparse and that are deliberately absent
@@ -248,7 +248,7 @@ ACTION_HELP = {
                   "-> ~/.fettle/reports/"),
     "pkg_audit": "WHERE your software came from, every ecosystem (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
-    "hardening_audit": "is this system hardened? six axes -- build flags (needs checksec), filesystem, services, kernel, sshd, firewall -> ~/.fettle/reports/",
+    "hardening_audit": "is this system hardened? ten axes -- build flags (checksec), filesystem, services, kernel, sshd, firewall, certs, AppArmor, SELinux, auditing -> ~/.fettle/reports/",
     "advisory_check": "which installed packages have known CVEs — both those with a "
                       "fix you have not applied and (the distinctive part) those with "
                       "no fix released yet -> ~/.fettle/reports/",
@@ -268,6 +268,7 @@ _LONGFORM_TITLE = "the same audits as commands, where some take further argument
 _LONGFORM_HELP = """\
   fettle sys-audit [CATS] [--all|--list]  == -S, but lets you pick categories
   fettle aur-precheck [PKG ...]           == -p, for named packages [arch]
+  fettle aur-build-scan DIR              [experimental] static local build-tree review
   fettle upgrade-check [--effort ...]     == -U, with model/effort options
   fettle advisory-check                   == -D (takes no further options)
   fettle advisory-update                  refresh the advisory cache — the only
@@ -932,8 +933,8 @@ def web_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fettle web",
         description="[EXPERIMENTAL] Serve the fettle web UI (a browser dashboard over your stored "
-                    "reports; drives fettle actions in later phases). Localhost-only "
-                    "by default. Needs the web extra: pip install 'fettle[web]'.")
+                    "reports and runs actions). Requires a loopback bind and "
+                    "same-origin browser requests. Needs the web extra: pip install 'fettle[web]'.")
     p.add_argument("--host", default="127.0.0.1",
                    help="bind address (default 127.0.0.1 — localhost only)")
     p.add_argument("--port", type=int, default=8080, help="bind port (default 8080)")
@@ -946,13 +947,18 @@ def _run_web(argv: list[str]) -> int:
     """`fettle web` — serve the NiceGUI web UI (localhost by default). Needs the
     optional `web` extra; the core stays pure-stdlib and never imports it."""
     args = web_parser().parse_args(argv)
+    from .web.guard import LOCAL_HOSTS
+    if args.host not in LOCAL_HOSTS:
+        print("fettle web: --host must be a loopback address (127.0.0.1, localhost, ::1)",
+              file=sys.stderr)
+        return 2
 
     # Said at run time, not only in the docs: this is the one surface that both
     # serves a page and runs privileged actions from a password typed into a browser,
     # and it is the only feature the QA pass has not reached.
     print("fettle web is EXPERIMENTAL — unlike the rest of fettle it has not been "
           "through the QA sweep in docs/qa/.\n  It serves reports AND runs actions "
-          "(some under sudo). Localhost-only by default; keep it that way.",
+          "(some under sudo). Loopback binding and same-origin requests are required.",
           file=sys.stderr)
     try:
         run_web = _web_runner()
@@ -1223,26 +1229,36 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         set_debug(True)
 
     out.section(f"Upgrade check (remote: {host})")
+    out.current_action = "upgrade-check"
+
+    def _finish() -> int:
+        out.print_summary()
+        return int(out.had_failures)
+
     out.warn("experimental feature — verify its advice before acting on it.")
     out.note(f"collecting a system snapshot from {host} (read-only, no sudo)...")
     payload = remote.collect(host, ["upgrade-check", "--collect"], ssh_args=ssh_args)
     if payload is None:
         out.err(f"could not collect a snapshot from {host}.")
-        return 1
+        out.summary_fail("upgrade check did NOT run — snapshot collection failed", kind=BLIND)
+        return _finish()
     try:
         snap = Snapshot.from_json(payload)
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         out.err(f"{host} returned an unreadable snapshot (fettle version mismatch?).")
-        return 1
+        out.summary_fail("upgrade check did NOT run — unreadable snapshot", kind=BLIND)
+        return _finish()
 
     if not snap.pending:
         out.ok(f"{host} is up to date — nothing to upgrade.")
-        return 0
+        out.summary_add("upgrade check: nothing pending")
+        return _finish()
     if resolve_auth(cfg) is None:
         out.warn("no local API key (ANTHROPIC_API_KEY or config ai_api_key) — "
                  f"showing {host}'s pending packages only:")
         _print_pending(snap.pending)
-        return 0
+        out.summary_fail("upgrade check did NOT run — no local API key", kind=BLIND)
+        return _finish()
 
     if not snap.inxi:  # inxi absent on the remote — analysis still runs, less context
         out.note(f"(inxi wasn't available on {host}; analysis has less hardware context)")
@@ -1254,10 +1270,12 @@ def _remote_upgrade_check(host: str, ssh_args: list[str], uc_flags: list[str]) -
         if not args.verbose:
             out.note("re-run with -v to see why the AI step failed.")
         _print_pending(snap.pending)
-        return 0
+        out.summary_fail(f"{len(snap.pending)} pending package(s) were NOT assessed", kind=BLIND)
+        return _finish()
 
-    _render_upgrade_check(out, result, user_home=Path.home(), host=host, config=cfg)
-    return 0
+    _render_upgrade_check(out, result, user_home=invoking_user_home(), host=host, config=cfg)
+    _summarize_verdict(out, result, len(snap.pending))
+    return _finish()
 
 
 # Single-flag aliases -> subcommand runner. Handled before the pipeline parser.
@@ -1293,11 +1311,19 @@ def main(argv: list[str] | None = None) -> int:
     if recorded is not None:
         return recorded
     _nontty_log = runlog.start_nontty_log(argv)  # non-tty runs still get a log
+    code = 1
     try:
-        return _main(argv)
+        code = _main(argv)
+        return code
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+        raise
+    except KeyboardInterrupt:
+        code = 130
+        raise
     finally:
         if _nontty_log is not None:
-            _nontty_log.close()
+            _nontty_log.close(exit_code=code)
 
 
 # Retired spellings -> what replaced them. argparse would say "unrecognized
@@ -1335,6 +1361,10 @@ def _main(argv: list[str]) -> int:
     if argv and argv[0] == "aur-precheck":
         from .aur import precheck
         return precheck.main(argv[1:])
+
+    if argv and argv[0] == "aur-build-scan":
+        from .aur import buildscan
+        return buildscan.main(argv[1:])
 
     # sys-audit is the System Supply Chain scanner — its own subcommand with a
     # separate category/--all/--list surface, routed before the maintenance parser.

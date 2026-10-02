@@ -226,3 +226,10 @@ The lab guests' host keys were not trusted on the controller, which `scp -q` rep
 as `Connection closed` — a symptom `lab.py` documents in its own source. Worked around
 with `ssh`/`scp` shims in the scratchpad pointing at a scratch `known_hosts`, leaving the
 user's own file untouched.
+
+## Reconciliation — 2026-10-02
+
+Chipsec requires explicit secure.chipsec_cmd configuration. Physical firmware coverage, warning/failure ordering and sys-audit remote SSH options remain open or unavailable; see the current index.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

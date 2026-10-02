@@ -58,6 +58,8 @@ MUTABLE_REFERENCE = "MUTABLE_REFERENCE"
 # a failed check can never be mistaken for a clean one — returning no findings when
 # you could not look is the bug this whole model is meant to prevent.
 UNVERIFIABLE = "UNVERIFIABLE"
+# Static build-script heuristics are review points, not known-malware verdicts.
+BUILD_LOGIC = "BUILD_LOGIC"
 
 
 def still_upstream(argv, absent_marker: str, *, as_user: str | None = None):

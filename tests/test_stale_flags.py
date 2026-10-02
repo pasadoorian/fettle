@@ -19,7 +19,7 @@ from pathlib import Path
 from fettle import cli
 
 ROOT = Path(__file__).resolve().parent.parent
-SUBCOMMANDS = ("sys-audit", "upgrade-check", "aur-precheck", "advisory-check",
+SUBCOMMANDS = ("sys-audit", "upgrade-check", "aur-precheck", "aur-build-scan", "advisory-check",
                "advisory-update", "report", "web", "remote")
 
 # `fettle` as a WORD, not the `.fettle` in a path -- otherwise `pacman -Qtdq` on a line

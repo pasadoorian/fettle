@@ -94,3 +94,10 @@ have.
 `precheck.scan()` — the same code path, used by `-u`'s pre-upgrade gate — inherits all
 four fixes, since they live in `check()`. The gate's own behaviour was swept separately
 under [advisory-check](advisory-check.md) (SG-01…04).
+
+## Reconciliation — 2026-10-02
+
+The CRIT/WARN contract and Critical-only exit policy remain. Explicit build-dir review shares the static engine with cached pkg-audit and aur-build-scan; the updated yay hook delegates and never executes inspected scripts.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

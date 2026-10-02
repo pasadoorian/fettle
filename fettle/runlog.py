@@ -172,7 +172,7 @@ def _open_private(path, mode="wb"):
     """
     import os as _os
 
-    fd = _os.open(path, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    fd = _os.open(path, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC | _os.O_NOFOLLOW, 0o600)
     return _os.fdopen(fd, mode)
 
 
@@ -180,11 +180,11 @@ def _new_log(ctxlike, host: str, now=None):
     import datetime as _dt
     directory = _reports.logs_dir(ctxlike, host)
     ts = (now or _dt.datetime.now()).strftime("%Y%m%d-%H%M%S")
-    path = directory / f"run-{ts}.txt"
-    i = 1
-    while path.exists():
-        path = directory / f"run-{ts}-{i}.txt"
-        i += 1
+    # Reserve the transcript while holding the same allocation lock as reports.
+    with _reports.writer_lock(directory, ctxlike):
+        path = _reports._stem(directory, "run", ts).with_suffix(".txt")
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
     return path, directory
 
 
@@ -201,7 +201,7 @@ def _write_log_json(txt_path: Path, ctxlike, *, host: str, argv, exit_code) -> N
         transcript = txt_path.read_text(errors="replace")
     except OSError:
         transcript = ""
-    ts = txt_path.stem[len("run-"):] if txt_path.stem.startswith("run-") else ""
+    ts = _reports.entry_key(txt_path)[0] if txt_path.stem.startswith("run-") else ""
     env = {
         "schema": LOG_SCHEMA, "tool": "run", "host": host, "timestamp": ts,
         "fettle_version": __version__, "argv": list(argv),
@@ -209,8 +209,7 @@ def _write_log_json(txt_path: Path, ctxlike, *, host: str, argv, exit_code) -> N
     }
     js = txt_path.with_suffix(".json")
     try:
-        with _open_private(js, "w") as fh:      # owner-only from creation, as above
-            fh.write(json.dumps(env, indent=2) + "\n")
+        _reports.atomic_text(js, json.dumps(env, indent=2) + "\n", ctxlike)
     except OSError:
         return
     from .util import chown_to_user
@@ -326,14 +325,14 @@ class _NonTtyLog:
         sys.stdout = _Tee(sys.stdout, self._logf)
         sys.stderr = _Tee(sys.stderr, self._logf)
 
-    def close(self):
+    def close(self, exit_code=None):
         sys.stdout, sys.stderr = self._saved
         try:
             self._logf.close()
         except OSError:
             pass
         _write_log_json(self._path, self._ctx, host=log_host(self._argv),
-                        argv=self._argv, exit_code=None)
+                        argv=self._argv, exit_code=exit_code)
         _finalize(self._path, self._dir, self._ctx)
 
 

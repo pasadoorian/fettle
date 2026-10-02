@@ -37,7 +37,7 @@ def test_run_scp_then_ssh_with_args():
     assert scp[-1].startswith("server1:.fettle-remote.") and scp[-1].endswith(".pyz")
     assert "/tmp/" not in scp[-1]
     assert ssh[1] == "-t" and ssh[-2] == "server1"
-    assert 'python3 "$HOME/.fettle-remote.' in ssh[-1]
+    assert '"$py" "$HOME/.fettle-remote.' in ssh[-1]
     assert "clean update" in ssh[-1]
     assert 'rm -f "$HOME/.fettle-remote.' in ssh[-1]   # cleanup preserved
     assert "sudo " not in ssh[-1]
@@ -56,7 +56,7 @@ def test_run_sudo_prefix():
     rec = _Rec()
     remote.run("h", ["sys-audit", "--all"], sudo=True, runner=rec)
     ssh = next(c for c in rec.calls if c[0] == "ssh")
-    assert 'sudo python3 "$HOME/.fettle-remote.' in ssh[-1]
+    assert 'sudo "$py" "$HOME/.fettle-remote.' in ssh[-1]
     assert "sys-audit --all" in ssh[-1]
 
 
@@ -244,8 +244,9 @@ def test_remote_upgrade_check_no_local_key_lists_packages(capsys, monkeypatch):
     with patch("fettle.remote.collect", return_value=snap.to_json()):
         rc = cli_main(["remote", "ec3", "-U", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0 and "no local API key" in cap.err
+    assert rc == 1 and "no local API key" in cap.err
     assert "bash  5.1 -> 5.2" in cap.out
+    assert "▸ Summary" in cap.out and "NOT run" in cap.out
 
 
 def test_remote_upgrade_check_collect_failure(capsys):
@@ -279,8 +280,9 @@ def test_remote_upgrade_check_analysis_unavailable_lists_packages(capsys, monkey
          patch("fettle.ai.upgrade_check.analyze", return_value=None):
         rc = cli_main(["remote", "ec3", "upgrade-check", "--no-config"])
     cap = capsys.readouterr()
-    assert rc == 0 and "AI analysis unavailable" in cap.err
+    assert rc == 1 and "AI analysis unavailable" in cap.err
     assert "bash  5.1 -> 5.2" in cap.out
+    assert "▸ Summary" in cap.out and "NOT assessed" in cap.out
 
 
 def test_remote_upgrade_check_notes_missing_inxi(capsys, monkeypatch, tmp_path):

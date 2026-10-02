@@ -1,3 +1,7 @@
+> Historical shell-to-Python parity record. Current architecture, supported behavior
+> and remaining issues are in [architecture](docs/architecture.md), [README](README.md)
+> and [issue index](docs/issues.md). Original comparisons below are preserved.
+
 # Arch cutover — parity sign-off (M6)
 
 Behavioral comparison of `fettle` (Arch backend) against the frozen

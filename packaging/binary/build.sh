@@ -21,7 +21,7 @@ version=$("$here/packaging/version.sh")
 
 if [ ! -x "$python" ]; then
     echo "binary/build.sh: no python at $python" >&2
-    echo "  python -m venv ./venv-nuitka-build && ./venv-nuitka-build/bin/pip install nuitka" >&2
+    echo "  see docs/dependencies.md for the constrained Nuitka environment" >&2
     exit 1
 fi
 
@@ -34,11 +34,11 @@ mkdir -p "$outdir"
 #
 # MEASURED, and not what I first wrote: `--include-package=fettle` below already pulls
 # them in, so these flags are redundant. A build made without them was compiled and
-# smoke-tested, and all six axes were present. They are kept as belt-and-braces for the
+# smoke-tested against the then-current registry. They are kept as belt-and-braces for the
 # one thing here that fails *silently* — see smoke.sh — but they are not what makes it
 # work, and a comment claiming otherwise would send the next person down a false trail.
 #
-# Derived from AXIS_NAMES rather than listed, so a seventh axis cannot be forgotten.
+# Derived from AXIS_NAMES rather than listed, so new axes cannot be forgotten.
 axes=$(cd "$here" && python3 -c "
 import sys
 sys.path.insert(0, '.')
@@ -103,11 +103,15 @@ ENTRY
     --include-data-files="$work/fettle.pyz=fettle/fettle.pyz" \
     "$work/fettle-main.py" )
 
+# Measure the bundled extension modules too: math.so from the rolling build
+# host required GLIBC_2.44 even though the outer binary had a much older floor.
+glibc_min=$(sh "$here/packaging/binary/glibc-floor.sh" "$work")
 install -m 755 "$work/fettle" "$outdir/fettle"
 
 # A binary that fails the smoke test never becomes an artifact. The failures that matter
 # here are silent — a build missing the axes runs, exits 0, and audits nothing — so this
 # is not optional polish.
-sh "$here/packaging/binary/smoke.sh" "$outdir/fettle"
+FETTLE_EXPECTED_AXES="$axes" sh "$here/packaging/binary/smoke.sh" "$outdir/fettle"
 
+printf '%s\n' "$glibc_min" > "$outdir/fettle-glibc-min.txt"
 echo "$outdir/fettle"

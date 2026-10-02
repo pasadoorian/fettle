@@ -183,3 +183,10 @@ becomes just another removable entry. The lesson transferred rather than being r
 The "running kernel's modules are gone" state is warned about here but **owned by
 `rebuild-check`**, which already detects it; this action points at it rather than
 duplicating the logic.
+
+## Reconciliation — 2026-10-02
+
+K-03 remains open for Manjaro mhwd-kernel paths; plain Arch now inventories kernels rather than removing them. The current index records this distinction.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

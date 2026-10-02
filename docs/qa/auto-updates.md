@@ -154,3 +154,10 @@ front of us rather than changing it in passing.
 not tell is indistinguishable in the digest from one that found nothing enabled. The same
 shape fixed in `rebuild-check` and `config-drift`; not fixed here only because it is
 bundled with A-02's wording question and both want deciding together.
+
+## Reconciliation — 2026-10-02
+
+A-02 and A-03 remain open as AUTO-01/AUTO-02 in the current issue index. Recognized timer names and missing/failed posture queries still need an independently verified correction.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.

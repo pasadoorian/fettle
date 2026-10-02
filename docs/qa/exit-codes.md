@@ -279,3 +279,10 @@ the pass.
 - Every other cross-cutting row improves what a human reads. This one is the only one
   that decides whether fettle can be automated at all — which is the difference between
   a tool you run and a tool you rely on.
+
+## Reconciliation — 2026-10-02
+
+The selected policy is preserved: individual recorded failures return nonzero; everything returns nonzero only for FAILED. Backend Result handling and unsuccessful remote upgrade analysis now honor that contract. Intentional warnings are unchanged.
+
+See the [current issue index](../issues.md) and [maintenance verification](../maintenance-verification.md).
+Original measurements, case IDs and result tables above are historical evidence.
