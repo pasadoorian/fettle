@@ -19,8 +19,8 @@ import datetime as _dt
 import html as _html
 from functools import partial
 
-from fastapi.responses import HTMLResponse
 from nicegui import app, ui
+from fastapi.responses import HTMLResponse
 
 from . import data, runner
 from .guard import LOCAL_HOSTS, LocalOriginGuard

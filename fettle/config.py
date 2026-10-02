@@ -12,11 +12,9 @@ import math
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-# tomllib is stdlib only on Python 3.11+. fettle is otherwise pure-stdlib, so on
-# an older interpreter — notably the remote scanner landing on Ubuntu 22.04
-# (Python 3.10) — we fall back to the `tomli` backport if present, else run with
-# built-in defaults (no config parsing). Everything except the TOML config file
-# works regardless.
+# Python 3.11+ is the supported floor and provides tomllib. Retain the legacy
+# import fallback for historical embedders; it does not imply support for older
+# interpreters. Remote execution explicitly requires a supported interpreter.
 try:
     import tomllib
 except ModuleNotFoundError:  # < 3.11

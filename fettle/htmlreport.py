@@ -128,6 +128,33 @@ def _parse_name(stem: str) -> tuple[str, str]:
     return (m.group("tool"), m.group("ts")) if m else (stem, "")
 
 
+def _valid_payload(data: dict) -> bool:
+    """Validate containers used outside the tolerant body renderer.
+
+    Unknown fields remain additive. Historical reports may omit fields; malformed
+    known containers must not crash cards, filters or snapshot deltas.
+    """
+    for key in ("coverage", "band_tally", "level_counts", "uncovered", "baseline", "scan"):
+        if data.get(key) is not None and not isinstance(data[key], dict):
+            return False
+    for key in ("band_tally", "level_counts"):
+        if any(type(v) is not int or v < 0 for v in (data.get(key) or {}).values()):
+            return False
+    if "text" in data and not isinstance(data["text"], str):
+        return False
+    for key in ("findings", "axes", "groups"):
+        rows = data.get(key)
+        if rows is None:
+            continue
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return False
+        if key in ("axes", "groups") and any(not _valid_payload(row) for row in rows):
+            return False
+    rows = data.get("packages")
+    return rows is None or (isinstance(rows, list)
+                            and all(isinstance(row, (str, dict)) for row in rows))
+
+
 def _load_entry(path: Path) -> dict | None:
     """One report/log as an envelope dict. JSON is authoritative; a `.txt` with no
     `.json` sibling (pre-0.12) falls back to a text wrapper so nothing is lost."""
@@ -146,6 +173,10 @@ def _load_entry(path: Path) -> dict | None:
             return None
         env.setdefault("tool", tool)
         env.setdefault("timestamp", ts)
+        if "data" in env and not _valid_payload(env["data"]):
+            raw = json.dumps(env["data"], indent=2)
+            env["data"] = {"text": "Report payload could not be interpreted; audit coverage is unknown.\n" + raw}
+            env["invalid_payload"] = True
         return env
     try:
         body = path.read_text(errors="replace")
@@ -163,6 +194,7 @@ def _host_entries(directory: Path) -> list[dict]:
     for p in sorted(directory.glob("*.json")):
         e = _load_entry(p)
         if e:
+            e["_sequence"] = _reports.entry_key(p)[1]
             entries.append((_reports.entry_key(p)[1], e))
             seen.add(p.stem)
     for p in sorted(directory.glob("*.txt")):
@@ -170,6 +202,7 @@ def _host_entries(directory: Path) -> list[dict]:
             continue
         e = _load_entry(p)
         if e:
+            e["_sequence"] = _reports.entry_key(p)[1]
             entries.append((_reports.entry_key(p)[1], e))
     entries.sort(key=lambda pair: (pair[1].get("timestamp", ""), pair[0]), reverse=True)
     return [entry for _, entry in entries]
@@ -774,6 +807,8 @@ def _is_empty(entry: dict) -> bool:
 
 def _entry_badge(entry: dict) -> str:
     """A small severity/verdict badge on the entry's summary line, when relevant."""
+    if entry.get("invalid_payload"):
+        return '<span class="badge b-bad">payload unreadable</span>'
     data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
     if (data.get("coverage") or {}).get("degraded"):
         return '<span class="badge b-bad">coverage incomplete</span>'
@@ -844,6 +879,8 @@ def _worst(entries) -> tuple[int, str]:
 def _entry_rank(entry: dict) -> int:
     """Worst severity in one report, for the severity filter. -1 = not a finding
     report (run-logs, package lists), which the filter treats as "always show"."""
+    if entry.get("invalid_payload"):
+        return 2
     data = entry.get("data") or {}
     ranks = [_SEV_RANK.get(_sev(f.get("severity")), 1)
              for f in (data.get("findings") or [])]
@@ -895,7 +932,7 @@ def _delta(entries: list) -> dict | None:
     looked" is the question; "since I last pressed enter" is not.
     """
     dated = sorted((e for e in entries if e.get("timestamp")),
-                   key=lambda e: e["timestamp"])
+                   key=lambda e: (e["timestamp"], e.get("_sequence", 0)))
     if len(dated) < 2:
         return None
     newest = dated[-1]
@@ -904,6 +941,8 @@ def _delta(entries: list) -> dict | None:
     if not prior:
         return None
     before = prior[-1]
+    if newest.get("invalid_payload") or before.get("invalid_payload"):
+        return None
     kind, now_keys = _item_keys(newest)
     _kind2, old_keys = _item_keys(before)
     if kind == "count":
@@ -963,9 +1002,13 @@ def _host_problems(host: dict, *, stale_days: int, now=None) -> list[tuple[int, 
     newest: dict[str, dict] = {}
     for e in host["reports"]:
         t = e.get("tool", "")
-        if e.get("timestamp", "") >= newest.get(t, {}).get("timestamp", ""):
+        if t not in newest or (e.get("timestamp", ""), e.get("_sequence", 0)) > (
+                newest[t].get("timestamp", ""), newest[t].get("_sequence", 0)):
             newest[t] = e
     for e in newest.values():
+        if e.get("invalid_payload"):
+            out.append((2, f"{e.get('tool', 'report')}: report payload unreadable — coverage unknown"))
+            continue
         if _is_empty(e):
             continue        # the newest run of this tool found nothing: clean, not old
         tool = e.get("tool", "")

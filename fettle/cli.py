@@ -248,7 +248,7 @@ ACTION_HELP = {
                   "-> ~/.fettle/reports/"),
     "pkg_audit": "WHERE your software came from, every ecosystem (AUR/APT/Flatpak/Snap/containers/editor+shell extensions) -> ~/.fettle/reports/",
     "container_update": "pull container images (docker+podman; asks per image;\n                        skips local builds; see [containers] config)",
-    "hardening_audit": "is this system hardened? six axes -- build flags (needs checksec), filesystem, services, kernel, sshd, firewall -> ~/.fettle/reports/",
+    "hardening_audit": "is this system hardened? ten axes -- build flags (checksec), filesystem, services, kernel, sshd, firewall, certs, AppArmor, SELinux, auditing -> ~/.fettle/reports/",
     "advisory_check": "which installed packages have known CVEs — both those with a "
                       "fix you have not applied and (the distinctive part) those with "
                       "no fix released yet -> ~/.fettle/reports/",
@@ -947,6 +947,11 @@ def _run_web(argv: list[str]) -> int:
     """`fettle web` — serve the NiceGUI web UI (localhost by default). Needs the
     optional `web` extra; the core stays pure-stdlib and never imports it."""
     args = web_parser().parse_args(argv)
+    from .web.guard import LOCAL_HOSTS
+    if args.host not in LOCAL_HOSTS:
+        print("fettle web: --host must be a loopback address (127.0.0.1, localhost, ::1)",
+              file=sys.stderr)
+        return 2
 
     # Said at run time, not only in the docs: this is the one surface that both
     # serves a page and runs privileged actions from a password typed into a browser,

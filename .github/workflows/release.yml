@@ -63,7 +63,7 @@ jobs:
   packages:
     name: ${{ matrix.name }}
     needs: [guard, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -119,7 +119,7 @@ jobs:
               # wrong — the failures that matter here are silent, so this is the gate.
               packaging/binary/build.sh
               packaging/binary/archive.sh
-              rm -f dist/fettle          # the archives carry it; no bare file to attach
+              rm -f dist/fettle dist/fettle-glibc-min.txt  # archives carry both
               ;;
           esac
 

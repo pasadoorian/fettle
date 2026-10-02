@@ -104,3 +104,45 @@ def test_malformed_envelopes_do_not_break_collection(tmp_path, payload):
     path.write_text(json.dumps(payload))
     entries = htmlreport._host_entries(tmp_path)
     assert entries == []
+
+
+@pytest.mark.parametrize('tool,payload', [
+    ('advisory-check', {'findings': ['invalid']}),
+    ('advisory-check', {'coverage': 'unknown'}),
+    ('advisory-check', {'uncovered': []}),
+    ('hardening-audit', {'band_tally': {'High': 'many'}}),
+    ('hardening-audit', {'axes': [{'findings': [42]}]}),
+    ('compromise-check', {'groups': 5}),
+    ('pkg-audit', {'text': []}),
+    ('obsolete-pkgs', {'packages': [1]}),
+])
+def test_malformed_nested_payload_renders_as_unknown_coverage(tmp_path, tool, payload):
+    import json
+    from fettle import htmlreport
+    root = tmp_path / 'reports/local'
+    root.mkdir(parents=True)
+    (root / f'{tool}-20261002-120000.json').write_text(json.dumps(
+        {'tool': tool, 'timestamp': '20261002-120000', 'data': payload}))
+    page = htmlreport.render(htmlreport.collect(tmp_path), generated_at='now', version='test')
+    assert 'payload unreadable' in page
+    assert 'coverage unknown' in page
+
+
+def test_same_second_dashboard_verdict_uses_numeric_newest(tmp_path):
+    import json
+    from fettle import htmlreport
+    root = tmp_path / 'reports/local'
+    root.mkdir(parents=True)
+    for suffix, findings in [('', [{'severity': 'Critical', 'package': 'old'}]), ('-10', [])]:
+        (root / f'pkg-audit-20261002-120000{suffix}.json').write_text(json.dumps(
+            {'tool': 'pkg-audit', 'timestamp': '20261002-120000', 'data': {'findings': findings}}))
+    host = htmlreport.collect(tmp_path)['local']
+    assert not any('supply-chain' in message for _, message in htmlreport._host_problems(host, stale_days=365))
+
+
+def test_historical_text_reports_keep_numeric_sequence(tmp_path):
+    from fettle import htmlreport
+    for suffix in ('-2', '-10'):
+        (tmp_path / f'pkg-audit-20261002-120000{suffix}.txt').write_text('Historical report')
+    entries = htmlreport._host_entries(tmp_path)
+    assert [entry['_sequence'] for entry in entries] == [10, 2]

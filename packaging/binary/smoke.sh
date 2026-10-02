@@ -9,7 +9,7 @@
 # **This exists because the interesting failures are silent.** Compilation can lose
 # things without anything crashing:
 #
-#   * The six hardening axes are loaded by a COMPUTED module name, which no compiler can
+#   * The hardening axes are loaded by a COMPUTED module name, which no compiler can
 #     see. If they are missing, `run_all` catches the ImportError and reports each axis
 #     as *blind* — so the binary runs, exits 0, looks careful, and audits nothing.
 #
@@ -84,9 +84,11 @@ ok "axes examined real subjects"
 # without an embedded zipapp dies here with FileNotFoundError from shutil.copytree.
 remote=$("$bin" remote smoke-test-host.invalid -H 2>&1 || true)
 case "$remote" in
-    *FileNotFoundError*|*"no bundled zipapp"*)
+    *"no bundled zipapp"*)
         fail "fettle remote cannot build a zipapp — the binary has none embedded" ;;
     *"Uploading fettle to"*) ok "fettle remote builds its zipapp" ;;
+    *FileNotFoundError*)
+        fail "fettle remote could not build or extract its zipapp: $remote" ;;
     *) fail "fettle remote did not reach the upload step:
 $remote" ;;
 esac
